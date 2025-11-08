@@ -13,16 +13,6 @@ from datetime import datetime
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-try:
-    from langchain_core.memory import ConversationBufferMemory
-except ImportError:
-    try:
-        from langchain_community.memory import ConversationBufferMemory
-    except ImportError:
-        try:
-            from langchain.memory.buffer import ConversationBufferMemory
-        except ImportError:
-            from langchain.memory import ConversationBufferMemory
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +91,8 @@ class AIEngine:
         self.temperature = temperature
         self.system_prompt = system_prompt or self._default_system_prompt()
         self.llm = None
-        self.memory = ConversationBufferMemory(return_messages=True)
+        # LangChain 1.0では ConversationBufferMemory は廃止されました
+        # メモリ管理は ChatSession.messages で行います
         self.sessions: Dict[str, ChatSession] = {}
         
         self._initialize_llm()

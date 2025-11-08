@@ -10,17 +10,6 @@ import logging
 from typing import Any, Dict, List, Optional
 
 try:
-    from langchain_core.memory import ConversationBufferMemory
-except ImportError:
-    try:
-        from langchain_community.memory import ConversationBufferMemory
-    except ImportError:
-        try:
-            from langchain.memory.buffer import ConversationBufferMemory
-        except ImportError:
-            from langchain.memory import ConversationBufferMemory
-
-try:
     from langchain.agents import AgentExecutor, AgentType, initialize_agent
 except ImportError as exc:  # pragma: no cover - import 安全対策
     raise ImportError(
@@ -95,8 +84,8 @@ class AgentEngine:
         # RAGコンテキストを付与
         message_with_context = self._compose_message(user_message, rag_results)
 
-        # セッション・メモリにユーザーメッセージを保存
-        self._append_to_memory(executor, role="user", content=message_with_context)
+        # LangChain 1.0では ConversationBufferMemory が廃止されたため、
+        # メモリへの追加は行いません（セッション履歴は _ai_engine で管理）
 
         try:
             response = executor.invoke({"input": message_with_context})
@@ -115,7 +104,7 @@ class AgentEngine:
         if session:
             session.add_message("user", user_message)
             session.add_message("assistant", output)
-        self._append_to_memory(executor, role="assistant", content=output)
+        # メモリへの追加は不要（セッション履歴で管理）
 
         return output
 
@@ -139,13 +128,8 @@ class AgentEngine:
         if executor:
             return executor
 
-        memory = ConversationBufferMemory(
-            memory_key="chat_history",
-            return_messages=True,
-            human_prefix="お客様",
-            ai_prefix="スタッフ",
-        )
-
+        # LangChain 1.0では ConversationBufferMemory は廃止されました
+        # メモリなしでAgentExecutorを初期化します
         try:
             executor = initialize_agent(
                 tools=self._tools,
@@ -154,7 +138,6 @@ class AgentEngine:
                 verbose=False,
                 handle_parsing_errors=True,
                 max_iterations=self._max_iterations,
-                memory=memory,
                 agent_kwargs={"system_message": SystemMessage(content=self._system_prompt)},
             )
         except Exception as e:
@@ -164,7 +147,7 @@ class AgentEngine:
             raise AgentEngineError(f"AgentExecutor初期化に失敗しました: {e}") from e
 
         self._executors[actual_session_id] = executor
-        self._hydrate_memory_from_session(executor, session)
+        # メモリ管理は廃止されたため、_hydrate_memory_from_session は呼び出しません
         return executor
 
     def _build_tools(self) -> List[Tool]:
@@ -238,27 +221,16 @@ class AgentEngine:
         logger.info(f"[Agent] ツールを登録しました: {[tool.name for tool in tools]}")
         return tools
 
-    def _hydrate_memory_from_session(self, executor, session) -> None:
-        if not session or not getattr(executor, "memory", None):
-            return
-        chat_memory = executor.memory.chat_memory
-        for message in session.messages:
-            role = message.get("role")
-            content = message.get("content")
-            if not content or role not in {"user", "assistant"}:
-                continue
-            if role == "user":
-                chat_memory.add_user_message(content)
-            else:
-                chat_memory.add_ai_message(content)
+    # LangChain 1.0では ConversationBufferMemory が廃止されたため、
+    # これらのメソッドは使用しません（セッション履歴は _ai_engine で管理）
+    
+    # def _hydrate_memory_from_session(self, executor, session) -> None:
+    #     # 廃止: メモリ機能が削除されました
+    #     pass
 
-    def _append_to_memory(self, executor, role: str, content: str) -> None:
-        if not getattr(executor, "memory", None):
-            return
-        if role == "user":
-            executor.memory.chat_memory.add_user_message(content)
-        else:
-            executor.memory.chat_memory.add_ai_message(content)
+    # def _append_to_memory(self, executor, role: str, content: str) -> None:
+    #     # 廃止: メモリ機能が削除されました
+    #     pass
 
     def _compose_message(
         self,
