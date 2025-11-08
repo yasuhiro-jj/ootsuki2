@@ -9,7 +9,7 @@ import os
 import logging
 from typing import Optional, List, Dict, Any
 from langchain_openai import ChatOpenAI
-from langchain.schema import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 
 logger = logging.getLogger(__name__)
 

@@ -12,7 +12,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 from langchain_openai import ChatOpenAI
-from langchain.schema import HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain.memory import ConversationBufferMemory
 
 logger = logging.getLogger(__name__)

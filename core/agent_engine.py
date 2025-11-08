@@ -23,7 +23,7 @@ try:
 except ImportError:  # pragma: no cover - 旧API互換
     from langchain.agents import Tool  # type: ignore
 
-from langchain.schema import SystemMessage
+from langchain_core.messages import SystemMessage
 
 from .menu_service import MenuService, MenuItemView
 
