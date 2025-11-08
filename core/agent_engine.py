@@ -9,7 +9,13 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from langchain.memory import ConversationBufferMemory
+try:
+    from langchain_community.memory import ConversationBufferMemory
+except ImportError:
+    try:
+        from langchain.memory.buffer import ConversationBufferMemory
+    except ImportError:
+        from langchain.memory import ConversationBufferMemory
 
 try:
     from langchain.agents import AgentExecutor, AgentType, initialize_agent
