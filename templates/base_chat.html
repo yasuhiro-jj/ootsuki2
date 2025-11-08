@@ -1,0 +1,1302 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&display=swap');
+        
+        :root {
+            --primary: #0ea5e9;
+            --primary-dark: #0284c7;
+            --accent: #06b6d4;
+            --bg-start: #0f172a;
+            --bg-end: #1e293b;
+            --surface: rgba(255, 255, 255, 0.95);
+            --text: #0f172a;
+            --muted: #64748b;
+            --border: #e2e8f0;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            background: radial-gradient(circle at 20% 50%, rgba(14, 165, 233, 0.1), transparent 50%),
+                        radial-gradient(circle at 80% 80%, rgba(6, 182, 212, 0.1), transparent 50%),
+                        linear-gradient(135deg, var(--bg-start), var(--bg-end));
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: var(--text);
+            perspective: 1000px;
+        }
+
+        .chat-container {
+            background: var(--surface);
+            backdrop-filter: blur(20px);
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4),
+                        0 0 0 1px rgba(255, 255, 255, 0.1);
+            width: 90%;
+            max-width: 900px;
+            height: 85vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border: 1px solid rgba(14, 165, 233, 0.2);
+        }
+
+        .chat-header {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: white;
+            padding: 24px;
+            text-align: center;
+            border-radius: 16px 16px 0 0;
+            box-shadow: 0 4px 16px rgba(14, 165, 233, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .chat-header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 70%);
+            animation: shimmer 4s infinite linear;
+        }
+        
+        @keyframes shimmer {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .chat-header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            position: relative;
+            z-index: 1;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .message {
+            display: flex;
+            gap: 10px;
+            animation: slideInFade 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            transform-style: preserve-3d;
+        }
+
+        @keyframes slideInFade {
+            from { 
+                opacity: 0; 
+                transform: translateY(20px) translateZ(-20px);
+            }
+            to { 
+                opacity: 1; 
+                transform: translateY(0) translateZ(0);
+            }
+        }
+        
+        .message.user {
+            animation: slideInRight 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        @keyframes slideInRight {
+            from {
+                opacity: 0;
+                transform: translateX(30px) translateZ(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0) translateZ(0);
+            }
+        }
+
+        .message.user {
+            flex-direction: row-reverse;
+        }
+
+        .message-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            flex-shrink: 0;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transform: translateZ(0);
+            overflow: hidden;
+            object-fit: cover;
+        }
+        
+        .message-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 50%;
+        }
+        
+        .message:hover .message-avatar {
+            transform: translateZ(15px) scale(1.1);
+        }
+
+        .message.user .message-avatar {
+            background: linear-gradient(135deg, #64748b, #475569);
+            box-shadow: 0 4px 12px rgba(100, 116, 139, 0.3);
+        }
+
+        .message.assistant .message-avatar {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            box-shadow: 0 4px 12px rgba(14, 165, 233, 0.4);
+            animation: pulse 2s infinite;
+        }
+        
+        .message.assistant .message-avatar img {
+            border: 2px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        @keyframes pulse {
+            0%, 100% {
+                box-shadow: 0 4px 12px rgba(14, 165, 233, 0.4);
+            }
+            50% {
+                box-shadow: 0 4px 20px rgba(14, 165, 233, 0.6);
+            }
+        }
+
+        .message-content {
+            max-width: 85%;
+            padding: 15px 20px;
+            border-radius: 15px;
+            word-wrap: break-word;
+            transform: translateZ(0);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        /* ユーザー吹き出しは最大限に広めに表示 */
+        .message.user .message-content {
+            max-width: 98%;
+        }
+        
+        .message-content:hover {
+            transform: translateZ(10px) scale(1.02);
+        }
+
+        .message.user .message-content {
+            background: linear-gradient(135deg, #64748b, #475569);
+            color: white;
+            border-radius: 18px 18px 4px 18px;
+            box-shadow: 0 4px 16px rgba(100, 116, 139, 0.3),
+                        0 0 0 1px rgba(255, 255, 255, 0.1);
+        }
+        
+        .message.user .message-content:hover {
+            box-shadow: 0 8px 24px rgba(100, 116, 139, 0.4),
+                        0 0 0 1px rgba(255, 255, 255, 0.2);
+        }
+
+        .message.assistant .message-content {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 18px 18px 18px 4px;
+            line-height: 1.6;
+            box-shadow: 0 4px 16px rgba(14, 165, 233, 0.1),
+                        0 0 0 1px rgba(14, 165, 233, 0.05);
+        }
+        
+        .message.assistant .message-content:hover {
+            box-shadow: 0 8px 24px rgba(14, 165, 233, 0.2),
+                        0 0 0 1px rgba(14, 165, 233, 0.1);
+        }
+
+        .message-content ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+
+        .message-content li {
+            margin: 8px 0;
+        }
+
+        .message-content strong {
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .chat-input-container {
+            padding: 20px;
+            background: white;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            gap: 10px;
+        }
+
+        #user-input {
+            flex: 1;
+            padding: 15px 20px;
+            border: 2px solid #e5e7eb;
+            border-radius: 25px;
+            font-size: 16px;
+            font-family: 'Noto Sans JP', sans-serif;
+            outline: none;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transform: translateZ(0);
+        }
+
+        #user-input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.15),
+                        0 4px 12px rgba(14, 165, 233, 0.2);
+            transform: translateZ(5px) scale(1.01);
+        }
+
+        #send-button {
+            padding: 15px 30px;
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: white;
+            border: none;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+            transform: translateZ(0);
+        }
+        
+        #send-button::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.4);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+        
+        #send-button:active::before {
+            width: 300px;
+            height: 300px;
+        }
+
+        #send-button:hover {
+            transform: translateY(-3px) translateZ(10px);
+            box-shadow: 0 12px 28px rgba(14, 165, 233, 0.5),
+                        0 0 30px rgba(14, 165, 233, 0.3);
+        }
+        
+        #send-button:active {
+            transform: translateY(-1px) translateZ(5px);
+        }
+
+        #send-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        /* 音声入力ボタンスタイル */
+        .voice-btn {
+            padding: 15px;
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            font-size: 18px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+            transform: translateZ(0);
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .voice-btn:hover {
+            transform: translateY(-2px) translateZ(5px);
+            box-shadow: 0 8px 20px rgba(245, 158, 11, 0.4);
+        }
+        
+        .voice-btn:active {
+            transform: translateY(0) translateZ(2px);
+        }
+        
+        .voice-btn.recording {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            animation: pulse 1.5s infinite;
+        }
+        
+        .voice-btn.recording::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: rgba(239, 68, 68, 0.3);
+            transform: translate(-50%, -50%);
+            animation: ripple 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+        
+        @keyframes ripple {
+            0% {
+                transform: translate(-50%, -50%) scale(1);
+                opacity: 1;
+            }
+            100% {
+                transform: translate(-50%, -50%) scale(1.5);
+                opacity: 0;
+            }
+        }
+
+        .typing-indicator {
+            display: none;
+            padding: 15px 20px;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 15px 15px 15px 0;
+            width: fit-content;
+        }
+
+        .typing-indicator.active {
+            display: block;
+        }
+
+        .typing-indicator span {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--muted);
+            margin: 0 2px;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+
+        .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+        .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+
+        /* 選択肢ボタンスタイル */
+        .chat-options {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
+            max-width: 85%;
+            animation: slideInOptions 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        @keyframes slideInOptions {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .option-button {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 2px 8px rgba(14, 165, 233, 0.2);
+            position: relative;
+            overflow: hidden;
+            transform: translateZ(0);
+        }
+        
+        .option-button::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.3);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+        
+        .option-button:active::before {
+            width: 300px;
+            height: 300px;
+        }
+
+        .option-button:hover {
+            transform: translateY(-3px) translateZ(10px);
+            box-shadow: 0 8px 20px rgba(14, 165, 233, 0.5),
+                        0 0 20px rgba(14, 165, 233, 0.3);
+            background: linear-gradient(135deg, var(--accent), var(--primary));
+        }
+
+        .option-button:active {
+            transform: translateY(-1px) translateZ(5px);
+            box-shadow: 0 4px 12px rgba(14, 165, 233, 0.4);
+        }
+
+        /* 常連さま用シークレット入力画面 */
+        .secret-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(10px);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        .secret-overlay.hidden {
+            display: none;
+        }
+
+        .secret-panel {
+            background: var(--surface);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            animation: slideUp 0.5s ease-out;
+        }
+
+        .secret-panel h2 {
+            color: var(--primary);
+            margin-bottom: 10px;
+            font-size: 24px;
+            text-align: center;
+        }
+
+        .secret-panel p {
+            color: var(--muted);
+            font-size: 14px;
+            line-height: 1.8;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .secret-input-group {
+            margin-bottom: 20px;
+        }
+
+        .secret-input-group input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            font-size: 16px;
+            transition: all 0.3s;
+            box-sizing: border-box;
+        }
+
+        .secret-input-group input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+        }
+
+        .secret-consent {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: rgba(14, 165, 233, 0.05);
+            border-radius: 10px;
+        }
+
+        .secret-consent input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            margin-right: 10px;
+            cursor: pointer;
+        }
+
+        .secret-consent label {
+            font-size: 13px;
+            color: var(--text);
+            cursor: pointer;
+            line-height: 1.6;
+        }
+
+        .secret-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .secret-login-btn {
+            flex: 1;
+            padding: 15px;
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .secret-login-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(14, 165, 233, 0.4);
+        }
+
+        .secret-login-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .secret-skip-btn {
+            flex: 1;
+            padding: 15px;
+            background: transparent;
+            color: var(--muted);
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .secret-skip-btn:hover {
+            background: rgba(14, 165, 233, 0.05);
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .secret-privacy {
+            margin-top: 15px;
+            padding: 10px;
+            background: rgba(100, 116, 139, 0.05);
+            border-radius: 8px;
+            font-size: 12px;
+            color: var(--muted);
+            text-align: center;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        /* AI接客モードスタイル */
+        .ai-service-mode {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 20px;
+            padding: 30px;
+            margin: 20px 0;
+            color: white;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+            animation: slideInDown 0.6s ease-out;
+        }
+        
+        .ai-service-header h2 {
+            font-size: 28px;
+            font-weight: 700;
+            margin: 0 0 10px 0;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .customer-welcome {
+            font-size: 18px;
+            font-weight: 600;
+            margin: 0 0 20px 0;
+            opacity: 0.9;
+        }
+        
+        .ai-service-description p {
+            font-size: 16px;
+            margin: 0 0 20px 0;
+            opacity: 0.9;
+            line-height: 1.6;
+        }
+        
+        .ai-features {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .feature-tag {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        @keyframes slideInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .chat-container {
+                width: 100%;
+                height: 100vh;
+                border-radius: 0;
+            }
+            .chat-header {
+                border-radius: 0;
+            }
+            .message-content {
+                max-width: 90%;
+            }
+            /* モバイル時のユーザー吹き出しは最大限に広めに */
+            .message.user .message-content {
+                max-width: 100%;
+            }
+            .chat-options {
+                max-width: 90%;
+            }
+            .option-button {
+                font-size: 13px;
+                padding: 8px 16px;
+            }
+            .secret-panel {
+                padding: 30px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 常連さま用シークレット入力画面（一時保留） -->
+    <div class="secret-overlay hidden" id="secretOverlay">
+        <div class="secret-panel">
+            <h2>🎯 常連さま用シークレット</h2>
+            <p>
+                入力して注文すると、あなたの好みを記録して次回のおすすめに活かします。<br>
+                次回来店時も、ここに入力してログインしてください。
+            </p>
+            
+            <div class="secret-input-group">
+                <input 
+                    type="text" 
+                    id="secretInput" 
+                    placeholder="お名前 または ニックネーム（シークレットキーでもOK）"
+                    autocomplete="off"
+                >
+            </div>
+
+            <div class="secret-consent">
+                <input type="checkbox" id="consentCheck">
+                <label for="consentCheck">
+                    記録の保存に同意いただける方のみご利用ください。<br>
+                    （同意の取り消しはスタッフまで）
+                </label>
+            </div>
+
+            <div class="secret-buttons">
+                <button class="secret-login-btn" id="secretLoginBtn" disabled>
+                    ログインして注文へ進む
+                </button>
+                <button class="secret-skip-btn" id="secretSkipBtn">
+                    スキップ
+                </button>
+            </div>
+
+            <div class="secret-privacy">
+                🔒 プライバシー: 好みや閲覧履歴は提案のためにのみ利用します。
+            </div>
+        </div>
+    </div>
+
+    <!-- メインチャット画面 -->
+    <div class="chat-container">
+        <div class="chat-header">
+            <h1>{{ title }}</h1>
+        </div>
+        <div class="chat-messages" id="chat-messages">
+            <!-- WebSocketから初回挨拶を受信します -->
+        </div>
+        <div class="chat-input-container">
+            <input 
+                type="text" 
+                id="user-input" 
+                placeholder="メッセージを入力..."
+                autocomplete="off"
+            >
+            <button id="voice-button" class="voice-btn" title="音声入力">
+                🎤
+            </button>
+            <button id="send-button">送信</button>
+        </div>
+    </div>
+
+    <script>
+        let sessionId = null;
+        let ws = null;
+        let customerSecret = null;  // 顧客シークレット（ニックネームまたはキー）
+        let customerConsent = false;  // 嗜好保存の同意
+        
+        // 音声認識関連の変数
+        let recognition = null;
+        let isRecording = false;
+
+        const chatMessages = document.getElementById('chat-messages');
+        const userInput = document.getElementById('user-input');
+        const sendButton = document.getElementById('send-button');
+        const voiceButton = document.getElementById('voice-button');
+        
+        // シークレット入力画面の要素
+        const secretOverlay = document.getElementById('secretOverlay');
+        const secretInput = document.getElementById('secretInput');
+        const consentCheck = document.getElementById('consentCheck');
+        const secretLoginBtn = document.getElementById('secretLoginBtn');
+        const secretSkipBtn = document.getElementById('secretSkipBtn');
+        
+        // 同意チェックボックスの状態でログインボタンを制御
+        consentCheck.addEventListener('change', function() {
+            const hasInput = secretInput.value.trim().length > 0;
+            secretLoginBtn.disabled = !(this.checked && hasInput);
+        });
+        
+        // 入力欄の変更でもボタンを制御
+        secretInput.addEventListener('input', function() {
+            const hasInput = this.value.trim().length > 0;
+            const hasConsent = consentCheck.checked;
+            secretLoginBtn.disabled = !(hasConsent && hasInput);
+        });
+        
+        // Enterキーでログイン
+        secretInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !secretLoginBtn.disabled) {
+                handleSecretLogin();
+            }
+        });
+        
+        // ログインボタンのクリック
+        secretLoginBtn.addEventListener('click', handleSecretLogin);
+        
+        // スキップボタンのクリック
+        secretSkipBtn.addEventListener('click', function() {
+            customerSecret = null;
+            customerConsent = false;
+            secretOverlay.classList.add('hidden');
+            // 通常モードでセッション開始
+            createSession();
+        });
+        
+        // シークレットログイン処理
+        function handleSecretLogin() {
+            const secret = secretInput.value.trim();
+            console.log('ログイン試行:', { secret, consent: consentCheck.checked });
+            
+            if (!secret) {
+                alert('お名前またはニックネームを入力してください');
+                return;
+            }
+            
+            if (!consentCheck.checked) {
+                alert('記録の保存に同意してください');
+                return;
+            }
+            
+            try {
+                customerSecret = secret;
+                customerConsent = true;
+                
+                console.log('顧客ログイン成功:', customerSecret);
+                
+                // オーバーレイを非表示
+                secretOverlay.classList.add('hidden');
+                
+                // AI接客モード表示
+                showAIServiceMode(customerSecret);
+                
+                // 常連さまモードでセッション開始
+                createSession(customerSecret, customerConsent);
+                
+            } catch (error) {
+                console.error('ログイン処理エラー:', error);
+                alert('ログイン処理でエラーが発生しました');
+            }
+        }
+        
+        // AI接客モード表示
+        function showAIServiceMode(customerName) {
+            try {
+                console.log('AI接客モード表示開始:', customerName);
+                
+                const welcomeMessage = `
+                    <div class="ai-service-mode">
+                        <div class="ai-service-header">
+                            <h2>🤖 AI接客モード</h2>
+                            <p class="customer-welcome">${customerName}さま、おかえりなさい！</p>
+                        </div>
+                        <div class="ai-service-description">
+                            <p>あなたの好みを覚えています。おすすめメニューをご案内いたします。</p>
+                            <div class="ai-features">
+                                <span class="feature-tag">🎯 パーソナライズ</span>
+                                <span class="feature-tag">📊 好み記録</span>
+                                <span class="feature-tag">💡 おすすめ</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // チャットエリアに挿入
+                const chatMessages = document.getElementById('chat-messages');
+                console.log('チャットメッセージエリア:', chatMessages);
+                
+                if (chatMessages) {
+                    // 既存のコンテンツをクリアして新しいメッセージを表示
+                    chatMessages.innerHTML = welcomeMessage;
+                    console.log('AI接客モード表示完了');
+                    
+                    // 少し待ってからAI接客モード開始メッセージを送信
+                    setTimeout(() => {
+                        console.log('AI接客モード開始メッセージ送信');
+                        sendMessage('AI接客モードを開始してください');
+                    }, 1500);
+                } else {
+                    console.error('チャットメッセージエリアが見つかりません');
+                    // 代替方法：bodyに直接追加
+                    document.body.insertAdjacentHTML('afterbegin', welcomeMessage);
+                    console.log('代替方法でAI接客モード表示');
+                }
+                
+            } catch (error) {
+                console.error('AI接客モード表示エラー:', error);
+                alert('AI接客モードの表示でエラーが発生しました');
+            }
+        }
+
+        // セッション作成とWebSocket接続
+        async function createSession(secret = null, consent = false) {
+            try {
+                // 顧客情報を含めてセッション作成
+                const requestBody = {};
+                if (secret && consent) {
+                    requestBody.customer_secret = secret;
+                    requestBody.customer_consent = consent;
+                }
+                
+                const response = await fetch('/session', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: Object.keys(requestBody).length > 0 ? JSON.stringify(requestBody) : null
+                });
+                
+                const data = await response.json();
+                sessionId = data.session_id;
+                console.log('Session created:', sessionId);
+                
+                if (secret && consent) {
+                    console.log('常連さまモードで開始:', secret);
+                }
+                
+                // WebSocket接続を開始
+                connectWebSocket();
+            } catch (error) {
+                console.error('Session creation error:', error);
+            }
+        }
+
+        // WebSocket接続
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws/${sessionId}`;
+            
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = () => {
+                console.log('WebSocket接続成功');
+                sendButton.disabled = false;
+            };
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                console.log('WebSocket受信:', data);
+                
+                // タイピングインジケーター削除
+                hideTypingIndicator();
+                
+                // メッセージの種類に応じて処理
+                if (data.type === 'greeting') {
+                    // 初回挨拶
+                    addMessage('assistant', data.message, data.options || []);
+                } else if (data.type === 'proactive') {
+                    // プロアクティブメッセージ
+                    addMessage('assistant', data.message, data.options || []);
+                } else if (data.type === 'response') {
+                    // 通常の応答
+                    addMessage('assistant', data.message, data.options || []);
+                } else if (data.type === 'error') {
+                    // エラーメッセージ
+                    addMessage('assistant', data.message, data.options || []);
+                }
+            };
+            
+            ws.onerror = (error) => {
+                console.error('WebSocketエラー:', error);
+                addMessage('assistant', '接続エラーが発生しました。ページを再読み込みしてください。');
+            };
+            
+            ws.onclose = () => {
+                console.log('WebSocket切断');
+                sendButton.disabled = true;
+            };
+        }
+
+        // 簡易Markdownレンダリング
+        function renderMarkdown(text) {
+            // 太字 **text** → <strong>text</strong>
+            text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            
+            // 箇条書きをHTMLリストに変換
+            const lines = text.split('\n');
+            let html = '';
+            let inList = false;
+            
+            for (let line of lines) {
+                // 箇条書き行（• で始まる）
+                if (line.trim().startsWith('•')) {
+                    if (!inList) {
+                        html += '<ul>';
+                        inList = true;
+                    }
+                    const content = line.trim().substring(1).trim();
+                    html += `<li>${content}</li>`;
+                } else {
+                    // 箇条書きでない行
+                    if (inList) {
+                        html += '</ul>';
+                        inList = false;
+                    }
+                    if (line.trim() === '') {
+                        html += '<br>';
+                    } else {
+                        html += line + '<br>';
+                    }
+                }
+            }
+            
+            if (inList) {
+                html += '</ul>';
+            }
+            
+            return html;
+        }
+
+        // メッセージ追加
+        function addMessage(role, content, options = []) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${role}`;
+            
+            const avatar = document.createElement('div');
+            avatar.className = 'message-avatar';
+            if (role === 'user') {
+                avatar.textContent = '👨';
+            } else {
+                // アシスタントのアバターは画像を使用
+                const img = document.createElement('img');
+                img.src = '/static/images/assistant_avatar.jpg';
+                img.alt = 'アシスタント';
+                img.onerror = function() {
+                    // 画像が読み込めない場合は絵文字を表示
+                    this.style.display = 'none';
+                    avatar.textContent = '👩‍🍳';
+                };
+                avatar.appendChild(img);
+            }
+            
+            const contentWrapper = document.createElement('div');
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            
+            // アシスタントのメッセージはMarkdownレンダリング
+            if (role === 'assistant') {
+                contentDiv.innerHTML = renderMarkdown(content);
+            } else {
+                contentDiv.textContent = content;
+            }
+            
+            contentWrapper.appendChild(contentDiv);
+            
+            // 選択肢ボタンを追加
+            if (role === 'assistant' && options && options.length > 0) {
+                const optionsDiv = document.createElement('div');
+                optionsDiv.className = 'chat-options';
+                
+                options.forEach(option => {
+                    const button = document.createElement('button');
+                    button.className = 'option-button';
+                    button.textContent = option;
+                    button.onclick = () => sendOptionMessage(option);
+                    optionsDiv.appendChild(button);
+                });
+                
+                contentWrapper.appendChild(optionsDiv);
+            }
+            
+            messageDiv.appendChild(avatar);
+            messageDiv.appendChild(contentWrapper);
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // 選択肢クリック時にメッセージ送信
+        function sendOptionMessage(option) {
+            userInput.value = option;
+            sendMessage();
+        }
+
+        // タイピングインジケーター表示
+        function showTypingIndicator() {
+            const indicator = document.createElement('div');
+            indicator.className = 'message assistant';
+            const avatarDiv = document.createElement('div');
+            avatarDiv.className = 'message-avatar';
+            const img = document.createElement('img');
+            img.src = '/static/images/assistant_avatar.jpg';
+            img.alt = 'アシスタント';
+            img.onerror = function() {
+                this.style.display = 'none';
+                avatarDiv.textContent = '👩‍🍳';
+            };
+            avatarDiv.appendChild(img);
+            indicator.appendChild(avatarDiv);
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'typing-indicator active';
+            typingDiv.innerHTML = '<span></span><span></span><span></span>';
+            indicator.appendChild(typingDiv);
+            indicator.id = 'typing-indicator';
+            chatMessages.appendChild(indicator);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // タイピングインジケーター削除
+        function hideTypingIndicator() {
+            const indicator = document.getElementById('typing-indicator');
+            if (indicator) {
+                indicator.remove();
+            }
+        }
+
+        // メッセージ送信（WebSocket経由）
+        async function sendMessage() {
+            const message = userInput.value.trim();
+            if (!message) return;
+            
+            // WebSocket未接続の場合はエラー
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                addMessage('assistant', '接続が切断されています。ページを再読み込みしてください。');
+                return;
+            }
+
+            // ユーザーメッセージ表示
+            addMessage('user', message);
+            userInput.value = '';
+            sendButton.disabled = true;
+
+            // タイピングインジケーター表示
+            showTypingIndicator();
+
+            try {
+                // WebSocket経由でメッセージ送信
+                ws.send(JSON.stringify({
+                    message: message
+                }));
+                
+                console.log('WebSocket送信:', message);
+            } catch (error) {
+                hideTypingIndicator();
+                addMessage('assistant', '申し訳ございません。メッセージ送信エラーが発生しました。');
+                console.error('送信エラー:', error);
+            } finally {
+                sendButton.disabled = false;
+                userInput.focus();
+            }
+        }
+
+        // 音声認識の初期化
+        function initSpeechRecognition() {
+            if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                recognition = new SpeechRecognition();
+                
+                recognition.continuous = false;
+                recognition.interimResults = false;
+                recognition.lang = 'ja-JP';
+                
+                recognition.onstart = function() {
+                    console.log('音声認識開始');
+                    isRecording = true;
+                    voiceButton.classList.add('recording');
+                    voiceButton.title = '音声認識中...';
+                };
+                
+                recognition.onresult = function(event) {
+                    const result = event.results[0][0].transcript;
+                    console.log('音声認識結果:', result);
+                    
+                    userInput.value = result;
+                    userInput.focus();
+                    
+                    // 音声認識終了
+                    stopRecording();
+                };
+                
+                recognition.onerror = function(event) {
+                    console.error('音声認識エラー:', event.error);
+                    stopRecording();
+                    
+                    let errorMessage = '音声認識でエラーが発生しました';
+                    switch(event.error) {
+                        case 'no-speech':
+                            errorMessage = '音声が検出されませんでした';
+                            break;
+                        case 'audio-capture':
+                            errorMessage = 'マイクへのアクセスができません';
+                            break;
+                        case 'not-allowed':
+                            errorMessage = 'マイクの使用が許可されていません';
+                            break;
+                    }
+                    alert(errorMessage);
+                };
+                
+                recognition.onend = function() {
+                    console.log('音声認識終了');
+                    stopRecording();
+                };
+                
+                console.log('音声認識機能が利用可能です');
+            } else {
+                console.warn('このブラウザは音声認識をサポートしていません');
+                voiceButton.style.display = 'none';
+            }
+        }
+        
+        // 音声録音の開始
+        function startRecording() {
+            if (recognition && !isRecording) {
+                try {
+                    recognition.start();
+                } catch (error) {
+                    console.error('音声認識開始エラー:', error);
+                    alert('音声認識を開始できませんでした');
+                }
+            }
+        }
+        
+        // 音声録音の停止
+        function stopRecording() {
+            if (recognition && isRecording) {
+                try {
+                    recognition.stop();
+                } catch (error) {
+                    console.error('音声認識停止エラー:', error);
+                }
+            }
+            
+            isRecording = false;
+            voiceButton.classList.remove('recording');
+            voiceButton.title = '音声入力';
+        }
+        
+        // 音声入力ボタンのクリックイベント
+        voiceButton.addEventListener('click', function() {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                startRecording();
+            }
+        });
+        
+        // イベントリスナー
+        sendButton.addEventListener('click', sendMessage);
+        userInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // 初期化
+        console.log('ページ読み込み完了');
+        console.log('シークレットオーバーレイ:', secretOverlay);
+        console.log('チャットメッセージエリア:', document.getElementById('chat-messages'));
+        
+        // 音声認識機能の初期化
+        initSpeechRecognition();
+        
+        // 常連さまモードは一時保留のため、通常モードで自動的にセッション作成
+        createSession();
+    </script>
+</body>
+</html>
+

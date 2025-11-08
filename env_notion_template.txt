@@ -1,0 +1,22 @@
+# Notion連携用環境変数設定
+# このファイルを .env にコピーして使用してください
+
+# Notion API設定
+NOTION_API_KEY=your_notion_api_key_here
+
+# 会話ノードDBのデータベースID
+NOTION_DS_NODES=your_conversation_nodes_db_id_here
+
+# 遷移ルールDBのデータベースID  
+NOTION_DS_TRANSITIONS=your_transition_rules_db_id_here
+
+# メニューDBのデータベースID
+NOTION_DS_MENU=258e9a7ee5b78054922de365bec99064
+
+# タイムゾーン設定
+TZ=Asia/Tokyo
+
+# 既存の設定（変更不要）
+OPENAI_API_KEY=your_openai_api_key_here
+LANGSMITH_API_KEY=your_langsmith_api_key_here
+SERPAPI_API_KEY=your_serpapi_api_key_here

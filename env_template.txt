@@ -1,0 +1,30 @@
+# このファイルを .env にリネームして使用してください
+# OpenAI API Key（必須）
+OPENAI_API_KEY=sk-your-api-key-here
+
+# Notion API Key（オプション）
+NOTION_API_KEY=secret_your-notion-api-key-here
+NOTION_TOKEN=secret_your-notion-api-key-here
+
+# Notion Database IDs（オプション）
+NOTION_CUSTOMER_DB_ID=your-customer-db-id-here
+NOTION_CONVERSATION_DB_ID=your-conversation-db-id-here
+NOTION_DS_MENU=258e9a7ee5b78054922de365bec99064
+NOTION_DS_NODES=your-conversation-nodes-db-id-here
+NOTION_DS_TRANSITIONS=your-transition-rules-db-id-here
+
+# LangSmith API Key（オプション・トレーシング機能）
+LANGSMITH_API_KEY=your-langsmith-api-key-here
+LANGSMITH_PROJECT=ootsuki2
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
+
+# SerpAPI Key（オプション・Web検索用）
+SERPAPI_API_KEY=your-serpapi-key-here
+
+# Chroma永続化ディレクトリ（オプション）
+CHROMA_PERSIST_DIR=data/chroma
+
+# RAG厳格モード（オプション）
+REQUIRE_CHROMA=false
+

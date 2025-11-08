@@ -1,0 +1,86 @@
+project_name: "おおつきチャットBOT v2"
+frontend_title: "おおつきAIメニューアシスタント"
+default_language: "ja"
+
+server:
+  host: "0.0.0.0"
+  port: 8011
+
+notion:
+  api_key: ${NOTION_API_KEY}   
+  database_ids:
+    # 環境変数から自動取得（NOTION_DATABASE_ID_MENU）
+    # または直接IDを記入
+    menu_db: "258e9a7e-e5b7-8054-922d-e365bec99064"
+    store_db: "262e9a7ee5b7806e911ce966a0ccf7fe"
+    conversation_db: "700563e396c84f8f89adafb90c51ca3f"  # 会話ノードDB
+    unknown_keywords_db: "6cccf26b198645f2b08d71fb9b1d01f0"  # 不明キーワード記録DB
+
+knowledge_base:
+  path: "./apps/ootuki_restaurant/knowledge/"
+  format: "markdown"
+  categories:
+    - menu          # メニュー情報
+    - store_info    # 店舗情報
+    - access        # アクセス情報
+
+chroma:
+  persist_dir: "data/chroma/ootuki_restaurant"
+  collection_name: "ootuki_restaurant"
+
+ai:
+  model: "gpt-4o-mini"  # チャットボット用：安価で高性能
+  embedding: "text-embedding-ada-002"
+  temperature: 0.7  # バランスの取れた設定
+  # コード生成用の設定（Codex機能：コスト最優先）
+  code_generation:
+    model: "gpt-4o-mini"  # コード生成も安価モデル（十分な品質）
+    temperature: 0.2  # コード生成は正確性重視
+  system_prompt_file: "./apps/ootuki_restaurant/prompts.py"
+  system_prompt: |
+    あなたはおおつきレストランのAIアシスタントです。
+    丁寧で親しみやすい口調で応答してください。
+
+business_logic:
+  conversation_flow:
+    - greeting              # 挨拶
+    - menu_inquiry          # メニュー問い合わせ
+    - recommendation        # おすすめ提案
+    - store_info            # 店舗情報案内
+    - reservation_info      # 予約案内
+
+features:
+  enable_rag: true          # RAG検索を有効化
+  enable_serp: false        # Web検索を無効化（飲食店には不要）
+  enable_notion: true       # Notion連携を有効化
+  enable_langgraph: true    # LangGraph会話フロー制御を有効化（ハイブリッドUI実装）
+  enable_simple_graph: true # SimpleGraphEngine（WebSocket用シンプルフロー）を有効化
+  enable_scheduler: true    # プロアクティブメッセージスケジューラーを有効化
+  enable_agent_executor: false # AgentExecutorによる自動ツール呼び出しを有効化
+  save_conversation: false  # 会話履歴の保存（プライバシー考慮で無効化推奨）
+
+langgraph:
+  flow_type: "restaurant"   # 会話フロータイプ（restaurant, insurance, legal, generic）
+  enable_intent_detection: true  # 意図検出を有効化
+  nodes:                    # 使用するノード
+    - greeting              # 挨拶
+    - intent_detection      # 意図検出
+    - menu_inquiry          # メニュー問い合わせ
+    - store_info            # 店舗情報
+    - recommendation        # おすすめ提案
+    - reservation           # 予約案内
+
+# 利用上の注意
+# 1. NOTION_API_KEY は .env ファイルに設定してください
+# 2. database_ids は Notion データベースの ID を設定してください
+# 3. knowledge/ フォルダにメニュー情報を配置してください
+
+agent:
+  max_iterations: 5
+  system_prompt: |
+    あなたは「食事処おおつき」のAIスタッフです。以下を厳守して、丁寧で人間味のある口調で応対してください。
+    1. ツール menu_search / menu_price_lookup / knowledge_base_lookup を適切に使用し、事実に基づいて回答すること。
+    2. 価格や営業時間など店舗固有情報は必ずツールで取得した内容か、未取得であることを伝えること。
+    3. 応答は2〜3文を目安に、最初に共感やねぎらいのひと言を添えてから要点を伝えること。
+    4. 情報不明の場合は推測せず「確認中です」と伝え、必要に応じて確認事項を質問すること。
+
