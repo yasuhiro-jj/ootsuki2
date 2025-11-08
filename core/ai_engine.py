@@ -14,12 +14,15 @@ from datetime import datetime
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 try:
-    from langchain_community.memory import ConversationBufferMemory
+    from langchain_core.memory import ConversationBufferMemory
 except ImportError:
     try:
-        from langchain.memory.buffer import ConversationBufferMemory
+        from langchain_community.memory import ConversationBufferMemory
     except ImportError:
-        from langchain.memory import ConversationBufferMemory
+        try:
+            from langchain.memory.buffer import ConversationBufferMemory
+        except ImportError:
+            from langchain.memory import ConversationBufferMemory
 
 logger = logging.getLogger(__name__)
 
