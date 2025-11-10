@@ -316,69 +316,6 @@
             opacity: 0.5;
             cursor: not-allowed;
         }
-        
-        /* 音声入力ボタンスタイル */
-        .voice-btn {
-            padding: 15px;
-            background: linear-gradient(135deg, #f59e0b, #d97706);
-            color: white;
-            border: none;
-            border-radius: 50%;
-            font-size: 18px;
-            cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
-            overflow: hidden;
-            transform: translateZ(0);
-            width: 50px;
-            height: 50px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .voice-btn:hover {
-            transform: translateY(-2px) translateZ(5px);
-            box-shadow: 0 8px 20px rgba(245, 158, 11, 0.4);
-        }
-        
-        .voice-btn:active {
-            transform: translateY(0) translateZ(2px);
-        }
-        
-        .voice-btn.recording {
-            background: linear-gradient(135deg, #ef4444, #dc2626);
-            animation: pulse 1.5s infinite;
-        }
-        
-        .voice-btn.recording::before {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            background: rgba(239, 68, 68, 0.3);
-            transform: translate(-50%, -50%);
-            animation: ripple 1.5s infinite;
-        }
-        
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-        }
-        
-        @keyframes ripple {
-            0% {
-                transform: translate(-50%, -50%) scale(1);
-                opacity: 1;
-            }
-            100% {
-                transform: translate(-50%, -50%) scale(1.5);
-                opacity: 0;
-            }
-        }
 
         .typing-indicator {
             display: none;
@@ -786,9 +723,6 @@
                 placeholder="メッセージを入力..."
                 autocomplete="off"
             >
-            <button id="voice-button" class="voice-btn" title="音声入力">
-                🎤
-            </button>
             <button id="send-button">送信</button>
         </div>
     </div>
@@ -798,15 +732,10 @@
         let ws = null;
         let customerSecret = null;  // 顧客シークレット（ニックネームまたはキー）
         let customerConsent = false;  // 嗜好保存の同意
-        
-        // 音声認識関連の変数
-        let recognition = null;
-        let isRecording = false;
 
         const chatMessages = document.getElementById('chat-messages');
         const userInput = document.getElementById('user-input');
         const sendButton = document.getElementById('send-button');
-        const voiceButton = document.getElementById('voice-button');
         
         // シークレット入力画面の要素
         const secretOverlay = document.getElementById('secretOverlay');
@@ -1182,102 +1111,6 @@
                 userInput.focus();
             }
         }
-
-        // 音声認識の初期化
-        function initSpeechRecognition() {
-            if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                recognition = new SpeechRecognition();
-                
-                recognition.continuous = false;
-                recognition.interimResults = false;
-                recognition.lang = 'ja-JP';
-                
-                recognition.onstart = function() {
-                    console.log('音声認識開始');
-                    isRecording = true;
-                    voiceButton.classList.add('recording');
-                    voiceButton.title = '音声認識中...';
-                };
-                
-                recognition.onresult = function(event) {
-                    const result = event.results[0][0].transcript;
-                    console.log('音声認識結果:', result);
-                    
-                    userInput.value = result;
-                    userInput.focus();
-                    
-                    // 音声認識終了
-                    stopRecording();
-                };
-                
-                recognition.onerror = function(event) {
-                    console.error('音声認識エラー:', event.error);
-                    stopRecording();
-                    
-                    let errorMessage = '音声認識でエラーが発生しました';
-                    switch(event.error) {
-                        case 'no-speech':
-                            errorMessage = '音声が検出されませんでした';
-                            break;
-                        case 'audio-capture':
-                            errorMessage = 'マイクへのアクセスができません';
-                            break;
-                        case 'not-allowed':
-                            errorMessage = 'マイクの使用が許可されていません';
-                            break;
-                    }
-                    alert(errorMessage);
-                };
-                
-                recognition.onend = function() {
-                    console.log('音声認識終了');
-                    stopRecording();
-                };
-                
-                console.log('音声認識機能が利用可能です');
-            } else {
-                console.warn('このブラウザは音声認識をサポートしていません');
-                voiceButton.style.display = 'none';
-            }
-        }
-        
-        // 音声録音の開始
-        function startRecording() {
-            if (recognition && !isRecording) {
-                try {
-                    recognition.start();
-                } catch (error) {
-                    console.error('音声認識開始エラー:', error);
-                    alert('音声認識を開始できませんでした');
-                }
-            }
-        }
-        
-        // 音声録音の停止
-        function stopRecording() {
-            if (recognition && isRecording) {
-                try {
-                    recognition.stop();
-                } catch (error) {
-                    console.error('音声認識停止エラー:', error);
-                }
-            }
-            
-            isRecording = false;
-            voiceButton.classList.remove('recording');
-            voiceButton.title = '音声入力';
-        }
-        
-        // 音声入力ボタンのクリックイベント
-        voiceButton.addEventListener('click', function() {
-            if (isRecording) {
-                stopRecording();
-            } else {
-                startRecording();
-            }
-        });
-        
         // イベントリスナー
         sendButton.addEventListener('click', sendMessage);
         userInput.addEventListener('keypress', (e) => {
@@ -1290,9 +1123,6 @@
         console.log('ページ読み込み完了');
         console.log('シークレットオーバーレイ:', secretOverlay);
         console.log('チャットメッセージエリア:', document.getElementById('chat-messages'));
-        
-        // 音声認識機能の初期化
-        initSpeechRecognition();
         
         // 常連さまモードは一時保留のため、通常モードで自動的にセッション作成
         createSession();
