@@ -3799,6 +3799,9 @@ class SimpleGraphEngine:
         logger.info(f"[Route] メッセージ: '{last_message}'")
         logger.info(f"[Route] SimpleGraphEngine動作確認: ルーティング開始")
         
+        # 正規化したメッセージを作成（キーワードマッチング用）
+        normalized_last_message = self._normalize_text(last_message)
+        
         # 「（続きを見る）」を含むメッセージは最優先でoption_clickにルーティング
         if "（続きを見る）" in last_message:
             logger.info(f"[Route] 続きを見る検出: '{last_message}' → option_click")
@@ -3853,7 +3856,7 @@ class SimpleGraphEngine:
         sashimi_keywords = [
             # 基本的な刺身表現
             "刺身", "さしみ", "お刺身", "海鮮刺身", "刺身盛り", "刺身定食",
-            "刺身盛合", "刺し身", "造り", "お造り", "盛り合わせ",
+            "刺身盛合", "刺し身", "造り", "お造り", "盛り合わせ", "刺盛", "さしもり",
             
             # 短縮形・口語表現（「〇〇刺」パターン）
             "まぐろ刺", "マグロ刺", "鮪刺", "サーモン刺", "さーもん刺", "鯛刺", "タイ刺",
@@ -3861,17 +3864,26 @@ class SimpleGraphEngine:
             "さば刺", "サバ刺", "鯖刺", "ぶり刺", "ブリ刺", "鰤刺", "かつお刺", "カツオ刺", "鰹刺",
             "たこ刺", "タコ刺", "蛸刺", "えび刺", "エビ刺", "海老刺", "あなご刺", "アナゴ刺", "穴子刺",
             
-            # 魚名のみ（刺身文脈）
-            "まぐろ", "マグロ", "鮪", "サーモン", "さーもん", "鮭", "しゃけ",
-            "鯛", "タイ", "真鯛", "あじ", "アジ", "鯵", "いか", "イカ", "烏賊",
-            "ほたて", "ホタテ", "帆立", "さば", "サバ", "鯖", "ぶり", "ブリ", "鰤",
-            "かつお", "カツオ", "鰹", "たこ", "タコ", "蛸", "えび", "エビ", "海老",
+            # 魚名のみ（刺身文脈）- 正規化を通じてカタカナ・ひらがなを統一
+            "まぐろ", "鮪", "tuna", "ツナ", "つな",
+            "サーモン", "さーもん", "鮭", "しゃけ", "salmon",
+            "鯛", "たい", "真鯛", "まだい",
+            "あじ", "鯵", "アジ",
+            "いか", "烏賊", "イカ",
+            "ほたて", "帆立", "ホタテ",
+            "さば", "鯖", "サバ",
+            "ぶり", "鰤", "ブリ",
+            "かつお", "鰹", "カツオ",
+            "たこ", "蛸", "タコ",
+            "えび", "海老", "エビ",
+            "はまち", "ハマチ", "ねぎとろ", "ネギトロ",
             
             # その他の刺身表現
-            "生魚", "なまざかな", "海鮮", "かいせん", "活魚", "鮮魚"
+            "生魚", "なまざかな", "海鮮", "かいせん", "活魚", "鮮魚", "新鮮", "生"
         ]
         
-        sashimi_matches = [kw for kw in sashimi_keywords if kw in last_message]
+        # 正規化して比較
+        sashimi_matches = [kw for kw in sashimi_keywords if self._normalize_text(kw) in normalized_last_message]
         if sashimi_matches:
             logger.info(f"[Route] 刺身キーワード検出: {sashimi_matches}")
             logger.info(f"[Route] '{last_message}' → sashimi_flow にルーティング")
@@ -3893,22 +3905,23 @@ class SimpleGraphEngine:
         # 定食関連キーワード（柔軟な表現対応）
         teishoku_keywords = [
             # 基本的な定食表現
-            "定食", "ていしょく", "お定食", "おていしょく", "セット",
+            "定食", "ていしょく", "お定食", "おていしょく", "セット", "せっと",
             
             # 具体的な定食名
-            "刺身定食", "刺し身定食", "海鮮定食", "かいせん定食", "焼き魚定食", "焼魚定食",
-            "煮魚定食", "煮付定食", "煮付け定食", "揚げ物定食", "フライ定食", "唐揚げ定食",
-            "天ぷら定食", "てんぷら定食", "天麩羅定食", "とんかつ定食", "トンカツ定食", "豚カツ定食",
-            "チキンカツ定食", "鶏カツ定食", "アジフライ定食", "鯵フライ定食", "ミックスフライ定食",
+            "刺身定食", "刺し身定食", "海鮮定食", "かいせん定食", "焼き魚定食", "焼魚定食", "やきざかな定食",
+            "煮魚定食", "煮付定食", "煮付け定食", "にざかな定食", "揚げ物定食", "あげもの定食", "フライ定食", "唐揚げ定食", "からあげ定食",
+            "天ぷら定食", "てんぷら定食", "天麩羅定食", "とんかつ定食", "トンカツ定食", "豚カツ定食", "かつ定食",
+            "チキンカツ定食", "鶏カツ定食", "とりかつ定食", "アジフライ定食", "鯵フライ定食", "あじふらい定食", "ミックスフライ定食",
             
             # おすすめ・日替わり系
-            "おすすめ定食", "お勧め定食", "日替わり定食", "日替定食", "本日の定食", "今日の定食",
+            "おすすめ定食", "お勧め定食", "お薦め定食", "推奨定食", "人気定食", "にんき定食",
+            "日替わり定食", "日替定食", "ひがわり定食", "本日の定食", "今日の定食", "きょうの定食",
             
             # ランチ定食
-            "ランチ定食", "ランチセット", "昼定食", "お昼定食"
+            "ランチ定食", "らんち定食", "ランチセット", "らんちせっと", "昼定食", "ひる定食", "お昼定食"
         ]
         
-        teishoku_matches = [kw for kw in teishoku_keywords if kw in last_message]
+        teishoku_matches = [kw for kw in teishoku_keywords if self._normalize_text(kw) in normalized_last_message]
         if teishoku_matches:
             logger.info(f"[Route] 定食キーワード検出: {teishoku_matches}")
             logger.info(f"[Route] '{last_message}' → general_response (定食)")
@@ -3941,18 +3954,21 @@ class SimpleGraphEngine:
             "鮨", "鮓", "握り", "にぎり", "ニギリ",
             
             # 寿司の種類
-            "にぎり寿司", "握り寿司", "握りずし", "巻き寿司", "巻きずし", "巻物",
-            "ちらし寿司", "ちらしずし", "散らし寿司", "お好み寿司", "おこのみ寿司",
-            "おまかせ寿司", "お任せ寿司", "特上寿司", "とくじょう寿司",
+            "にぎり寿司", "握り寿司", "握りずし", "巻き寿司", "巻きずし", "巻物", "まきもの",
+            "ちらし寿司", "ちらしずし", "散らし寿司", "お好み寿司", "おこのみ寿司", "好み寿司",
+            "おまかせ寿司", "お任せ寿司", "任せ寿司", "特上寿司", "とくじょう寿司", "特上",
+            "上寿司", "じょうずし", "並寿司", "なみずし",
             
             # 寿司ランチ
-            "寿司ランチ", "すしランチ", "寿司セット", "寿司定食",
+            "寿司ランチ", "すしランチ", "寿司セット", "すしセット", "寿司定食", "すし定食",
+            "にぎりランチ", "握りランチ",
             
             # ネタの表現
-            "トロ", "とろ", "大トロ", "中トロ", "赤身", "あかみ", "光物", "ひかりもの"
+            "トロ", "とろ", "大トロ", "おおとろ", "中トロ", "ちゅうとろ", "赤身", "あかみ", 
+            "光物", "ひかりもの", "ひかりもん", "白身", "しろみ", "青魚", "あおざかな"
         ]
         
-        sushi_matches = [kw for kw in sushi_keywords if kw in last_message]
+        sushi_matches = [kw for kw in sushi_keywords if self._normalize_text(kw) in normalized_last_message]
         if sushi_matches:
             logger.info(f"[Route] 寿司キーワード検出: {sushi_matches}")
             logger.info(f"[Route] '{last_message}' → general_response (寿司)")
@@ -4186,35 +4202,38 @@ class SimpleGraphEngine:
         
         # おすすめ関連（部分一致対応）- general_responseの後で処理
         recommend_keywords = [
-            "おすすめ", "お勧め", "オススメ", "何が", "人気", "一押し", "どれが", "どの",
-            "おいしい", "美味しい", "うまい", "うまい", "最高", "ベスト", "イチオシ"
+            "おすすめ", "お勧め", "オススメ", "お薦め", "推奨", "何が", "人気", "一押し", "どれが", "どの",
+            "おいしい", "美味しい", "うまい", "旨い", "最高", "ベスト", "イチオシ", "いちおし",
+            "何がいい", "どれがいい", "何がおすすめ", "どれがおすすめ", "食べるべき", "頼むべき"
         ]
         
-        recommend_matches = [kw for kw in recommend_keywords if kw in last_message]
+        recommend_matches = [kw for kw in recommend_keywords if self._normalize_text(kw) in normalized_last_message]
         if recommend_matches:
             logger.info(f"[Route] おすすめキーワード検出: {recommend_matches}")
             return "proactive_recommend"
         
         # メニュー質問関連（部分一致対応）
         menu_question_keywords = [
-            "ありますか", "ある？", "ください", "頼みたい", "注文", "お願い", "教えて",
-            "何が", "どんな", "メニュー", "ラインナップ", "種類", "カテゴリ", "分類",
-            "について", "紹介", "案内", "知りたい", "見たい", "見せて", "表示"
+            "ありますか", "ある？", "あるか", "ください", "頼みたい", "注文", "お願い", "教えて",
+            "何が", "どんな", "メニュー", "めにゅー", "ラインナップ", "種類", "カテゴリ", "分類",
+            "について", "紹介", "案内", "知りたい", "見たい", "見せて", "表示", "確認"
         ]
         
-        menu_question_matches = [kw for kw in menu_question_keywords if kw in last_message]
+        menu_question_matches = [kw for kw in menu_question_keywords if self._normalize_text(kw) in normalized_last_message]
         if menu_question_matches:
             logger.info(f"[Route] メニュー質問キーワード検出: {menu_question_matches}")
             return "general"
         
         # 食事・料理関連（部分一致対応）- 寿司は除外（上で処理済み）
         food_keywords = [
-            "メニュー", "食事", "定食", "見せて", "見たい", "料理", "食べ物", "食べたい",
-            "お腹", "おなか", "腹", "はら", "サラダ", "一品", "魚", "肉", "野菜", "海鮮",
-            "刺身", "焼き物", "煮物", "ランチ", "昼食", "夜", "ディナー"
+            "メニュー", "めにゅー", "食事", "定食", "ていしょく", "セット", "せっと",
+            "見せて", "見たい", "料理", "りょうり", "食べ物", "食べたい",
+            "お腹", "おなか", "腹", "はら", "空いた", "減った",
+            "サラダ", "一品", "魚", "さかな", "肉", "にく", "野菜", "やさい", "海鮮", "かいせん",
+            "刺身", "さしみ", "焼き物", "煮物", "揚げ物", "ランチ", "らんち", "昼食", "お昼", "夜", "よる", "ディナー", "でぃなー"
         ]
         
-        food_matches = [kw for kw in food_keywords if kw in last_message]
+        food_matches = [kw for kw in food_keywords if self._normalize_text(kw) in normalized_last_message]
         if food_matches:
             logger.info(f"[Route] 食事・料理キーワード検出: {food_matches}")
             return "food_flow"
@@ -4352,7 +4371,7 @@ class SimpleGraphEngine:
     
     def _normalize_text(self, text: str) -> str:
         """
-        テキストを正規化（NFKC、全角半角・かなカナ統一、句読点統一）
+        テキストを正規化（NFKC、全角半角・かなカナ統一、句読点統一、表記ゆれ対応）
         
         Args:
             text: 正規化するテキスト
@@ -4372,15 +4391,86 @@ class SimpleGraphEngine:
         # 全角半角統一
         text = text.replace('，', ',').replace('。', '.').replace('？', '?').replace('！', '!')
         
-        # かなカナ統一（ひらがなに統一）
-        text = text.replace('ァ', 'ぁ').replace('ィ', 'ぃ').replace('ゥ', 'ぅ').replace('ェ', 'ぇ').replace('ォ', 'ぉ')
-        text = text.replace('ャ', 'ゃ').replace('ュ', 'ゅ').replace('ョ', 'ょ')
-        text = text.replace('ッ', 'っ').replace('ー', 'ー')
+        # カタカナをひらがなに統一（より広範囲に）
+        katakana_to_hiragana = str.maketrans(
+            'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲンガギグゲゴザジズゼゾダヂヅデドバビブベボパピプペポァィゥェォャュョッ',
+            'あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんがぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽぁぃぅぇぉゃゅょっ'
+        )
+        text = text.translate(katakana_to_hiragana)
         
         # 句読点統一（, を採用）
         text = re.sub(r'[,，、]', ',', text)
         
+        # スペース・記号の除去（柔軟なマッチングのため）
+        text = text.replace(' ', '').replace('　', '').replace('-', '').replace('・', '')
+        
         return text
+    
+    def _expand_keywords(self, keywords: List[str]) -> List[str]:
+        """
+        キーワードを拡張（表記ゆれ、類義語、短縮形を追加）
+        
+        Args:
+            keywords: 元のキーワードリスト
+        
+        Returns:
+            拡張されたキーワードリスト
+        """
+        expanded = list(keywords)  # コピー
+        
+        # 表記ゆれマッピング（より広範囲に）
+        variations = {
+            # 定食関連
+            "定食": ["ていしょく", "セット", "せっと"],
+            "おすすめ定食": ["おすすめ", "おすすめセット", "お勧め定食", "お薦め定食", "推奨定食", "人気定食"],
+            "日替わり": ["日替わりランチ", "本日の定食", "今日の定食", "デイリー"],
+            
+            # 刺身関連
+            "刺身": ["さしみ", "お刺身", "刺し身", "造り", "お造り"],
+            "海鮮刺身": ["海鮮", "かいせん", "海の幸", "魚介"],
+            
+            # 丼物関連
+            "丼": ["どんぶり", "どん", "丼物", "ライス"],
+            "海鮮丼": ["かいせん丼", "海の幸丼", "魚介丼"],
+            
+            # 寿司関連
+            "寿司": ["すし", "お寿司", "にぎり", "握り", "鮨", "鮓"],
+            "寿司ランチ": ["すしランチ", "寿司セット", "寿司定食", "にぎりランチ"],
+            
+            # 揚げ物関連
+            "揚げ物": ["あげもの", "フライ", "揚物"],
+            "唐揚げ": ["からあげ", "から揚げ", "空揚げ", "竜田揚げ"],
+            "天ぷら": ["てんぷら", "天麩羅", "天婦羅"],
+            
+            # ドリンク関連
+            "ドリンク": ["飲み物", "のみもの", "お飲物", "ドリンクメニュー", "飲料"],
+            "お酒": ["酒", "さけ", "アルコール", "日本酒", "焼酎", "ビール"],
+            "ビール": ["びーる", "生ビール", "生", "draft"],
+            
+            # その他
+            "メニュー": ["めにゅー", "品書き", "お品書き", "料理", "食事"],
+            "ランチ": ["らんち", "昼食", "お昼", "lunch"],
+            "予約": ["よやく", "reservation", "予約したい", "席を取りたい"],
+            "店舗情報": ["店の情報", "お店の情報", "営業時間", "場所", "アクセス", "住所", "電話番号"],
+            "テイクアウト": ["持ち帰り", "お持ち帰り", "弁当", "お弁当"],
+            
+            # 魚名
+            "まぐろ": ["マグロ", "鮪", "tuna"],
+            "サーモン": ["さーもん", "鮭", "しゃけ", "salmon"],
+            "鯛": ["たい", "タイ", "真鯛"],
+            "あじ": ["アジ", "鯵", "あじ刺", "アジ刺"],
+            "いか": ["イカ", "烏賊"],
+            "ぶり": ["ブリ", "鰤"],
+        }
+        
+        # キーワードごとに拡張
+        for keyword in keywords:
+            if keyword in variations:
+                for variant in variations[keyword]:
+                    if variant not in expanded:
+                        expanded.append(variant)
+        
+        return expanded
     
     def _apply_recommended_tone(self, response_text: str, node_data: Dict[str, Any]) -> str:
         """
@@ -4716,7 +4806,7 @@ class SimpleGraphEngine:
     
     def _find_node_by_keywords(self, user_input: str, conversation_nodes: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """
-        キーワードマッチングによる柔軟なノード検索
+        キーワードマッチングによる柔軟なノード検索（拡張版）
         
         Args:
             user_input: ユーザーの入力
@@ -4740,21 +4830,43 @@ class SimpleGraphEngine:
             subcategory = node_data.get("subcategory", "")
             priority = node_data.get("priority", 99)
             
+            # キーワードを拡張（表記ゆれ、類義語を追加）
+            expanded_keywords = self._expand_keywords(keywords)
+            
             score = 0
             
             # ノード名での完全一致（最高優先度）
-            if node_name.lower() in normalized_input or normalized_input in node_name.lower():
+            normalized_node_name = self._normalize_text(node_name.lower())
+            if normalized_node_name in normalized_input or normalized_input in normalized_node_name:
                 score += 100
             
-            # キーワードでの部分一致（より柔軟に）
-            for keyword in keywords:
-                keyword_lower = keyword.lower()
-                if keyword_lower in normalized_input or normalized_input in keyword_lower:
-                    score += 20  # スコアを上げる
+            # ノード名での部分一致（中程度の優先度）
+            node_name_words = normalized_node_name.split()
+            input_words = normalized_input.split()
+            for word in node_name_words:
+                if word and len(word) >= 2:  # 2文字以上の単語のみ
+                    if word in normalized_input:
+                        score += 30
+            
+            # 拡張キーワードでの部分一致（柔軟なマッチング）
+            for keyword in expanded_keywords:
+                normalized_keyword = self._normalize_text(keyword.lower())
+                
+                # 完全一致
+                if normalized_keyword == normalized_input or normalized_input == normalized_keyword:
+                    score += 50
+                # 部分一致（キーワードが入力に含まれる）
+                elif normalized_keyword in normalized_input:
+                    score += 25
+                # 部分一致（入力がキーワードに含まれる）
+                elif normalized_input in normalized_keyword and len(normalized_input) >= 2:
+                    score += 20
             
             # サブカテゴリでの一致
-            if subcategory and subcategory.lower() in normalized_input:
-                score += 15  # スコアを上げる
+            if subcategory:
+                normalized_subcategory = self._normalize_text(subcategory.lower())
+                if normalized_subcategory in normalized_input or normalized_input in normalized_subcategory:
+                    score += 15
             
             # 優先度による減点（優先度が低いほど減点）
             # priorityがNoneの場合は99とする
@@ -4766,10 +4878,11 @@ class SimpleGraphEngine:
                 best_match = node_data
         
         # スコアが閾値以上の場合は返す（より柔軟な閾値）
-        if best_score >= -90:  # 優先度99でもキーワードマッチすれば返す
+        if best_score >= -80:  # 優先度99でもキーワードマッチすれば返す（閾値を緩和）
             logger.info(f"[KeywordMatch] ノード検索: '{user_input}' → {best_match.get('name', '不明')} (スコア: {best_score})")
             return best_match
         
+        logger.debug(f"[KeywordMatch] マッチなし: '{user_input}' (最高スコア: {best_score})")
         return None
     
     def _arrange_recommended_teishoku_buttons(self, options: List[str], node_data: Dict[str, Any]) -> List[str]:

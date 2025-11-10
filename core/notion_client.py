@@ -6,9 +6,10 @@ Notion APIとの連携を汎用的に提供するクライアントクラス
 
 import os
 import logging
+import time
 from typing import List, Dict, Any, Optional
 from notion_client import Client
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +37,14 @@ class NotionClient:
                 self.client = Client(auth=self.api_key)
                 logger.info("[OK] Notionクライアントが正常に初期化されました")
             else:
-                logger.warning("⚠️ Notion API Keyが設定されていません")
+                logger.error("❌ Notion API Keyが設定されていません")
+                logger.error("【対処方法】環境変数 NOTION_API_KEY を設定してください")
+                logger.error("  - ローカル: .env ファイルに NOTION_API_KEY=your_key_here")
+                logger.error("  - Railway: 環境変数タブで NOTION_API_KEY を設定")
         except Exception as e:
             logger.error(f"❌ Notionクライアントの初期化に失敗: {e}")
+            import traceback
+            logger.error(f"トレースバック: {traceback.format_exc()}")
     
     def query_database(
         self,
@@ -90,7 +96,8 @@ class NotionClient:
             全ページのリスト
         """
         if not self.client:
-            logger.warning("Notionクライアントが初期化されていません")
+            logger.error("❌ Notionクライアントが初期化されていません")
+            logger.error("【対処方法】NOTION_API_KEY が正しく設定されているか確認してください")
             return []
         
         try:
@@ -120,7 +127,28 @@ class NotionClient:
             return all_pages
         
         except Exception as e:
-            logger.error(f"全ページ取得エラー: {e}")
+            # Notion API エラーの詳細を解析
+            from notion_client.errors import APIResponseError
+            if isinstance(e, APIResponseError):
+                if e.status == 401:
+                    logger.error(f"❌ Notion API 認証エラー: {e.code}")
+                    logger.error(f"   メッセージ: {e.message}")
+                    logger.error("【対処方法】")
+                    logger.error("  1. Railway の環境変数で NOTION_API_KEY が正しく設定されているか確認")
+                    logger.error("  2. ローカルの .env ファイルと Railway の設定値を比較")
+                    logger.error("  3. Notion Integration の API Key を再生成して設定")
+                elif e.status == 404:
+                    logger.error(f"❌ データベースが見つかりません: {e.code}")
+                    logger.error(f"   Database ID: {database_id[:20]}...")
+                    logger.error("【対処方法】")
+                    logger.error("  1. Database ID が正しいか確認")
+                    logger.error("  2. Notion Integration がこのデータベースへのアクセス権を持っているか確認")
+                else:
+                    logger.error(f"❌ Notion API エラー: status={e.status}, code={e.code}")
+                    logger.error(f"   メッセージ: {e.message}")
+            else:
+                logger.error(f"全ページ取得エラー: {e}")
+            
             import traceback
             logger.error(f"トレースバック: {traceback.format_exc()}")
             return []
@@ -1130,6 +1158,153 @@ class NotionClient:
             logger.error(f"[CrossSell] メッセージ生成エラー: {e}")
             return None
     
+    def save_conversation_history(
+        self,
+        database_id: str,
+        customer_id: str,
+        question: str,
+        answer: str,
+        timestamp: Optional[datetime] = None,
+        satisfaction: Optional[int] = None,
+        menu_reference: Optional[str] = None
+    ) -> bool:
+        """
+        会話履歴をNotionデータベースに保存（リトライ機能付き）
+        
+        Args:
+            database_id: 会話履歴データベースID
+            customer_id: 顧客ID（匿名、必須）
+            question: 質問内容
+            answer: 回答内容
+            timestamp: タイムスタンプ（Noneの場合は現在時刻、JST）
+            satisfaction: 満足度（1-5の整数、オプション）
+            menu_reference: 参照されたメニュー名（オプション）
+        
+        Returns:
+            保存成功時True、失敗時False
+        """
+        if not self.client:
+            logger.warning("Notionクライアントが初期化されていません")
+            return False
+        
+        if not database_id:
+            logger.warning("会話履歴データベースIDが設定されていません")
+            return False
+        
+        # 顧客IDが空の場合はエラー
+        if not customer_id or not customer_id.strip():
+            logger.error("顧客IDが空です。会話履歴を保存できません。")
+            return False
+        
+        # タイムスタンプの準備（JSTタイムゾーン付きISO8601形式）
+        if timestamp is None:
+            timestamp = datetime.now(timezone.utc).astimezone()  # システムのローカルタイムゾーン
+        elif timestamp.tzinfo is None:
+            # タイムゾーン情報がない場合はJST（UTC+9）を仮定
+            timestamp = timestamp.replace(tzinfo=timezone.utc).astimezone()
+        
+        # Notion API用のプロパティを構築
+        properties = {
+            "顧客ID": {
+                "title": [
+                    {
+                        "text": {
+                            "content": customer_id[:2000]  # Notionの制限に合わせて切り詰め
+                        }
+                    }
+                ]
+            },
+            "質問内容": {
+                "rich_text": [
+                    {
+                        "text": {
+                            "content": question[:2000]  # Notionの制限に合わせて切り詰め
+                        }
+                    }
+                ]
+            },
+            "回答内容": {
+                "rich_text": [
+                    {
+                        "text": {
+                            "content": answer[:2000]  # Notionの制限に合わせて切り詰め
+                        }
+                    }
+                ]
+            },
+            "タイムスタンプ": {
+                "date": {
+                    "start": timestamp.isoformat()  # ISO8601形式（タイムゾーン付き）
+                }
+            }
+        }
+        
+        # 満足度が指定されている場合は追加（1-5の整数）
+        if satisfaction is not None:
+            if isinstance(satisfaction, int) and 1 <= satisfaction <= 5:
+                properties["満足度"] = {
+                    "number": satisfaction
+                }
+            else:
+                logger.warning(f"満足度の値が無効です（1-5の範囲外）: {satisfaction}")
+        
+        # メニュー参照が指定されている場合は追加
+        if menu_reference and menu_reference.strip():
+            properties["メニュー参照"] = {
+                "rich_text": [
+                    {
+                        "text": {
+                            "content": menu_reference[:2000]  # Notionの制限に合わせて切り詰め
+                        }
+                    }
+                ]
+            }
+        
+        # リトライロジック（指数バックオフ）
+        max_retries = 4
+        base_delay = 1  # 初回1秒
+        
+        for attempt in range(max_retries):
+            try:
+                # 送信前のログ（構造化ログ）
+                conversation_id = f"{customer_id}_{timestamp.isoformat()}"
+                logger.debug(f"[ConversationHistory] 送信開始: conversation_id={conversation_id}, attempt={attempt+1}")
+                logger.debug(f"[ConversationHistory] ペイロード: customer_id={customer_id[:8]}..., question_length={len(question)}, answer_length={len(answer)}")
+                
+                # ページを作成
+                page = self.client.pages.create(
+                    parent={"database_id": database_id},
+                    properties=properties
+                )
+                
+                # 成功時のログ
+                page_id = page.get("id", "")
+                page_url = page.get("url", "")
+                logger.info(f"[OK] 会話履歴を保存しました: conversation_id={conversation_id}, page_id={page_id[:8]}..., url={page_url}")
+                
+                return True
+                
+            except Exception as e:
+                error_code = getattr(e, 'code', None)
+                error_status = getattr(e, 'status', None)
+                
+                # 429（レート制限）または503（サービス利用不可）の場合はリトライ
+                if error_status in [429, 503] and attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)  # 指数バックオフ: 1s, 2s, 4s, 8s
+                    logger.warning(f"[ConversationHistory] リトライ待機: status={error_status}, attempt={attempt+1}/{max_retries}, delay={delay}s")
+                    time.sleep(delay)
+                    continue
+                else:
+                    # リトライ不可または最大リトライ回数に達した場合
+                    logger.error(f"❌ 会話履歴の保存に失敗: conversation_id={conversation_id}, error={e}, status={error_status}")
+                    import traceback
+                    logger.error(f"トレースバック: {traceback.format_exc()}")
+                    return False
+        
+        # ここに到達することはないはずだが、念のため
+        logger.error(f"❌ 会話履歴の保存に失敗: 最大リトライ回数に達しました")
+        return False
+    
     def get_conversation_nodes(
         self,
         database_id: str,
@@ -1147,7 +1322,8 @@ class NotionClient:
         """
         try:
             if not self.client:
-                logger.warning("[ConversationNodes] Notionクライアント未初期化")
+                logger.error("❌ [ConversationNodes] Notionクライアント未初期化")
+                logger.error("【対処方法】NOTION_API_KEY が正しく設定されているか確認してください")
                 return []
             
             # ページネーション対応で取得
@@ -1281,7 +1457,30 @@ class NotionClient:
             return nodes
         
         except Exception as e:
-            logger.error(f"[ConversationNodes] 取得エラー: {e}")
+            # Notion API エラーの詳細を解析
+            from notion_client.errors import APIResponseError
+            if isinstance(e, APIResponseError):
+                if e.status == 401:
+                    logger.error(f"❌ [ConversationNodes] Notion API 認証エラー: {e.code}")
+                    logger.error(f"   メッセージ: {e.message}")
+                    logger.error("【重要】401 Unauthorized = API Key が無効です")
+                    logger.error("【対処方法】")
+                    logger.error("  1. Railway の環境変数タブで NOTION_API_KEY を確認")
+                    logger.error("  2. ローカルで動作する .env ファイルの NOTION_API_KEY と比較")
+                    logger.error("  3. Railway の NOTION_API_KEY を正しい値に更新")
+                    logger.error("  4. デプロイを再実行")
+                elif e.status == 404:
+                    logger.error(f"❌ [ConversationNodes] データベースが見つかりません: {e.code}")
+                    logger.error(f"   Database ID: {database_id[:20]}...")
+                    logger.error("【対処方法】")
+                    logger.error("  1. NOTION_DB_CONVERSATION が正しいか確認")
+                    logger.error("  2. Notion Integration がこのデータベースへのアクセス権を持っているか確認")
+                else:
+                    logger.error(f"❌ [ConversationNodes] Notion API エラー: status={e.status}, code={e.code}")
+                    logger.error(f"   メッセージ: {e.message}")
+            else:
+                logger.error(f"[ConversationNodes] 取得エラー: {e}")
+            
             import traceback
             logger.error(f"[ConversationNodes] トレースバック: {traceback.format_exc()}")
             return []

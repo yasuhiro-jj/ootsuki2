@@ -409,8 +409,27 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     )
                     response_options = []
             
+            # 会話履歴をNotionに保存（設定で有効な場合）
+            if config.get("features.save_conversation", False):
+                try:
+                    conversation_db_id = config.get("notion.database_ids.conversation_history_db")
+                    if conversation_db_id and conversation_db_id.strip():
+                        customer_id = request.customer_id or session_id[:8]  # セッションIDの最初の8文字を使用
+                        notion_client.save_conversation_history(
+                            database_id=conversation_db_id,
+                            customer_id=customer_id,
+                            question=request.message,
+                            answer=response_message,
+                            timestamp=datetime.now()
+                        )
+                        logger.info(f"[OK] 会話履歴を保存しました: {customer_id}")
+                    else:
+                        logger.warning("[WARN] 会話履歴データベースIDが設定されていません")
+                except Exception as e:
+                    logger.error(f"[ERROR] 会話履歴の保存に失敗: {e}")
+                    # エラーが発生しても会話は続行
+            
             # レスポンス
-            from datetime import datetime
             return ChatResponse(
                 message=response_message,
                 session_id=session_id,
@@ -603,6 +622,26 @@ def create_app(config: ConfigLoader) -> FastAPI:
                         logger.info(f"[WS] SimpleGraphEngine invoke開始")
                         result = simple_graph.invoke(state)
                         logger.info(f"[WS] SimpleGraphEngine invoke完了: {result.get('response', '')[:50]}...")
+                        
+                        # 会話履歴をNotionに保存（設定で有効な場合）
+                        if config.get("features.save_conversation", False):
+                            try:
+                                conversation_db_id = config.get("notion.database_ids.conversation_history_db")
+                                if conversation_db_id and conversation_db_id.strip():
+                                    customer_id = session_id[:8]  # セッションIDの最初の8文字を使用
+                                    notion_client.save_conversation_history(
+                                        database_id=conversation_db_id,
+                                        customer_id=customer_id,
+                                        question=message,
+                                        answer=result.get("response", ""),
+                                        timestamp=datetime.now()
+                                    )
+                                    logger.info(f"[WS] 会話履歴を保存しました: {customer_id}")
+                                else:
+                                    logger.warning("[WARN] 会話履歴データベースIDが設定されていません")
+                            except Exception as e:
+                                logger.error(f"[WS] 会話履歴の保存に失敗: {e}")
+                                # エラーが発生しても会話は続行
                         
                         # 応答をWebSocket経由で返す
                         response = {

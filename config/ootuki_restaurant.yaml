@@ -14,6 +14,7 @@ notion:
     menu_db: "258e9a7e-e5b7-8054-922d-e365bec99064"
     store_db: "262e9a7ee5b7806e911ce966a0ccf7fe"
     conversation_db: "700563e396c84f8f89adafb90c51ca3f"  # 会話ノードDB
+    conversation_history_db: "f1c8dc8dd4cd4d3187a5c36660724db3"  # 会話履歴DB
     unknown_keywords_db: "6cccf26b198645f2b08d71fb9b1d01f0"  # 不明キーワード記録DB
 
 knowledge_base:
@@ -57,7 +58,7 @@ features:
   enable_simple_graph: true # SimpleGraphEngine（WebSocket用シンプルフロー）を有効化
   enable_scheduler: true    # プロアクティブメッセージスケジューラーを有効化
   enable_agent_executor: false # AgentExecutorによる自動ツール呼び出しを有効化
-  save_conversation: false  # 会話履歴の保存（プライバシー考慮で無効化推奨）
+  save_conversation: true   # 会話履歴の保存（Notionデータベースに保存されます）
 
 langgraph:
   flow_type: "restaurant"   # 会話フロータイプ（restaurant, insurance, legal, generic）
