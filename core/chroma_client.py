@@ -180,9 +180,7 @@ class ChromaClient:
             collection_name=self.collection_name
         )
         
-        # 永続化
-        if hasattr(self.vector_db, 'persist'):
-            self.vector_db.persist()
+        # Chroma 0.4.x以降は自動永続化されるため、persist()の呼び出しは不要
     
     def _build_simple(self, documents: List[Dict[str, Any]]):
         """SimpleVectorStoreでベクターストアを構築"""
@@ -249,8 +247,7 @@ class ChromaClient:
                     for item in items
                 ]
                 self.vector_db.add_documents(docs)
-                if hasattr(self.vector_db, 'persist'):
-                    self.vector_db.persist()
+                # Chroma 0.4.x以降は自動永続化されるため、persist()の呼び出しは不要
             
             # SimpleVectorStoreに追加
             else:
