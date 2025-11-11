@@ -989,11 +989,20 @@
             const avatar = document.createElement('div');
             avatar.className = 'message-avatar';
             if (role === 'user') {
-                avatar.textContent = '👨';
+                // ユーザーのアバター画像を使用
+                const userImg = document.createElement('img');
+                userImg.src = 'https://knowledge-press.net/wp-content/uploads/2022/03/23f091faa73166d967c1369223a77e20-e1762821568234.jpg';
+                userImg.alt = 'ユーザー';
+                userImg.onerror = function() {
+                    // 画像が読み込めない場合は絵文字を表示
+                    this.style.display = 'none';
+                    avatar.textContent = '👨';
+                };
+                avatar.appendChild(userImg);
             } else {
                 // アシスタントのアバターは画像を使用
                 const img = document.createElement('img');
-                img.src = '/static/images/assistant_avatar.jpg';
+                img.src = 'https://fuji-ootsuki.com/wp-content/uploads/2023/03/2023-03-26_22h13_27-e1762821474936.png';
                 img.alt = 'アシスタント';
                 img.onerror = function() {
                     // 画像が読み込めない場合は絵文字を表示
@@ -1052,7 +1061,7 @@
             const avatarDiv = document.createElement('div');
             avatarDiv.className = 'message-avatar';
             const img = document.createElement('img');
-            img.src = '/static/images/assistant_avatar.jpg';
+            img.src = 'https://fuji-ootsuki.com/wp-content/uploads/2023/03/2023-03-26_22h13_27-e1762821474936.png';
             img.alt = 'アシスタント';
             img.onerror = function() {
                 this.style.display = 'none';
