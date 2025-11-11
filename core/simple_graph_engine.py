@@ -3622,10 +3622,20 @@ class SimpleGraphEngine:
                 
                 # 選択肢を設定（クロスセル + 通常選択肢）
                 tempura_asked = any(kw in last_message for kw in ["天ぷら", "てんぷら", "天麩羅"])
+                lunch_asked = any(kw in last_message for kw in ["ランチ", "昼", "昼食"])
+                
                 if is_menu_query and cross_sell_options:
                     # クロスセル提案がある場合
                     state["options"] = cross_sell_options[:2] + [
                         "いいえ、結構です"
+                    ]
+                elif lunch_asked:
+                    # ランチの問い合わせの場合
+                    state["options"] = [
+                        "寿司ランチ",
+                        "海鮮定食はこちら",
+                        "おすすめ定食はこちら",
+                        "テイクアウトメニュー"
                     ]
                 elif is_general_menu_query:
                     # 一般的なメニュー問い合わせの場合
@@ -3664,7 +3674,18 @@ class SimpleGraphEngine:
             except Exception as e:
                 logger.error(f"LLM応答生成エラー: {e}")
                 # フォールバック：一般的なメニュー提案
-                if is_general_menu_query:
+                lunch_asked = any(kw in last_message for kw in ["ランチ", "昼", "昼食"])
+                
+                if lunch_asked:
+                    # ランチの問い合わせの場合
+                    state["response"] = "ランチメニューは、定食や丼物など色々ございます。"
+                    state["options"] = [
+                        "寿司ランチ",
+                        "海鮮定食はこちら",
+                        "おすすめ定食はこちら",
+                        "テイクアウトメニュー"
+                    ]
+                elif is_general_menu_query:
                     # 寿司キーワードが含まれている場合は「寿司」タブを追加
                     if any(kw in last_message for kw in ["寿司", "すし", "sushi"]):
                         state["response"] = "サラダ、一品料理、お酒に合うつまみなど色々ございますよ。"
