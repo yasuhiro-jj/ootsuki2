@@ -130,9 +130,10 @@ class NotionClient:
             # Notion API エラーの詳細を解析
             from notion_client.errors import APIResponseError
             if isinstance(e, APIResponseError):
+                error_msg = str(e)
                 if e.status == 401:
                     logger.error(f"❌ Notion API 認証エラー: {e.code}")
-                    logger.error(f"   メッセージ: {e.message}")
+                    logger.error(f"   メッセージ: {error_msg}")
                     logger.error("【対処方法】")
                     logger.error("  1. Railway の環境変数で NOTION_API_KEY が正しく設定されているか確認")
                     logger.error("  2. ローカルの .env ファイルと Railway の設定値を比較")
@@ -145,7 +146,7 @@ class NotionClient:
                     logger.error("  2. Notion Integration がこのデータベースへのアクセス権を持っているか確認")
                 else:
                     logger.error(f"❌ Notion API エラー: status={e.status}, code={e.code}")
-                    logger.error(f"   メッセージ: {e.message}")
+                    logger.error(f"   メッセージ: {error_msg}")
             else:
                 logger.error(f"全ページ取得エラー: {e}")
             
@@ -630,7 +631,8 @@ class NotionClient:
                 elif prop["type"] == "rich_text" and prop["rich_text"]:
                     return prop["rich_text"][0]["text"]["content"]
                 elif prop["type"] == "number":
-                    return prop["number"]
+                    # numberがNoneの場合はdefault値を返す
+                    return prop["number"] if prop["number"] is not None else default
                 elif prop["type"] == "select" and prop["select"]:
                     return prop["select"]["name"]
                 elif prop["type"] == "url":
@@ -1460,9 +1462,10 @@ class NotionClient:
             # Notion API エラーの詳細を解析
             from notion_client.errors import APIResponseError
             if isinstance(e, APIResponseError):
+                error_msg = str(e)
                 if e.status == 401:
                     logger.error(f"❌ [ConversationNodes] Notion API 認証エラー: {e.code}")
-                    logger.error(f"   メッセージ: {e.message}")
+                    logger.error(f"   メッセージ: {error_msg}")
                     logger.error("【重要】401 Unauthorized = API Key が無効です")
                     logger.error("【対処方法】")
                     logger.error("  1. Railway の環境変数タブで NOTION_API_KEY を確認")
@@ -1477,7 +1480,7 @@ class NotionClient:
                     logger.error("  2. Notion Integration がこのデータベースへのアクセス権を持っているか確認")
                 else:
                     logger.error(f"❌ [ConversationNodes] Notion API エラー: status={e.status}, code={e.code}")
-                    logger.error(f"   メッセージ: {e.message}")
+                    logger.error(f"   メッセージ: {error_msg}")
             else:
                 logger.error(f"[ConversationNodes] 取得エラー: {e}")
             
