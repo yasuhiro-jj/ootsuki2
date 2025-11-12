@@ -29,6 +29,30 @@ class State(TypedDict):
 class SimpleGraphEngine:
     """シンプルなLangGraphエンジン（おおつき飲食店用）"""
     
+    # 選択肢テキストとノードIDのマッピング
+    OPTION_TO_NODE_MAPPING = {
+        # ランチメニュー
+        "日替わりランチはこちら": "lunch_noodle_fish",
+        "寿司ランチはこちら": "lunch_sushi",
+        "おすすめ定食はこちら": "lunch_a_meat",
+        "海鮮定食はこちら": "lunch_d_don",
+        "海鮮定食はこちら（続きを見る）": "lunch_d_don_more",
+        "定食屋メニューはこちら": "lunch_overview",
+        "土曜日のおすすめはこちら": "saturday_recommendation",
+        # サラダ・逸品料理
+        "サラダ": "salad_menu",
+        "逸品料理はこちら": "special_dishes",
+        "今晩のおすすめ一品はこちら": "tonight_overview",
+        # アルコール
+        "ビール": "beer_menu",
+        "日本酒": "sake_menu",
+        "焼酎グラス": "shochu_glass",
+        "酎ハイ": "chuhai_menu",
+        "ハイボール": "highball_menu",
+        "梅酒・果実酒": "umeshu_menu",
+        "お酒に合うつまみ": "otsumami_menu",
+    }
+    
     def __init__(self, llm, notion_client=None, config=None, menu_service=None, conversation_system=None):
         """
         Args:
@@ -133,6 +157,7 @@ class SimpleGraphEngine:
             # 夜の時間帯（14時以降、または朝～11時前）
             state["response"] = "いらっしゃいませ！　本日は何にいたしましょうか？　\n下記のタブからお選びになるか、ご質問を入力ください。"
             state["options"] = [
+                "ランチ",
                 "ドリンクメニュー",
                 "せんべろセット",
                 "夜メニュー",
@@ -143,7 +168,7 @@ class SimpleGraphEngine:
                 "テイクアウト",
                 "おすすめを教えて",
             ]
-            logger.info(f"[Greeting] 夜の時間帯（{hour}時）: サラダ・逸品料理を追加表示")
+            logger.info(f"[Greeting] 夜の時間帯（{hour}時）: ランチ・サラダ・逸品料理を追加表示")
         else:
             # その他の時間帯（通常は使われない）
             state["response"] = "いらっしゃいませ！　本日は何にいたしましょうか？　\n下記のタブからお選びになるか、ご質問を入力ください。"
@@ -2747,28 +2772,48 @@ class SimpleGraphEngine:
         # 会話ノードシステムからノードを検索
         if self.conversation_system:
             try:
-                # 「（続きを見る）」を含む選択肢は会話ノード検索をスキップ
-                if "（続きを見る）" in selected_option:
-                    logger.info(f"[選択肢] 続きを見る選択肢のため会話ノード検索をスキップ: '{selected_option}'")
-                else:
+                # 「（続きを見る）」を含む選択肢でも、マッピングがあればノード検索を実行
+                skip_node_search = False
+                if "（続きを見る）" in selected_option and selected_option not in self.OPTION_TO_NODE_MAPPING:
+                    logger.info(f"[選択肢] 続きを見る選択肢（マッピングなし）のため会話ノード検索をスキップ: '{selected_option}'")
+                    skip_node_search = True
+                
+                if not skip_node_search:
+                    # まずマッピング辞書で選択肢テキストからノードIDを取得
+                    target_node_id = self.OPTION_TO_NODE_MAPPING.get(selected_option)
+                    
+                    if target_node_id:
+                        logger.info(f"[選択肢] マッピング発見: '{selected_option}' → ノードID '{target_node_id}'")
+                    else:
+                        logger.info(f"[選択肢] マッピングなし: '{selected_option}'（ノード名またはIDで直接検索）")
+                        target_node_id = selected_option
+                    
                     # ノード名で検索
                     conversation_nodes = self.conversation_system.get_conversation_nodes()
-                    logger.info(f"[選択肢] 検索中: '{selected_option}'")
+                    logger.info(f"[選択肢] 検索中: target_node_id='{target_node_id}'")
                     logger.info(f"[選択肢] 全ノード数: {len(conversation_nodes)}")
+                    
+                    # デバッグ: 最初の10件のノードIDとノード名を表示
+                    for i, (node_id, node_data) in enumerate(list(conversation_nodes.items())[:10]):
+                        node_name = node_data.get("name", "")
+                        keywords = node_data.get("keywords", [])
+                        logger.info(f"[選択肢デバッグ] ノード{i+1}: ID='{node_id}', Name='{node_name}', Keywords={keywords}")
+                    
                     matched_node = None
                     
                     for node_id, node_data in conversation_nodes.items():
                         node_name = node_data.get("name", "")
-                        if selected_option == node_name or selected_option == node_id:
+                        # target_node_idと一致するか、元のselected_optionと一致するかをチェック
+                        if target_node_id == node_id or selected_option == node_name or selected_option == node_id:
                             matched_node = node_data
                             logger.info(f"[選択肢] マッチしたノード: {node_name} (ID: {node_id})")
                             break
                 
                 if not matched_node:
-                    logger.warning(f"[選択肢] ノードが見つかりません: '{selected_option}'")
-                    state["response"] = f"申し訳ございません。「{selected_option}」の情報が見つかりませんでした。"
-                    state["options"] = []
-                    return state
+                    logger.warning(f"[選択肢] 会話ノードが見つかりません: '{selected_option}'")
+                    # 会話ノードが見つからない場合でも、_get_menu_by_optionのマッピングに存在する場合は
+                    # メニューDB検索処理に進む（早期リターンしない）
+                    # ここでは何もせず、後続のメニューDB検索処理に進む
                 
                 if matched_node:
                     template = matched_node.get("template", "")
@@ -4014,6 +4059,23 @@ class SimpleGraphEngine:
             logger.info(f"[Route] '{last_message}' → general_response (焼き魚・煮魚)")
             return "general_response"
         
+        # ランチキーワードの優先判定（弁当の前に実行）
+        # 「ランチ」単独または「ランチメニュー」などは店内飲食のランチとして扱う
+        lunch_exclusive_keywords = [
+            "ランチメニュー", "ランチは何", "ランチの種類", "ランチある", "ランチのおすすめ",
+            "ランチ教えて", "ランチを教えて", "ランチについて", "ランチを見たい", "ランチ見せて",
+            "ランチどんな", "ランチで", "ランチに", "ランチが"
+        ]
+        
+        # 「ランチ」単独チェック - ただし「弁当」「テイクアウト」「持ち帰り」が含まれない場合のみ
+        has_lunch_keyword = any(kw in last_message for kw in lunch_exclusive_keywords)
+        has_bento_keywords = any(kw in last_message for kw in ["弁当", "テイクアウト", "持ち帰り"])
+        
+        # 「ランチ」が含まれ、かつ弁当関連キーワードがない場合は、店内ランチメニューとして扱う
+        if "ランチ" in last_message and not has_bento_keywords:
+            logger.info(f"[Route] ランチキーワード検出（弁当除外）: '{last_message}' → general_response (ランチメニュー)")
+            return "general_response"
+        
         # キーワードベース判定（選択肢クリック判定の後に実行）
         # 弁当関連（優先度高）- 柔軟なキーワード対応
         bento_keywords = [
@@ -4106,7 +4168,7 @@ class SimpleGraphEngine:
             # 包括的な部分一致キーワード
             partial_keywords = {
                 "bento": [
-                    "弁当", "べんとう", "お弁当", "おべんとう", "ランチ", "昼食", "昼", "お昼",
+                    "弁当", "べんとう", "お弁当", "おべんとう",
                     "唐揚げ", "からあげ", "カラアゲ", "鶏", "チキン", "しゅうまい", "シュウマイ", "まごころ",
                     "カツ", "セット", "おかず", "おかず", "テイクアウト", "持ち帰り",
                     "各種", "豚", "鶏", "豚唐揚げ", "鶏唐揚げ", "豚カツ", "鶏カツ"
