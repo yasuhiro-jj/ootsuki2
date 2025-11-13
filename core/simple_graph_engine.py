@@ -283,6 +283,159 @@ class SimpleGraphEngine:
 
         messages = state.get("messages", [])
         last_message = messages[-1] if messages else ""
+        
+        # 「天ぷら」を含む入力の場合、NotionDBから「市場の天ぷら」サブカテゴリーのメニューを表示（最優先処理）
+        tempura_keywords = ["天ぷら", "てんぷら", "天麩羅", "tempura"]
+        logger.info(f"[Tempura] food_flow チェック開始: last_message='{last_message}', キーワードリスト={tempura_keywords}")
+        tempura_detected = any(kw in last_message for kw in tempura_keywords)
+        logger.info(f"[Tempura] food_flow 検出結果: {tempura_detected}")
+        
+        if tempura_detected:
+            logger.info(f"[Tempura] food_flow: 天ぷらキーワード検出: '{last_message}'")
+            if self.notion_client and self.config:
+                try:
+                    menu_db_id = self.config.get("notion.database_ids.menu_db")
+                    if menu_db_id:
+                        # 市場の天ぷらのメニューを取得
+                        menus = self.notion_client.get_menu_details_by_category(
+                            database_id=menu_db_id,
+                            category_property="Subcategory",
+                            category_value="市場の天ぷら",
+                            limit=20  # 多めに取得
+                        )
+                        
+                        if menus:
+                            response_text = "🍤 **天ぷらメニュー**\n\n"
+                            response_text += "市場の天ぷらメニューをご案内いたします。野菜、海鮮、かき揚げなど豊富にご用意しております。\n\n"
+                            
+                            for menu in menus:
+                                name = menu.get("name", "")
+                                price = menu.get("price", 0)
+                                short_desc = menu.get("short_desc", "")
+                                description = menu.get("description", "")
+                                
+                                # メニュー名と価格（必ず表示）
+                                response_text += f"• **{name}**"
+                                if price > 0:
+                                    response_text += f" ¥{price:,}"
+                                response_text += "\n"
+                                
+                                # 一言紹介を表示
+                                if short_desc:
+                                    response_text += f"  💬 {short_desc}\n"
+                                
+                                # 詳細説明を全文表示
+                                if description:
+                                    response_text += f"  {description}\n"
+                                
+                                response_text += "\n"
+                            
+                            # 天ぷら盛り合わせの推奨を追加
+                            response_text += "🌟 **おすすめ**: いろいろ少しずつ楽しめる『天ぷら盛り合せ』もございます。\n\n"
+                            
+                            # 注文案内を追加
+                            state["response"] = self._add_order_instruction(response_text)
+                            state["options"] = [
+                                "今晩のおすすめ一品 確認",
+                                "揚げ物・酒つまみ 確認"
+                            ]
+                            logger.info(f"[Tempura] food_flow: 天ぷらメニュー表示完了 ({len(menus)}件)")
+                            return state
+                        else:
+                            logger.warning("[Tempura] food_flow: 天ぷらメニューが見つかりません")
+                except Exception as e:
+                    logger.error(f"[Tempura] food_flow: 天ぷらメニュー取得エラー: {e}")
+                    import traceback
+                    traceback.print_exc()
+            
+            # フォールバック
+            state["response"] = "🍤 天ぷらメニューをご案内いたします。市場の天ぷらは野菜、海鮮、かき揚げなど豊富にご用意しております。"
+            state["options"] = [
+                "今晩のおすすめ一品 確認",
+                "揚げ物・酒つまみ 確認"
+            ]
+            logger.info("[Tempura] food_flow: フォールバック応答を返却")
+            return state
+        
+        # 「焼き鳥」を含む入力の場合、NotionDBから「焼き鳥」サブカテゴリーのメニューを表示
+        yakitori_keywords = ["焼き鳥", "やきとり", "ヤキトリ", "yakitori"]
+        logger.info(f"[Yakitori] food_flow チェック開始: last_message='{last_message}', キーワードリスト={yakitori_keywords}")
+        yakitori_detected = any(kw in last_message for kw in yakitori_keywords)
+        logger.info(f"[Yakitori] food_flow 検出結果: {yakitori_detected}")
+        
+        if yakitori_detected:
+            logger.info(f"[Yakitori] food_flow: 焼き鳥キーワード検出: '{last_message}'")
+            if self.notion_client and self.config:
+                try:
+                    menu_db_id = self.config.get("notion.database_ids.menu_db")
+                    logger.info(f"[Yakitori] food_flow: menu_db_id={menu_db_id}")
+                    if menu_db_id:
+                        # 焼き鳥のメニューを取得
+                        logger.info(f"[Yakitori] food_flow: Notionからメニュー取得開始 (Subcategory='焼き鳥')")
+                        menus = self.notion_client.get_menu_details_by_category(
+                            database_id=menu_db_id,
+                            category_property="Subcategory",
+                            category_value="焼き鳥",
+                            limit=20  # 多めに取得
+                        )
+                        logger.info(f"[Yakitori] food_flow: メニュー取得完了 ({len(menus) if menus else 0}件)")
+                        
+                        if menus and len(menus) > 0:
+                            response_text = "🍢 **焼き鳥メニュー**\n\n"
+                            response_text += "焼き鳥メニューをご案内いたします。各種串焼きをご用意しております。\n\n"
+                            
+                            for menu in menus:
+                                name = menu.get("name", "")
+                                price = menu.get("price", 0)
+                                short_desc = menu.get("short_desc", "")
+                                description = menu.get("description", "")
+                                
+                                # メニュー名と価格（必ず表示）
+                                response_text += f"• **{name}**"
+                                if price > 0:
+                                    response_text += f" ¥{price:,}"
+                                response_text += "\n"
+                                
+                                # 一言紹介を表示
+                                if short_desc:
+                                    response_text += f"  💬 {short_desc}\n"
+                                
+                                # 詳細説明を全文表示
+                                if description:
+                                    response_text += f"  {description}\n"
+                                
+                                response_text += "\n"
+                            
+                            # 注文案内を追加
+                            state["response"] = self._add_order_instruction(response_text)
+                            state["options"] = [
+                                "今晩のおすすめ一品 確認",
+                                "揚げ物・酒つまみ 確認",
+                                "天ぷらメニュー確認"
+                            ]
+                            logger.info(f"[Yakitori] food_flow: 焼き鳥メニュー表示完了 ({len(menus)}件)")
+                            return state
+                        else:
+                            logger.warning("[Yakitori] food_flow: 焼き鳥メニューが見つかりません（menusが空またはNone）")
+                    else:
+                        logger.warning("[Yakitori] food_flow: menu_db_idが設定されていません")
+                except Exception as e:
+                    logger.error(f"[Yakitori] food_flow: 焼き鳥メニュー取得エラー: {e}")
+                    import traceback
+                    logger.error(f"[Yakitori] food_flow: トレースバック: {traceback.format_exc()}")
+            else:
+                logger.warning("[Yakitori] food_flow: notion_clientまたはconfigがNoneです")
+            
+            # フォールバック（エラー時またはメニューが見つからない場合）
+            logger.info("[Yakitori] food_flow: フォールバック応答を返却")
+            state["response"] = "🍢 焼き鳥メニューをご案内いたします。各種串焼きをご用意しております。"
+            state["options"] = [
+                "今晩のおすすめ一品 確認",
+                "揚げ物・酒つまみ 確認",
+                "天ぷらメニュー確認"
+            ]
+            return state
+        
         fried_keywords = ["揚げ物", "揚げ", "フライ", "唐揚げ", "からあげ", "カツ", "串カツ", "フリッター", "コロッケ", "エビフライ", "海老フライ"]
         if any(kw in last_message for kw in fried_keywords):
             cache_key = "fried"
@@ -359,8 +512,86 @@ class SimpleGraphEngine:
             menu_text = ""
             menu_options = []
             
-            # MenuServiceを使用してメニューを取得
-            if hasattr(self, 'menu_service') and self.menu_service:
+            # Notionから直接テイクアウトサブカテゴリのメニューを取得
+            if self.notion_client and self.config:
+                try:
+                    menu_db_id = self.config.get("notion.database_ids.menu_db")
+                    if menu_db_id:
+                        logger.info(f"[Bento] テイクアウトサブカテゴリのメニューを取得開始")
+                        
+                        # 1. テイクアウトまごころ弁当（上位8品のみ表示）
+                        logger.info(f"[Bento] カテゴリー取得中: テイクアウトまごころ弁当")
+                        magokoro_menus = self.notion_client.get_menu_details_by_category(
+                            database_id=menu_db_id,
+                            category_property="Subcategory",
+                            category_value="テイクアウトまごころ弁当",
+                            limit=8
+                        )
+                        logger.info(f"[Bento] テイクアウトまごころ弁当 から {len(magokoro_menus)}件取得")
+                        
+                        # 2. テイクアウト唐揚げ（全件取得してコンテキストに保存）
+                        logger.info(f"[Bento] カテゴリー取得中: テイクアウト唐揚げ")
+                        karaage_menus = self.notion_client.get_menu_details_by_category(
+                            database_id=menu_db_id,
+                            category_property="Subcategory",
+                            category_value="テイクアウト唐揚げ",
+                            limit=50
+                        )
+                        logger.info(f"[Bento] テイクアウト唐揚げ から {len(karaage_menus)}件取得")
+                        
+                        # 3. テイクアウト一品（全件取得してコンテキストに保存）
+                        logger.info(f"[Bento] カテゴリー取得中: テイクアウト一品")
+                        ichipin_menus = self.notion_client.get_menu_details_by_category(
+                            database_id=menu_db_id,
+                            category_property="Subcategory",
+                            category_value="テイクアウト一品",
+                            limit=50
+                        )
+                        logger.info(f"[Bento] テイクアウト一品 から {len(ichipin_menus)}件取得")
+                        
+                        # テイクアウト唐揚げとテイクアウト一品を結合してコンテキストに保存
+                        remaining_menus = karaage_menus + ichipin_menus
+                        logger.info(f"[Bento] 続きメニュー総数: {len(remaining_menus)}件（唐揚げ: {len(karaage_menus)}件、一品: {len(ichipin_menus)}件）")
+                        
+                        # コンテキストに残りメニューを保存
+                        context = state.get("context", {})
+                        context["bento_remaining"] = remaining_menus
+                        state["context"] = context
+                        
+                        # まごころ弁当の8品のみを表示
+                        if magokoro_menus:
+                            menu_text += f"\n\n🍱 弁当メニュー:\n"
+                            for menu in magokoro_menus:
+                                name = menu.get("name", "")
+                                price = menu.get("price", 0)
+                                short_desc = menu.get("short_desc", "")
+                                description = menu.get("description", "")
+                                
+                                menu_text += f"• **{name}**"
+                                if price > 0:
+                                    menu_text += f" ¥{price:,}"
+                                menu_text += "\n"
+                                
+                                if short_desc:
+                                    menu_text += f"  💬 {short_desc}\n"
+                                
+                                if description:
+                                    menu_text += f"  {description}\n"
+                                
+                                menu_text += "\n"
+                        
+                        # 選択肢は「弁当（続きはこちら）」のみ（残りメニューがある場合）
+                        if remaining_menus:
+                            menu_options = ["弁当（続きはこちら）"]
+                        else:
+                            menu_options = []
+                except Exception as e:
+                    logger.error(f"[Bento] メニュー取得エラー: {e}")
+                    import traceback
+                    logger.error(f"トレースバック: {traceback.format_exc()}")
+            
+            # MenuServiceを使用してメニューを取得（フォールバック）
+            elif hasattr(self, 'menu_service') and self.menu_service:
                 logger.info(f"[Bento] MenuServiceを使用してメニュー検索開始")
                 all_items = []
                 seen_names = set()
@@ -1408,14 +1639,130 @@ class SimpleGraphEngine:
                     logger.info(f"[Banquet] フォールバック情報を表示: {selected_option}")
                     return state
         
-        # 「（続きを見る）」ボタンの処理
-        if "（続きを見る）" in selected_option:
+        # 「（続きを見る）」ボタンと「（続きはこちら）」ボタンの処理
+        if "（続きを見る）" in selected_option or "（続きはこちら）" in selected_option:
             logger.info(f"[続きを見る] 選択肢: {selected_option}")
             
             # カテゴリ名を抽出
-            category_name = selected_option.replace("（続きを見る）", "").replace("はこちら", "")
+            category_name = selected_option.replace("（続きを見る）", "").replace("（続きはこちら）", "").replace("はこちら", "")
             
-            # カテゴリ名とサブカテゴリー名のマッピング（_get_menu_by_optionと同じ）
+            # 「弁当（続きはこちら）」の特別処理
+            if category_name == "弁当":
+                context = state.get("context", {})
+                remaining_menus = context.get("bento_remaining", []) or []
+                
+                logger.info(f"[弁当続き] コンテキストから残りメニュー取得: {len(remaining_menus)}件")
+                
+                if remaining_menus:
+                    # 10品ずつ表示
+                    display_menus = remaining_menus[:10]
+                    remaining_after_display = remaining_menus[10:]
+                    
+                    response_text = "🍱 **弁当メニュー（続き）**\n\n"
+                    
+                    for menu in display_menus:
+                        name = menu.get("name", "メニュー名不明")
+                        price = menu.get("price", 0)
+                        short_desc = menu.get("short_desc", "")
+                        description = menu.get("description", "")
+                        
+                        response_text += f"• **{name}**"
+                        if price > 0:
+                            response_text += f" ¥{price:,}"
+                        response_text += "\n"
+                        
+                        if short_desc:
+                            response_text += f"  💬 {short_desc}\n"
+                        
+                        if description:
+                            response_text += f"  {description}\n"
+                        
+                        response_text += "\n"
+                    
+                    # 残りメニューをコンテキストに保存
+                    context["bento_remaining"] = remaining_after_display
+                    state["context"] = context
+                    
+                    # 注文案内を追加
+                    response_text += "\nご注文はスタッフにお伝えください。"
+                    state["response"] = response_text
+                    
+                    # 残りがあれば再度「弁当（続きはこちら）」ボタンを表示
+                    if remaining_after_display:
+                        state["options"] = ["弁当（続きはこちら）"]
+                    else:
+                        state["options"] = []
+                    
+                    logger.info(f"[弁当続き] {len(display_menus)}件表示、残り{len(remaining_after_display)}件")
+                else:
+                    # コンテキストにない場合は再取得を試みる
+                    logger.info("[弁当続き] コンテキストに残りメニューなし、再取得を試みます")
+                    if self.notion_client and self.config:
+                        try:
+                            menu_db_id = self.config.get("notion.database_ids.menu_db")
+                            karaage_menus = self.notion_client.get_menu_details_by_category(
+                                database_id=menu_db_id,
+                                category_property="Subcategory",
+                                category_value="テイクアウト唐揚げ",
+                                limit=50
+                            )
+                            ichipin_menus = self.notion_client.get_menu_details_by_category(
+                                database_id=menu_db_id,
+                                category_property="Subcategory",
+                                category_value="テイクアウト一品",
+                                limit=50
+                            )
+                            remaining_menus = karaage_menus + ichipin_menus
+                            
+                            if remaining_menus:
+                                display_menus = remaining_menus[:10]
+                                remaining_after_display = remaining_menus[10:]
+                                
+                                response_text = "🍱 **弁当メニュー（続き）**\n\n"
+                                
+                                for menu in display_menus:
+                                    name = menu.get("name", "メニュー名不明")
+                                    price = menu.get("price", 0)
+                                    short_desc = menu.get("short_desc", "")
+                                    description = menu.get("description", "")
+                                    
+                                    response_text += f"• **{name}**"
+                                    if price > 0:
+                                        response_text += f" ¥{price:,}"
+                                    response_text += "\n"
+                                    
+                                    if short_desc:
+                                        response_text += f"  💬 {short_desc}\n"
+                                    
+                                    if description:
+                                        response_text += f"  {description}\n"
+                                    
+                                    response_text += "\n"
+                                
+                                context["bento_remaining"] = remaining_after_display
+                                state["context"] = context
+                                
+                                response_text += "\nご注文はスタッフにお伝えください。"
+                                state["response"] = response_text
+                                
+                                if remaining_after_display:
+                                    state["options"] = ["弁当（続きはこちら）"]
+                                else:
+                                    state["options"] = []
+                            else:
+                                state["response"] = "申し訳ございません。弁当メニューは以上です。"
+                                state["options"] = []
+                        except Exception as e:
+                            logger.error(f"[弁当続き] 再取得エラー: {e}")
+                            state["response"] = "申し訳ございません。弁当メニューの続きを取得できませんでした。"
+                            state["options"] = []
+                    else:
+                        state["response"] = "申し訳ございません。弁当メニューは以上です。"
+                        state["options"] = []
+                
+                return state
+            
+            # その他のカテゴリの処理（既存のロジック）
             category_mapping = {
                 "逸品料理": "逸品料理",
                 "海鮮定食": "海鮮定食メニュー",
@@ -1462,10 +1809,11 @@ class SimpleGraphEngine:
                 logger.info(f"[続きを見る] フィルタ後メニュー数: {len(filtered_menus)}件")
                 
                 # 6件目以降を表示
-                remaining_menus = filtered_menus[6:] if len(filtered_menus) > 6 else []
+                start_index = 6
+                remaining_menus = filtered_menus[start_index:] if len(filtered_menus) > start_index else []
                 
                 if remaining_menus:
-                    response_text = f"🍽️ **{category_name}（続き）**\n\n"
+                    response_text = f"🍱 **{category_name}（続き）**\n\n"
                     
                     for menu in remaining_menus:
                         name = menu.get("name", "メニュー名不明")
@@ -1722,6 +2070,82 @@ class SimpleGraphEngine:
                 state["options"] = ["メニューを見る"]
             
             return state
+        
+        # 「焼き鳥メニュー確認」が選択された場合、焼き鳥メニューを表示
+        if selected_option == "焼き鳥メニュー確認":
+            logger.info(f"[Yakitori] option_click: 焼き鳥メニュー確認選択: '{selected_option}'")
+            if self.notion_client and self.config:
+                try:
+                    menu_db_id = self.config.get("notion.database_ids.menu_db")
+                    logger.info(f"[Yakitori] option_click: menu_db_id={menu_db_id}")
+                    if menu_db_id:
+                        # 焼き鳥のメニューを取得
+                        logger.info(f"[Yakitori] option_click: Notionからメニュー取得開始 (Subcategory='焼き鳥')")
+                        menus = self.notion_client.get_menu_details_by_category(
+                            database_id=menu_db_id,
+                            category_property="Subcategory",
+                            category_value="焼き鳥",
+                            limit=20  # 多めに取得
+                        )
+                        logger.info(f"[Yakitori] option_click: メニュー取得完了 ({len(menus) if menus else 0}件)")
+                        
+                        if menus and len(menus) > 0:
+                            response_text = "🍢 **焼き鳥メニュー**\n\n"
+                            response_text += "焼き鳥メニューをご案内いたします。各種串焼きをご用意しております。\n\n"
+                            
+                            for menu in menus:
+                                name = menu.get("name", "")
+                                price = menu.get("price", 0)
+                                short_desc = menu.get("short_desc", "")
+                                description = menu.get("description", "")
+                                
+                                # メニュー名と価格（必ず表示）
+                                response_text += f"• **{name}**"
+                                if price > 0:
+                                    response_text += f" ¥{price:,}"
+                                response_text += "\n"
+                                
+                                # 一言紹介を表示
+                                if short_desc:
+                                    response_text += f"  💬 {short_desc}\n"
+                                
+                                # 詳細説明を全文表示
+                                if description:
+                                    response_text += f"  {description}\n"
+                                
+                                response_text += "\n"
+                            
+                            # 注文案内を追加
+                            state["response"] = self._add_order_instruction(response_text)
+                            state["options"] = [
+                                "今晩のおすすめ一品 確認",
+                                "揚げ物・酒つまみ 確認",
+                                "天ぷらメニュー確認"
+                            ]
+                            logger.info(f"[Yakitori] option_click: 焼き鳥メニュー表示完了 ({len(menus)}件)")
+                            return state
+                        else:
+                            logger.warning("[Yakitori] option_click: 焼き鳥メニューが見つかりません（menusが空またはNone）")
+                            state["response"] = "申し訳ございません。焼き鳥メニューを準備中です。"
+                            state["options"] = ["今晩のおすすめ一品 確認", "揚げ物・酒つまみ 確認", "天ぷらメニュー確認"]
+                            return state
+                    else:
+                        logger.warning("[Yakitori] option_click: menu_db_idが設定されていません")
+                        state["response"] = "🍢 焼き鳥メニューもございます。"
+                        state["options"] = ["今晩のおすすめ一品 確認", "揚げ物・酒つまみ 確認", "天ぷらメニュー確認"]
+                        return state
+                except Exception as e:
+                    logger.error(f"[Yakitori] option_click: 焼き鳥メニュー取得エラー: {e}")
+                    import traceback
+                    logger.error(f"[Yakitori] option_click: トレースバック: {traceback.format_exc()}")
+                    state["response"] = "申し訳ございません。焼き鳥メニューの取得中にエラーが発生しました。"
+                    state["options"] = ["今晩のおすすめ一品 確認", "揚げ物・酒つまみ 確認", "天ぷらメニュー確認"]
+                    return state
+            else:
+                logger.warning("[Yakitori] option_click: notion_clientまたはconfigがNoneです")
+                state["response"] = "🍢 焼き鳥メニューもございます。"
+                state["options"] = ["今晩のおすすめ一品 確認", "揚げ物・酒つまみ 確認", "天ぷらメニュー確認"]
+                return state
         
         # 「寿司」タブが選択された場合、全寿司メニューを表示（最優先）
         if selected_option == "寿司":
@@ -2518,52 +2942,110 @@ class SimpleGraphEngine:
                     menu_db_id = self.config.get("notion.database_ids.menu_db")
                     logger.info(f"[テイクアウト] データベースID: {menu_db_id}")
                     if menu_db_id:
-                        # テイクアウト関連の全カテゴリーからメニューを取得
-                        takeout_categories = [
-                            "テイクアウトまごころ弁当",
-                            "テイクアウト一品",
-                            "テイクアウト唐揚げ"
-                        ]
+                        # 指定された順序でカテゴリーからメニューを取得
+                        # 1. テイクアウトまごころ弁当（上位8品）
+                        # 2. テイクアウト唐揚げ（全件）
+                        # 3. テイクアウト一品（全件）
                         
-                        menus = []
-                        for category in takeout_categories:
-                            logger.info(f"[テイクアウト] カテゴリー取得中: {category}")
-                            category_menus = self.notion_client.get_menu_details_by_category(
-                                database_id=menu_db_id,
-                                category_property="Subcategory",
-                                category_value=category,
-                                limit=50
-                            )
-                            logger.info(f"[テイクアウト] {category} から {len(category_menus)}件取得")
-                            menus.extend(category_menus)
+                        response_text = "🏪 **テイクアウトメニュー**\n\n"
+                        total_count = 0
                         
-                        logger.info(f"[テイクアウト] 合計 {len(menus)}件のメニューを取得")
+                        # 1. テイクアウトまごころ弁当（上位8品）
+                        logger.info(f"[テイクアウト] カテゴリー取得中: テイクアウトまごころ弁当")
+                        magokoro_menus = self.notion_client.get_menu_details_by_category(
+                            database_id=menu_db_id,
+                            category_property="Subcategory",
+                            category_value="テイクアウトまごころ弁当",
+                            limit=8
+                        )
+                        logger.info(f"[テイクアウト] テイクアウトまごころ弁当 から {len(magokoro_menus)}件取得")
                         
-                        if menus:
-                            response_text = "🏪 **テイクアウトメニュー**\n\n"
-                            
-                            for menu in menus:
+                        if magokoro_menus:
+                            for menu in magokoro_menus:
                                 name = menu.get("name", "")
-                                price = menu.get("price") or 0  # Noneの場合は0に変換
+                                price = menu.get("price") or 0
                                 short_desc = menu.get("short_desc", "")
                                 description = menu.get("description", "")
                                 
-                                # メニュー名と価格（必ず表示）
                                 response_text += f"• **{name}**"
                                 if price and price > 0:
                                     response_text += f" ¥{price:,}"
                                 response_text += "\n"
                                 
-                                # 一言紹介を表示
                                 if short_desc:
                                     response_text += f"  💬 {short_desc}\n"
                                 
-                                # 詳細説明を全文表示
                                 if description:
                                     response_text += f"  {description}\n"
                                 
                                 response_text += "\n"
-                            
+                                total_count += 1
+                        
+                        # 2. テイクアウト唐揚げ（全件）
+                        logger.info(f"[テイクアウト] カテゴリー取得中: テイクアウト唐揚げ")
+                        karaage_menus = self.notion_client.get_menu_details_by_category(
+                            database_id=menu_db_id,
+                            category_property="Subcategory",
+                            category_value="テイクアウト唐揚げ",
+                            limit=50
+                        )
+                        logger.info(f"[テイクアウト] テイクアウト唐揚げ から {len(karaage_menus)}件取得")
+                        
+                        if karaage_menus:
+                            for menu in karaage_menus:
+                                name = menu.get("name", "")
+                                price = menu.get("price") or 0
+                                short_desc = menu.get("short_desc", "")
+                                description = menu.get("description", "")
+                                
+                                response_text += f"• **{name}**"
+                                if price and price > 0:
+                                    response_text += f" ¥{price:,}"
+                                response_text += "\n"
+                                
+                                if short_desc:
+                                    response_text += f"  💬 {short_desc}\n"
+                                
+                                if description:
+                                    response_text += f"  {description}\n"
+                                
+                                response_text += "\n"
+                                total_count += 1
+                        
+                        # 3. テイクアウト一品（全件）
+                        logger.info(f"[テイクアウト] カテゴリー取得中: テイクアウト一品")
+                        ichipin_menus = self.notion_client.get_menu_details_by_category(
+                            database_id=menu_db_id,
+                            category_property="Subcategory",
+                            category_value="テイクアウト一品",
+                            limit=50
+                        )
+                        logger.info(f"[テイクアウト] テイクアウト一品 から {len(ichipin_menus)}件取得")
+                        
+                        if ichipin_menus:
+                            for menu in ichipin_menus:
+                                name = menu.get("name", "")
+                                price = menu.get("price") or 0
+                                short_desc = menu.get("short_desc", "")
+                                description = menu.get("description", "")
+                                
+                                response_text += f"• **{name}**"
+                                if price and price > 0:
+                                    response_text += f" ¥{price:,}"
+                                response_text += "\n"
+                                
+                                if short_desc:
+                                    response_text += f"  💬 {short_desc}\n"
+                                
+                                if description:
+                                    response_text += f"  {description}\n"
+                                
+                                response_text += "\n"
+                                total_count += 1
+                        
+                        logger.info(f"[テイクアウト] 合計 {total_count}件のメニューを取得")
+                        
+                        if total_count > 0:
                             # テイクアウト専用の注文案内を追加
                             response_text += "\nご注文はスタッフにお伝えください。"
                             state["response"] = response_text
@@ -3852,9 +4334,9 @@ class SimpleGraphEngine:
         # 正規化したメッセージを作成（キーワードマッチング用）
         normalized_last_message = self._normalize_text(last_message)
         
-        # 「（続きを見る）」を含むメッセージは最優先でoption_clickにルーティング
-        if "（続きを見る）" in last_message:
-            logger.info(f"[Route] 続きを見る検出: '{last_message}' → option_click")
+        # 「（続きを見る）」と「（続きはこちら）」を含むメッセージは最優先でoption_clickにルーティング
+        if "（続きを見る）" in last_message or "（続きはこちら）" in last_message:
+            logger.info(f"[Route] 続きを見る/続きはこちら検出: '{last_message}' → option_click")
             return "option_click"
         
         # プロアクティブトリガー（内部からの呼び出し）
@@ -3890,17 +4372,33 @@ class SimpleGraphEngine:
             logger.info(f"[Route] 選択肢クリック判定: '{last_message}' → option_click")
             return "option_click"
         
-        # 宴会関連キーワードを最優先検出（intent.banquet）- 刺身より前に配置
-        banquet_intent = self._detect_banquet_intent(last_message)
-        if banquet_intent:
-            node_id = self._route_banquet_intent_to_node(banquet_intent)
-            if node_id:
-                logger.info(f"[Route] 宴会インテント検出: {banquet_intent} → {node_id}")
-                # ノードIDをコンテキストに保存
-                if "context" not in state:
-                    state["context"] = {}
-                state["context"]["banquet_node_id"] = node_id
-                return "banquet_flow"
+        # テイクアウト/弁当キーワードを宴会インテント検出より前に配置（誤検出防止）
+        # 完全一致検索でテイクアウト/弁当キーワードをチェック
+        bento_keywords_precheck = [
+            "弁当", "お弁当", "べんとう", "BENTO", "bento",
+            "テイクアウト", "takeout", "TAKEOUT", "テークアウト", "テイク",
+            "持ち帰り", "お持ち帰り", "持帰り",
+            "テイクアウトメニュー", "テイクアウト メニュー",
+            "持ち帰りメニュー", "持ち帰り メニュー",
+            "弁当メニュー", "弁当 メニュー"
+        ]
+        if any(kw in last_message for kw in bento_keywords_precheck):
+            # テイクアウト/弁当キーワードが含まれている場合は、後で詳細にルーティング
+            # ここでは宴会インテント検出をスキップするため、何もしない
+            pass
+        else:
+            # テイクアウト/弁当キーワードがない場合のみ宴会インテントを検出
+            # 宴会関連キーワードを最優先検出（intent.banquet）- 刺身より前に配置
+            banquet_intent = self._detect_banquet_intent(last_message)
+            if banquet_intent:
+                node_id = self._route_banquet_intent_to_node(banquet_intent)
+                if node_id:
+                    logger.info(f"[Route] 宴会インテント検出: {banquet_intent} → {node_id}")
+                    # ノードIDをコンテキストに保存
+                    if "context" not in state:
+                        state["context"] = {}
+                    state["context"]["banquet_node_id"] = node_id
+                    return "banquet_flow"
         
         # 刺身関連キーワードを最優先検出（intent.sashimi）- 部分一致検索より前に配置
         sashimi_keywords = [
@@ -3939,6 +4437,12 @@ class SimpleGraphEngine:
             logger.info(f"[Route] '{last_message}' → sashimi_flow にルーティング")
             return "sashimi_flow"
         
+        # 焼き鳥キーワードを最優先検出（焼き魚・煮魚より前に配置して誤マッチを防止）
+        yakitori_keywords_route = ["焼き鳥", "やきとり", "ヤキトリ", "yakitori"]
+        if any(kw in last_message for kw in yakitori_keywords_route):
+            logger.info(f"[Route] 焼き鳥キーワード検出: '{last_message}' → food_flow")
+            return "food_flow"
+        
         # 揚げ物キーワード（誤マッチを防ぐため、より具体的なキーワードに限定）
         fried_keywords = [
             # 基本的な揚げ物表現
@@ -3946,6 +4450,7 @@ class SimpleGraphEngine:
             "串カツ", "串かつ", "フリッター", "コロッケ", "メンチカツ", "とんかつ", "トンカツ", "豚カツ",
             "チキンカツ", "鶏カツ", "エビフライ", "海老フライ", "あじフライ", "アジフライ", "鯵フライ",
             "かさご唐揚げ", "カサゴ唐揚げ", "たこ唐揚げ", "タコ唐揚げ", "天ぷら", "天麩羅", "てんぷら"
+            # 注意: 「焼き鳥」は上で既にチェック済み
             # 注意: 単純な「揚げ」「カツ」は除外（誤マッチ防止）
         ]
         if any(kw in last_message for kw in fried_keywords):
@@ -4024,10 +4529,10 @@ class SimpleGraphEngine:
             logger.info(f"[Route] '{last_message}' → general_response (寿司)")
             return "general_response"
         
-        # 焼き魚・煮魚関連キーワード
+        # 焼き魚・煮魚関連キーワード（「焼き」単独は除外して誤マッチを防止）
         grilled_fish_keywords = [
-            # 焼き魚
-            "焼き魚", "焼魚", "やきざかな", "焼き", "グリル", "塩焼き", "しおやき",
+            # 焼き魚（「焼き」単独は除外）
+            "焼き魚", "焼魚", "やきざかな", "グリル", "塩焼き", "しおやき",
             "さんま焼き", "サンマ焼き", "秋刀魚焼き", "さば焼き", "サバ焼き", "鯖焼き",
             "ぶり焼き", "ブリ焼き", "鰤焼き", "あじ焼き", "アジ焼き", "鯵焼き",
             
@@ -4108,8 +4613,8 @@ class SimpleGraphEngine:
             "持ち帰り", "お持ち帰り", "持帰り", "持って帰る", "持ち帰る",
             
             # 質問パターン
-            "テイクアウトありますか", "テイクアウトはありますか", "テイクアウトメニュー",
-            "持ち帰りありますか", "持ち帰りはありますか", "持ち帰りメニュー",
+            "テイクアウトありますか", "テイクアウトはありますか", "テイクアウトメニュー", "テイクアウト メニュー",
+            "持ち帰りありますか", "持ち帰りはありますか", "持ち帰りメニュー", "持ち帰り メニュー",
             "テイクアウトを教えて", "持ち帰りを教えて", "テイクアウトについて",
             "持ち帰りについて", "テイクアウトを知りたい", "持ち帰りを知りたい",
             "どんなテイクアウト", "どんな持ち帰り", "どんなテイクアウトありますか", "どんな持ち帰りありますか",
@@ -5293,9 +5798,9 @@ class SimpleGraphEngine:
     
     def _is_option_click(self, message: str) -> bool:
         """選択肢ボタンクリック判定"""
-        # 「（続きを見る）」を含むメッセージは選択肢クリックとして認識
-        if "（続きを見る）" in message:
-            logger.info(f"[Route] 続きを見るを選択肢として認識: '{message}'")
+        # 「（続きを見る）」と「（続きはこちら）」を含むメッセージは選択肢クリックとして認識
+        if "（続きを見る）" in message or "（続きはこちら）" in message:
+            logger.info(f"[Route] 続きを見る/続きはこちらを選択肢として認識: '{message}'")
             return True
         
         option_list = [
@@ -5312,6 +5817,7 @@ class SimpleGraphEngine:
             "おすすめ定食はこちら（続きを見る）",
             "逸品料理はこちら（続きを見る）",
             "海鮮定食はこちら（続きを見る）",
+            "弁当（続きはこちら）",  # 弁当の続きボタン
             # 既存メニュー（「〜はこちら」形式）
             "海鮮定食はこちら", "定食屋メニューはこちら", "逸品料理はこちら", "今晩のおすすめ一品はこちら",
             # 既存メニュー（旧形式）
@@ -5390,31 +5896,32 @@ class SimpleGraphEngine:
             "揚げ物　酒のつまみ": ("揚げ物　酒のつまみ", 6, False),
             
             # 弁当関連（新規追加）- Notion側の実際のデータ構造と一致
-            "弁当": ("テイクアウト唐揚げ", 7, True),  # メイン弁当カテゴリ
-            "鶏カツ弁当": ("テイクアウト唐揚げ", 1, False),
-            "唐揚げ弁当（並）": ("テイクアウト唐揚げ", 1, False),
-            "唐揚げ弁当（大）": ("テイクアウト唐揚げ", 1, False),
-            "唐揚げ弁当（小）": ("テイクアウト唐揚げ", 1, False),
-            "唐揚げ弁当（特大）": ("テイクアウト唐揚げ", 1, False),
-            "自家製しゅうまい弁当": ("テイクアウト唐揚げ", 1, False),
-            "唐揚げ弁当（標準）": ("テイクアウト唐揚げ", 1, False),
+            # 「弁当」キーワードで「テイクアウト」サブカテゴリ全体を検索
+            "弁当": ("テイクアウト", 7, True),  # メイン弁当カテゴリ（テイクアウトサブカテゴリ全体）
+            "鶏カツ弁当": ("テイクアウト", 1, False),
+            "唐揚げ弁当（並）": ("テイクアウト", 1, False),
+            "唐揚げ弁当（大）": ("テイクアウト", 1, False),
+            "唐揚げ弁当（小）": ("テイクアウト", 1, False),
+            "唐揚げ弁当（特大）": ("テイクアウト", 1, False),
+            "自家製しゅうまい弁当": ("テイクアウト", 1, False),
+            "唐揚げ弁当（標準）": ("テイクアウト", 1, False),
             
             # まごころ弁当カテゴリ（追加）
-            "まごころ弁当": ("テイクアウトまごころ弁当", 8, True),
-            "豚ニラ弁当": ("テイクアウトまごころ弁当", 1, False),
-            "麻婆豆腐弁当": ("テイクアウトまごころ弁当", 1, False),
-            "餃子弁当": ("テイクアウトまごころ弁当", 1, False),
-            "豚唐揚げ弁当": ("テイクアウトまごころ弁当", 1, False),
-            "酢豚弁当": ("テイクアウトまごころ弁当", 1, False),
-            "生姜焼き肉弁当": ("テイクアウトまごころ弁当", 1, False),
-            "フライ盛り弁当": ("テイクアウトまごころ弁当", 1, False),
-            "タレ付き焼き肉弁当": ("テイクアウトまごころ弁当", 1, False),
+            "まごころ弁当": ("テイクアウト", 8, True),
+            "豚ニラ弁当": ("テイクアウト", 1, False),
+            "麻婆豆腐弁当": ("テイクアウト", 1, False),
+            "餃子弁当": ("テイクアウト", 1, False),
+            "豚唐揚げ弁当": ("テイクアウト", 1, False),
+            "酢豚弁当": ("テイクアウト", 1, False),
+            "生姜焼き肉弁当": ("テイクアウト", 1, False),
+            "フライ盛り弁当": ("テイクアウト", 1, False),
+            "タレ付き焼き肉弁当": ("テイクアウト", 1, False),
             
             # サイズ選択
-            "並": ("テイクアウト唐揚げ", 1, False),
-            "大": ("テイクアウト唐揚げ", 1, False),
-            "小": ("テイクアウト唐揚げ", 1, False),
-            "特大": ("テイクアウト唐揚げ", 1, False),
+            "並": ("テイクアウト", 1, False),
+            "大": ("テイクアウト", 1, False),
+            "小": ("テイクアウト", 1, False),
+            "特大": ("テイクアウト", 1, False),
             
             # その他のメニューはこちら（特別処理）
             "その他のメニューはこちら": ("", 0, False),  # 特別処理で空を返す
@@ -5426,13 +5933,40 @@ class SimpleGraphEngine:
         category_value, limit, show_more = category_map[option]
         
         try:
-            # 最初に多めに取得して実際の件数を確認
-            menus = self.notion_client.get_menu_details_by_category(
-                database_id=menu_db_id,
-                category_property="Subcategory",
-                category_value=category_value,
-                limit=50  # 多めに取得
-            )
+            # 「テイクアウト」の場合は、「テイクアウト」で始まるすべてのサブカテゴリを取得
+            if category_value == "テイクアウト":
+                # 全ページを取得してフィルタリング
+                all_pages = self.notion_client.get_all_pages(menu_db_id)
+                menus = []
+                
+                for page in all_pages:
+                    subcategory = self.notion_client._extract_property_value(page, "Subcategory")
+                    if subcategory and subcategory.startswith("テイクアウト"):
+                        name = self.notion_client._extract_property_value(page, "Name")
+                        price = self.notion_client._extract_property_value(page, "Price", 0)
+                        short_desc = self.notion_client._extract_property_value(page, "一言紹介")
+                        description = self.notion_client._extract_property_value(page, "詳細説明")
+                        priority = self.notion_client._extract_property_value(page, "優先度", 999)
+                        
+                        menus.append({
+                            "name": name,
+                            "price": price,
+                            "short_desc": short_desc,
+                            "description": description,
+                            "priority": priority,
+                            "subcategory": subcategory
+                        })
+                
+                # 優先度順にソート
+                menus.sort(key=lambda x: (x.get("priority", 999), x.get("name", "")))
+            else:
+                # 通常のカテゴリ検索
+                menus = self.notion_client.get_menu_details_by_category(
+                    database_id=menu_db_id,
+                    category_property="Subcategory",
+                    category_value=category_value,
+                    limit=50  # 多めに取得
+                )
             
             # 実際に7件以上ある場合のみshow_moreをTrue
             actual_show_more = len(menus) > 6 and show_more
