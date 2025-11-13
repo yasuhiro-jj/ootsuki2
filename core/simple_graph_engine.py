@@ -27,31 +27,14 @@ class State(TypedDict):
 
 
 class SimpleGraphEngine:
-    """シンプルなLangGraphエンジン（おおつき飲食店用）"""
+    """
+    シンプルなLangGraphエンジン（おおつき飲食店用）
     
-    # 選択肢テキストとノードIDのマッピング
-    OPTION_TO_NODE_MAPPING = {
-        # ランチメニュー
-        "日替わりランチはこちら": "lunch_noodle_fish",
-        "寿司ランチはこちら": "lunch_sushi",
-        "おすすめ定食はこちら": "lunch_a_meat",
-        "海鮮定食はこちら": "lunch_d_don",
-        "海鮮定食はこちら（続きを見る）": "lunch_d_don_more",
-        "定食屋メニューはこちら": "lunch_overview",
-        "土曜日のおすすめはこちら": "saturday_recommendation",
-        # サラダ・逸品料理
-        "サラダ": "salad_menu",
-        "逸品料理はこちら": "special_dishes",
-        "今晩のおすすめ一品はこちら": "tonight_overview",
-        # アルコール
-        "ビール": "beer_menu",
-        "日本酒": "sake_menu",
-        "焼酎グラス": "shochu_glass",
-        "酎ハイ": "chuhai_menu",
-        "ハイボール": "highball_menu",
-        "梅酒・果実酒": "umeshu_menu",
-        "お酒に合うつまみ": "otsumami_menu",
-    }
+    【重要原則】Notion中心アーキテクチャ
+    - Notionデータベースが唯一の真実の情報源（SSOT）
+    - ノードID、選択肢、遷移先はすべてNotion DBから動的取得
+    - ハードコードされたマッピングは使用しない
+    """
     
     def __init__(self, llm, notion_client=None, config=None, menu_service=None, conversation_system=None):
         """
@@ -2772,25 +2755,16 @@ class SimpleGraphEngine:
         # 会話ノードシステムからノードを検索
         if self.conversation_system:
             try:
-                # 「（続きを見る）」を含む選択肢でも、マッピングがあればノード検索を実行
+                # 「（続きを見る）」を含む選択肢の場合は通常の検索をスキップ
                 skip_node_search = False
-                if "（続きを見る）" in selected_option and selected_option not in self.OPTION_TO_NODE_MAPPING:
-                    logger.info(f"[選択肢] 続きを見る選択肢（マッピングなし）のため会話ノード検索をスキップ: '{selected_option}'")
+                if "（続きを見る）" in selected_option:
+                    logger.info(f"[選択肢] 続きを見る選択肢のため通常検索をスキップ: '{selected_option}'")
                     skip_node_search = True
                 
                 if not skip_node_search:
-                    # まずマッピング辞書で選択肢テキストからノードIDを取得
-                    target_node_id = self.OPTION_TO_NODE_MAPPING.get(selected_option)
-                    
-                    if target_node_id:
-                        logger.info(f"[選択肢] マッピング発見: '{selected_option}' → ノードID '{target_node_id}'")
-                    else:
-                        logger.info(f"[選択肢] マッピングなし: '{selected_option}'（ノード名またはIDで直接検索）")
-                        target_node_id = selected_option
-                    
-                    # ノード名で検索
+                    # Notion DBから全ノードを取得
                     conversation_nodes = self.conversation_system.get_conversation_nodes()
-                    logger.info(f"[選択肢] 検索中: target_node_id='{target_node_id}'")
+                    logger.info(f"[選択肢] 検索開始: '{selected_option}'")
                     logger.info(f"[選択肢] 全ノード数: {len(conversation_nodes)}")
                     
                     # デバッグ: 最初の10件のノードIDとノード名を表示
@@ -2801,12 +2775,22 @@ class SimpleGraphEngine:
                     
                     matched_node = None
                     
+                    # ノード名、ノードID、キーワードで柔軟にマッチング
                     for node_id, node_data in conversation_nodes.items():
                         node_name = node_data.get("name", "")
-                        # target_node_idと一致するか、元のselected_optionと一致するかをチェック
-                        if target_node_id == node_id or selected_option == node_name or selected_option == node_id:
+                        keywords = node_data.get("keywords", [])
+                        
+                        # マッチング条件（優先順）
+                        # 1. 選択肢テキストとノード名が完全一致
+                        # 2. 選択肢テキストとノードIDが完全一致
+                        # 3. 選択肢テキストがキーワードに含まれる
+                        if selected_option == node_name or selected_option == node_id:
                             matched_node = node_data
-                            logger.info(f"[選択肢] マッチしたノード: {node_name} (ID: {node_id})")
+                            logger.info(f"✅ [選択肢] 完全一致: {node_name} (ID: {node_id})")
+                            break
+                        elif keywords and selected_option in keywords:
+                            matched_node = node_data
+                            logger.info(f"✅ [選択肢] キーワード一致: {node_name} (ID: {node_id}), Keyword: {selected_option}")
                             break
                 
                 if not matched_node:
