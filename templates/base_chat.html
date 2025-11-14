@@ -415,6 +415,24 @@
             box-shadow: 0 4px 12px rgba(14, 165, 233, 0.4);
         }
 
+        /* おすすめ定食はこちら - 青タブスタイル */
+        .option-button.blue-tab {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+            border: 2px solid #60a5fa;
+        }
+        
+        .option-button.blue-tab:hover {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            box-shadow: 0 8px 20px rgba(59, 130, 246, 0.5),
+                        0 0 20px rgba(59, 130, 246, 0.3);
+            border-color: #93c5fd;
+        }
+        
+        .option-button.blue-tab:active {
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+        }
+
         /* 常連さま用シークレット入力画面 */
         .secret-overlay {
             position: fixed;
@@ -1034,6 +1052,12 @@
                 options.forEach(option => {
                     const button = document.createElement('button');
                     button.className = 'option-button';
+                    
+                    // 「おすすめ定食の続き」または「おすすめ定食はこちら」の場合は青タブスタイルを適用
+                    if (option === 'おすすめ定食の続き' || option === 'おすすめ定食はこちら' || option.includes('おすすめ定食の続き') || option.includes('おすすめ定食はこちら')) {
+                        button.className += ' blue-tab';
+                    }
+                    
                     button.textContent = option;
                     button.onclick = () => sendOptionMessage(option);
                     optionsDiv.appendChild(button);

@@ -86,6 +86,7 @@ class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
         self.session_metadata: Dict[str, dict] = {}
+        self.session_states: Dict[str, State] = {}  # セッションごとのstateを保持
     
     async def connect(self, websocket: WebSocket, session_id: str):
         """WebSocket接続"""
@@ -102,6 +103,8 @@ class ConnectionManager:
         if session_id in self.active_connections:
             del self.active_connections[session_id]
             del self.session_metadata[session_id]
+            if session_id in self.session_states:
+                del self.session_states[session_id]
             logger.info(f"[WS] 切断: {session_id[:8]}...")
     
     async def send_personal(self, session_id: str, message: dict):
@@ -609,19 +612,39 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 if simple_graph:
                     logger.info(f"[WS] SimpleGraphEngine使用: {message}")
                     try:
-                        state: State = {
-                            "messages": [message],
-                            "intent": "",
-                            "context": {"trigger": "user"},
-                            "response": "",
-                            "options": [],
-                            "should_push": False,
-                            "session_id": session_id
-                        }
+                        # セッションのstateを取得または作成
+                        if session_id in ws_manager.session_states:
+                            # 既存のstateを取得し、コンテキストを保持
+                            existing_state = ws_manager.session_states[session_id]
+                            state: State = {
+                                "messages": [message],
+                                "intent": "",
+                                "context": existing_state.get("context", {"trigger": "user"}),
+                                "response": "",
+                                "options": [],
+                                "should_push": False,
+                                "session_id": session_id
+                            }
+                            logger.info(f"[WS] 既存のstateからコンテキストを復元: {list(state.get('context', {}).keys())}")
+                        else:
+                            # 新しいstateを作成
+                            state: State = {
+                                "messages": [message],
+                                "intent": "",
+                                "context": {"trigger": "user"},
+                                "response": "",
+                                "options": [],
+                                "should_push": False,
+                                "session_id": session_id
+                            }
                         
                         logger.info(f"[WS] SimpleGraphEngine invoke開始")
                         result = simple_graph.invoke(state)
                         logger.info(f"[WS] SimpleGraphEngine invoke完了: {result.get('response', '')[:50]}...")
+                        
+                        # stateをセッションに保存（コンテキストを保持）
+                        ws_manager.session_states[session_id] = result
+                        logger.info(f"[WS] stateをセッションに保存: options={len(result.get('options', []))}件, context_keys={list(result.get('context', {}).keys())}")
                         
                         # 会話履歴をNotionに保存（設定で有効な場合）
                         if config.get("features.save_conversation", False):
@@ -653,6 +676,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
                         await websocket.send_json(response)
                         
                         logger.info(f"[WS] 送信 ({session_id[:8]}...): {result.get('response', '')[:50]}...")
+                        logger.info(f"[WS] 送信オプション数: {len(result.get('options', []))}件, オプション: {result.get('options', [])}")
                     
                     except Exception as e:
                         logger.error(f"[WS] グラフ実行エラー: {e}")

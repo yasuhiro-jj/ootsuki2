@@ -690,8 +690,8 @@ class SimpleGraphEngine:
                     next_nodes = node_sashimi.get("next", [])
                     subcategory = node_sashimi.get("subcategory", "")
                     
-                    # テンプレートを正規化
-                    response_text = self._normalize_text(template)
+                    # テンプレートは正規化せずにそのまま使用（応答テキストとして使用するため）
+                    response_text = template
                     
                     # 海鮮系ノードのテキスト装飾
                     if subcategory in ["海鮮刺身", "刺身・盛り合わせ"]:
@@ -1081,7 +1081,8 @@ class SimpleGraphEngine:
                 node_name = node.get("name", "")
                 response_text = f"{node_name}\n\n詳細はスタッフまでお問い合わせください。"
             else:
-                response_text = self._normalize_text(template)
+                # テンプレートは正規化せずにそのまま使用（応答テキストとして使用するため）
+                response_text = template
             
             # 宴会入口ノード（banquet_entry）の場合、4つのコースタブを優先表示
             if node_id == "banquet_entry" or "entry" in node_id.lower():
@@ -1515,8 +1516,82 @@ class SimpleGraphEngine:
         
         messages = state.get("messages", [])
         selected_option = messages[-1] if messages else ""
+        selected_option = selected_option.strip() if selected_option else ""
         
         logger.info(f"[選択肢クリック] '{selected_option}'")
+        
+        # 「おすすめ定食の続き」を最優先で処理（会話ノード検索より前に配置）
+        if selected_option == "おすすめ定食の続き" or selected_option == "おすすめ定食はこちら":
+            if self.notion_client and self.config:
+                menu_db_id = self.config.get("notion.database_ids.menu_db")
+                if menu_db_id:
+                    logger.info(f"[Teishoku] おすすめ定食の続きクリック検出: '{selected_option}'")
+                    # コンテキストから残りのメニューを取得
+                    context = state.get("context", {})
+                    remaining_menus = context.get("recommended_teishoku_remaining", [])
+                    
+                    if remaining_menus:
+                        logger.info(f"[Teishoku] 残りのおすすめ定食を表示: {len(remaining_menus)}件")
+                        response_lines = ["🍽️ **おすすめ定食（続き）**\n"]
+                        for menu in remaining_menus:
+                            name = menu.get("name", "")
+                            price = menu.get("price", 0)
+                            short_desc = menu.get("short_desc", "")
+                            
+                            price_text = ""
+                            if isinstance(price, (int, float)) and price > 0:
+                                price_text = f" ｜ ¥{int(price):,}"
+                            
+                            response_lines.append(f"• **{name}**{price_text}")
+                            if short_desc:
+                                response_lines.append(f"   {short_desc}")
+                            response_lines.append("")
+                        
+                        state["response"] = "\n".join(response_lines).strip()
+                        state["options"] = ["メニューを見る", "おすすめを教えて"]
+                        logger.info(f"[Teishoku] 残りのおすすめ定食表示完了: {len(remaining_menus)}件")
+                        return state
+                    else:
+                        # コンテキストに残りのメニューがない場合は、Notionから全件取得
+                        logger.info("[Teishoku] コンテキストに残りのメニューなし、Notionから取得")
+                        all_menus = self.notion_client.get_menu_details_by_category(
+                            database_id=menu_db_id,
+                            category_property="Subcategory",
+                            category_value="おすすめ定食",
+                            limit=100,
+                            sort_by_priority=True
+                        )
+                        
+                        logger.info(f"[Teishoku] Notionから取得した全メニュー数: {len(all_menus) if all_menus else 0}件")
+                        
+                        if all_menus and len(all_menus) > 5:
+                            remaining_menus = all_menus[5:]
+                            logger.info(f"[Teishoku] 残りのメニュー（6件目以降）: {len(remaining_menus)}件")
+                            response_lines = ["🍽️ **おすすめ定食（続き）**\n"]
+                            for menu in remaining_menus:
+                                name = menu.get("name", "")
+                                price = menu.get("price", 0)
+                                short_desc = menu.get("short_desc", "")
+                                
+                                price_text = ""
+                                if isinstance(price, (int, float)) and price > 0:
+                                    price_text = f" ｜ ¥{int(price):,}"
+                                
+                                response_lines.append(f"• **{name}**{price_text}")
+                                if short_desc:
+                                    response_lines.append(f"   {short_desc}")
+                                response_lines.append("")
+                            
+                            state["response"] = "\n".join(response_lines).strip()
+                            state["options"] = ["メニューを見る", "おすすめを教えて"]
+                            logger.info(f"[Teishoku] 残りのおすすめ定食表示完了（Notionから）: {len(remaining_menus)}件")
+                            return state
+                        else:
+                            logger.warning(f"[Teishoku] 残りのメニューが見つかりません: 全メニュー数={len(all_menus) if all_menus else 0}件")
+                            state["response"] = "申し訳ございません。残りのおすすめ定食が見つかりませんでした。"
+                            state["options"] = ["メニューを見る", "おすすめを教えて"]
+                            return state
+        
         if selected_option == "その他はこちらです":
             context = state.get("context") or {}
             logger.info(f"[Fried] コンテキスト確認: {list(context.keys())}")
@@ -1594,7 +1669,8 @@ class SimpleGraphEngine:
                         logger.info(f"[Banquet] フォールバック情報を表示: {selected_option}")
                         return state
                     else:
-                        response_text = self._normalize_text(template)
+                        # テンプレートは正規化せずにそのまま使用（応答テキストとして使用するため）
+                        response_text = template
                     
                     # 共通候補の選択肢を追加
                     options = []
@@ -1875,7 +1951,8 @@ class SimpleGraphEngine:
                     if not template or not template.strip():
                         response_text = f"{node_name}\n\n詳細はスタッフまでお問い合わせください。"
                     else:
-                        response_text = self._normalize_text(template)
+                        # テンプレートは正規化せずにそのまま使用（応答テキストとして使用するため）
+                        response_text = template
                     
                     # 遷移先からボタンを自動生成
                     options = []
@@ -2282,8 +2359,8 @@ class SimpleGraphEngine:
                         template = target_node.get("template", "")
                         next_nodes = target_node.get("next", [])
                         
-                        # テンプレートを正規化
-                        response_text = self._normalize_text(template)
+                        # テンプレートは正規化せずにそのまま使用（応答テキストとして使用するため）
+                        response_text = template
                         
                         # 海鮮系ノードのテキスト装飾
                         response_text = self._add_seafood_text_decorations(response_text, target_node)
@@ -2376,7 +2453,8 @@ class SimpleGraphEngine:
                             if not template or not template.strip():
                                 response_text = f"{node_name}\n\n詳細はスタッフまでお問い合わせください。"
                             else:
-                                response_text = self._normalize_text(template)
+                                # テンプレートは正規化せずにそのまま使用（応答テキストとして使用するため）
+                                response_text = template
                             
                             # 遷移先からボタンを自動生成（高速化）
                             options = []
@@ -2854,8 +2932,8 @@ class SimpleGraphEngine:
                         template = node_data.get("template", "")
                         next_nodes = node_data.get("next", [])
                         
-                        # テンプレートを正規化
-                        response_text = self._normalize_text(template)
+                        # テンプレートは正規化せずにそのまま使用（応答テキストとして使用するため）
+                        response_text = template
                         
                         # クロスセール文言を追加
                         response_text = self._add_cross_sell_text(response_text, "basashi_akami")
@@ -3237,9 +3315,10 @@ class SimpleGraphEngine:
         # 会話ノードシステムからノードを検索
         if self.conversation_system:
             try:
-                # 「（続きを見る）」を含む選択肢の場合は通常の検索をスキップ
+                # 「（続きを見る）」「おすすめ定食の続き」「おすすめ定食はこちら」を含む選択肢の場合は通常の検索をスキップ
                 skip_node_search = False
-                if "（続きを見る）" in selected_option:
+                selected_option_clean = selected_option.strip() if selected_option else ""
+                if "（続きを見る）" in selected_option_clean or selected_option_clean == "おすすめ定食の続き" or selected_option_clean == "おすすめ定食はこちら":
                     logger.info(f"[選択肢] 続きを見る選択肢のため通常検索をスキップ: '{selected_option}'")
                     skip_node_search = True
                 
@@ -3266,6 +3345,8 @@ class SimpleGraphEngine:
                         # 1. 選択肢テキストとノード名が完全一致
                         # 2. 選択肢テキストとノードIDが完全一致
                         # 3. 選択肢テキストがキーワードに含まれる
+                        # 4. 選択肢テキストから接尾辞（「はこちら」「を確認」など）を除去してノード名と部分一致
+                        # 5. ノード名やキーワードが選択肢テキストに含まれる（部分一致）
                         if selected_option == node_name or selected_option == node_id:
                             matched_node = node_data
                             logger.info(f"✅ [選択肢] 完全一致: {node_name} (ID: {node_id})")
@@ -3274,6 +3355,26 @@ class SimpleGraphEngine:
                             matched_node = node_data
                             logger.info(f"✅ [選択肢] キーワード一致: {node_name} (ID: {node_id}), Keyword: {selected_option}")
                             break
+                        else:
+                            # 接尾辞を除去してマッチング
+                            cleaned_option = selected_option.replace("はこちら", "").replace("を確認", "").replace("を見る", "").strip()
+                            if cleaned_option and (cleaned_option in node_name or node_name in cleaned_option):
+                                matched_node = node_data
+                                logger.info(f"✅ [選択肢] 部分一致（接尾辞除去後）: {node_name} (ID: {node_id}), 選択肢: '{selected_option}' → '{cleaned_option}'")
+                                break
+                            # ノード名やキーワードが選択肢に含まれるかチェック
+                            elif node_name and node_name in selected_option:
+                                matched_node = node_data
+                                logger.info(f"✅ [選択肢] ノード名部分一致: {node_name} (ID: {node_id})")
+                                break
+                            elif keywords:
+                                for keyword in keywords:
+                                    if keyword and keyword in selected_option:
+                                        matched_node = node_data
+                                        logger.info(f"✅ [選択肢] キーワード部分一致: {node_name} (ID: {node_id}), Keyword: '{keyword}'")
+                                        break
+                                if matched_node:
+                                    break
                 
                 if not matched_node:
                     logger.warning(f"[選択肢] 会話ノードが見つかりません: '{selected_option}'")
@@ -3289,8 +3390,8 @@ class SimpleGraphEngine:
                     category = matched_node.get("category", "")
                     subcategory = matched_node.get("subcategory", "")
                     
-                    # テンプレートを正規化
-                    response_text = self._normalize_text(template)
+                    # テンプレートは正規化せずにそのまま使用（応答テキストとして使用するため）
+                    response_text = template
                     
                     # 定食屋メニューの本文整形フック
                     response_text = self._normalize_teishoku_text(response_text, matched_node)
@@ -3450,6 +3551,73 @@ class SimpleGraphEngine:
         last_message = state.get("messages", [])[-1] if state.get("messages") else ""
         if not isinstance(state.get("context"), dict):
             state["context"] = {}
+        
+        # 「おすすめ定食の続き」は除外（option_clickで処理）
+        if last_message == "おすすめ定食の続き" or last_message == "おすすめ定食はこちら":
+            # option_clickで処理されるため、ここでは何もしない
+            pass
+        # 「おすすめ定食は何ですか?」などの質問を検出（優先処理）
+        elif any(kw in last_message for kw in ["おすすめ定食", "おすすめ定食は", "おすすめ定食は何", "おすすめ定食は何ですか", "おすすめ定食はなんですか"]):
+            logger.info(f"[Teishoku] おすすめ定食質問検出: '{last_message}'")
+            if self.notion_client and self.config:
+                try:
+                    menu_db_id = self.config.get("notion.database_ids.menu_db")
+                    if menu_db_id:
+                        # Notionからサブカテゴリー「おすすめ定食」のメニューを取得
+                        all_menus = self.notion_client.get_menu_details_by_category(
+                            database_id=menu_db_id,
+                            category_property="Subcategory",
+                            category_value="おすすめ定食",
+                            limit=100,  # 全件取得
+                            sort_by_priority=True
+                        )
+                        
+                        logger.info(f"[Teishoku] おすすめ定食取得: {len(all_menus)}件")
+                        
+                        if all_menus:
+                            # 上位5品を表示
+                            top5_menus = all_menus[:5]
+                            remaining_menus = all_menus[5:] if len(all_menus) > 5 else []
+                            
+                            # レスポンステキストを構築
+                            response_lines = ["🍽️ **おすすめ定食**\n"]
+                            for i, menu in enumerate(top5_menus, 1):
+                                name = menu.get("name", "")
+                                price = menu.get("price", 0)
+                                short_desc = menu.get("short_desc", "")
+                                
+                                price_text = ""
+                                if isinstance(price, (int, float)) and price > 0:
+                                    price_text = f" ｜ ¥{int(price):,}"
+                                
+                                response_lines.append(f"{i}. **{name}**{price_text}")
+                                if short_desc:
+                                    response_lines.append(f"   {short_desc}")
+                                response_lines.append("")
+                            
+                            state["response"] = "\n".join(response_lines).strip()
+                            
+                            # 選択肢を構築
+                            options = []
+                            
+                            # 残りのメニューがある場合は「おすすめ定食の続き」タブを追加
+                            if remaining_menus:
+                                # 残りのメニューをコンテキストに保存
+                                state["context"]["recommended_teishoku_remaining"] = remaining_menus
+                                options.append("おすすめ定食の続き")
+                                logger.info(f"[Teishoku] 残りのおすすめ定食: {len(remaining_menus)}件、タブ追加: おすすめ定食の続き")
+                            
+                            # デフォルトの選択肢を追加
+                            options.extend(["メニューを見る", "おすすめを教えて"])
+                            
+                            state["options"] = options
+                            logger.info(f"[Teishoku] 最終オプション: {options}")
+                            logger.info(f"[Teishoku] コンテキスト保存確認: recommended_teishoku_remaining={len(remaining_menus)}件")
+                            return state
+                        else:
+                            logger.warning("[Teishoku] おすすめ定食が見つかりません")
+                except Exception as e:
+                    logger.error(f"[Teishoku] おすすめ定食取得エラー: {e}")
         
         # 寿司入力時の意図確認分岐（優先処理）
         sushi_keywords = ["寿司", "すし", "sushi"]
@@ -3728,8 +3896,8 @@ class SimpleGraphEngine:
                     next_nodes = matched_node.get("next", [])
                     subcategory = matched_node.get("subcategory", "")
                     
-                    # テンプレートを正規化
-                    response_text = self._normalize_text(template)
+                    # テンプレートは正規化せずにそのまま使用（応答テキストとして使用するため）
+                    response_text = template
                     
                     # 定食屋メニューの本文整形フック
                     response_text = self._normalize_teishoku_text(response_text, matched_node)
@@ -4367,6 +4535,11 @@ class SimpleGraphEngine:
             logger.info(f"[Route] 宴会ボタンクリック検出: '{last_message}' → option_click")
             return "option_click"
         
+        # 「おすすめ定食の続き」を優先的にoption_clickにルーティング
+        if last_message == "おすすめ定食の続き" or last_message == "おすすめ定食はこちら":
+            logger.info(f"[Route] おすすめ定食の続き検出: '{last_message}' → option_click")
+            return "option_click"
+        
         # 選択肢クリック判定（最優先）
         if self._is_option_click(last_message):
             logger.info(f"[Route] 選択肢クリック判定: '{last_message}' → option_click")
@@ -4457,6 +4630,11 @@ class SimpleGraphEngine:
             logger.info(f"[Route] 揚げ物キーワード検出: '{last_message}' → food_flow")
             return "food_flow"
         
+        # 「おすすめ定食の続き」を定食キーワード検出より前にチェック（誤マッチ防止）
+        if last_message == "おすすめ定食の続き" or last_message == "おすすめ定食はこちら":
+            logger.info(f"[Route] おすすめ定食の続き検出（定食キーワード前）: '{last_message}' → option_click")
+            return "option_click"
+        
         # 定食関連キーワード（柔軟な表現対応）
         teishoku_keywords = [
             # 基本的な定食表現
@@ -4479,8 +4657,8 @@ class SimpleGraphEngine:
         teishoku_matches = [kw for kw in teishoku_keywords if self._normalize_text(kw) in normalized_last_message]
         if teishoku_matches:
             logger.info(f"[Route] 定食キーワード検出: {teishoku_matches}")
-            logger.info(f"[Route] '{last_message}' → general_response (定食)")
-            return "general_response"
+            logger.info(f"[Route] '{last_message}' → general (定食)")
+            return "general"
         
         # 丼物関連キーワード（柔軟な表現対応）
         donburi_keywords = [
@@ -4499,8 +4677,8 @@ class SimpleGraphEngine:
         donburi_matches = [kw for kw in donburi_keywords if kw in last_message]
         if donburi_matches:
             logger.info(f"[Route] 丼物キーワード検出: {donburi_matches}")
-            logger.info(f"[Route] '{last_message}' → general_response (丼物)")
-            return "general_response"
+            logger.info(f"[Route] '{last_message}' → general (丼物)")
+            return "general"
         
         # 寿司関連キーワード（柔軟な表現対応）
         sushi_keywords = [
@@ -4526,8 +4704,8 @@ class SimpleGraphEngine:
         sushi_matches = [kw for kw in sushi_keywords if self._normalize_text(kw) in normalized_last_message]
         if sushi_matches:
             logger.info(f"[Route] 寿司キーワード検出: {sushi_matches}")
-            logger.info(f"[Route] '{last_message}' → general_response (寿司)")
-            return "general_response"
+            logger.info(f"[Route] '{last_message}' → general (寿司)")
+            return "general"
         
         # 焼き魚・煮魚関連キーワード（「焼き」単独は除外して誤マッチを防止）
         grilled_fish_keywords = [
@@ -4545,8 +4723,8 @@ class SimpleGraphEngine:
         grilled_fish_matches = [kw for kw in grilled_fish_keywords if kw in last_message]
         if grilled_fish_matches:
             logger.info(f"[Route] 焼き魚・煮魚キーワード検出: {grilled_fish_matches}")
-            logger.info(f"[Route] '{last_message}' → general_response (焼き魚・煮魚)")
-            return "general_response"
+            logger.info(f"[Route] '{last_message}' → general (焼き魚・煮魚)")
+            return "general"
         
         # ランチキーワードの優先判定（弁当の前に実行）
         # 「ランチ」単独または「ランチメニュー」などは店内飲食のランチとして扱う
@@ -4562,8 +4740,8 @@ class SimpleGraphEngine:
         
         # 「ランチ」が含まれ、かつ弁当関連キーワードがない場合は、店内ランチメニューとして扱う
         if "ランチ" in last_message and not has_bento_keywords:
-            logger.info(f"[Route] ランチキーワード検出（弁当除外）: '{last_message}' → general_response (ランチメニュー)")
-            return "general_response"
+            logger.info(f"[Route] ランチキーワード検出（弁当除外）: '{last_message}' → general (ランチメニュー)")
+            return "general"
         
         # キーワードベース判定（選択肢クリック判定の後に実行）
         # 弁当関連（優先度高）- 柔軟なキーワード対応
@@ -4655,6 +4833,16 @@ class SimpleGraphEngine:
         # 2. 部分一致検索（キーワードの一部が含まれている場合）
         if not matched_keywords:
             # 包括的な部分一致キーワード
+            # おすすめ関連キーワードを優先判定（部分一致検出より前に配置）
+            recommend_keywords_priority = [
+                "おすすめ", "お勧め", "お薦め", "オススメ", "推奨", "人気", "一押し", "イチオシ",
+                "おすすめ一品", "おすすめ定食", "おすすめメニュー", "おすすめ料理"
+            ]
+            recommend_matches_priority = [kw for kw in recommend_keywords_priority if kw in last_message]
+            if recommend_matches_priority:
+                logger.info(f"[Route] おすすめキーワード優先検出: {recommend_matches_priority}")
+                return "proactive_recommend"
+            
             partial_keywords = {
                 "bento": [
                     "弁当", "べんとう", "お弁当", "おべんとう",
@@ -4795,6 +4983,16 @@ class SimpleGraphEngine:
         if menu_question_matches:
             logger.info(f"[Route] メニュー質問キーワード検出: {menu_question_matches}")
             return "general"
+        
+        # おすすめ関連キーワードを優先判定（food_keywordsより前に配置）
+        recommend_keywords = [
+            "おすすめ", "お勧め", "お薦め", "オススメ", "推奨", "人気", "一押し", "イチオシ",
+            "おすすめ一品", "おすすめ定食", "おすすめメニュー", "おすすめ料理"
+        ]
+        recommend_matches = [kw for kw in recommend_keywords if kw in last_message]
+        if recommend_matches:
+            logger.info(f"[Route] おすすめキーワード検出: {recommend_matches}")
+            return "proactive_recommend"
         
         # 食事・料理関連（部分一致対応）- 寿司は除外（上で処理済み）
         food_keywords = [
