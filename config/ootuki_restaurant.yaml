@@ -14,7 +14,7 @@ notion:
     menu_db: "258e9a7e-e5b7-8054-922d-e365bec99064"
     store_db: "262e9a7ee5b7806e911ce966a0ccf7fe"
     conversation_db: "700563e396c84f8f89adafb90c51ca3f"  # 会話ノードDB
-    conversation_history_db: "f1c8dc8dd4cd4d3187a5c36660724db3"  # 会話履歴DB
+    conversation_history_db: "262e9a7ee5b780939967d01fe7f9fe9e"  # 会話履歴DB（新）
     unknown_keywords_db: "6cccf26b198645f2b08d71fb9b1d01f0"  # 不明キーワード記録DB
 
 knowledge_base:

@@ -1168,7 +1168,8 @@ class NotionClient:
         answer: str,
         timestamp: Optional[datetime] = None,
         satisfaction: Optional[int] = None,
-        menu_reference: Optional[str] = None
+        menu_reference: Optional[str] = None,
+        channel: str = "Web"
     ) -> bool:
         """
         会話履歴をNotionデータベースに保存（リトライ機能付き）
@@ -1181,6 +1182,7 @@ class NotionClient:
             timestamp: タイムスタンプ（Noneの場合は現在時刻、JST）
             satisfaction: 満足度（1-5の整数、オプション）
             menu_reference: 参照されたメニュー名（オプション）
+            channel: チャネル（LINE/Web/電話/店頭/その他、デフォルト: Web）
         
         Returns:
             保存成功時True、失敗時False
@@ -1234,9 +1236,14 @@ class NotionClient:
                     }
                 ]
             },
-            "タイムスタンプ": {
+            "会話日時": {
                 "date": {
                     "start": timestamp.isoformat()  # ISO8601形式（タイムゾーン付き）
+                }
+            },
+            "チャネル": {
+                "select": {
+                    "name": channel
                 }
             }
         }
