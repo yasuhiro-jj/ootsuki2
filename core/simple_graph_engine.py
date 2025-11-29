@@ -1193,6 +1193,8 @@ class SimpleGraphEngine:
         """
         ユーザー入力から宴会インテントを検出（広範囲・柔軟な検出）
         
+        【重要】「忘年会」「年末」関連キーワードは除外し、bonenkai_introノードに委ねる
+        
         Args:
             user_input: ユーザーの入力
             
@@ -1224,12 +1226,24 @@ class SimpleGraphEngine:
         # カタカナをひらがなに変換
         normalized_input = katakana_to_hiragana(normalized_input)
         
+        # 【重要】「忘年会」「年末」関連キーワードがある場合は、このメソッドでは検出せず
+        # _find_node_by_keywords で bonenkai_intro が選ばれるようにする
+        bonenkai_exclusive_keywords = [
+            "忘年会", "ぼうねんかい", "bounenkai",
+            "忘新年会", "ぼうしんねんかい",
+            "年末", "ねんまつ", "年末の宴会", "年末飲み会"
+        ]
+        for bonenkai_kw in bonenkai_exclusive_keywords:
+            if bonenkai_kw in user_input_lower or bonenkai_kw in normalized_input:
+                logger.info(f"[Banquet] 忘年会専用キーワード検出: '{bonenkai_kw}' → キーワードマッチングに委ねる")
+                return None  # 宴会インテントとして検出しない
+        
         # 宴会関連キーワード（広範囲なバリエーション）
+        # 【重要】「忘年会」は除外済み（bonenkai_introノードで処理）
         banquet_base_keywords = [
             # 基本表現（全文字種対応）
             "宴会", "えんかい", "エンカイ", "enkai",
-            # 宴会の種類
-            "忘年会", "ぼうねんかい", "ボウネンカイ", "bounenkai",
+            # 宴会の種類（忘年会は除く）
             "新年会", "しんねんかい", "シンネンカイ", "shinnenkai",
             "歓迎会", "かんげいかい", "カンゲイカイ", "kangeikai",
             "送別会", "そうべつかい", "ソウベツカイ", "sobetsukai",
