@@ -5578,6 +5578,11 @@ class SimpleGraphEngine:
         """
         キーワードマッチングによる柔軟なノード検索（拡張版）
         
+        【スコアリングロジック】
+        - 優先度: 数字が小さいほど高スコア（priority=1が最優先）
+        - キーワードマッチ: 一致数・文字数に応じて加点
+        - 長いキーワード: より長い一致を優遇
+        
         Args:
             user_input: ユーザーの入力
             conversation_nodes: 会話ノードの辞書
@@ -5592,18 +5597,25 @@ class SimpleGraphEngine:
         normalized_input = self._normalize_text(user_input.lower())
         
         best_match = None
-        best_score = -999  # マイナスから開始して、明確にマッチしたものだけを返す
+        best_score = 0  # 0から開始して、マッチしたものだけが正のスコアを得る
+        
+        # デバッグ用のスコア詳細を保持
+        debug_scores = {}
         
         for node_id, node_data in conversation_nodes.items():
             node_name = node_data.get("name", "")
             keywords = node_data.get("keywords", [])
             subcategory = node_data.get("subcategory", "")
             priority = node_data.get("priority", 99)
+            implementation_class = node_data.get("implementation_class", "")
             
             # キーワードを拡張（表記ゆれ、類義語を追加）
             expanded_keywords = self._expand_keywords(keywords)
             
             score = 0
+            matched_keywords_count = 0
+            matched_chars = 0
+            longest_matched_keyword_length = 0
             
             # ノード名での完全一致（最高優先度）
             normalized_node_name = self._normalize_text(node_name.lower())
@@ -5612,7 +5624,6 @@ class SimpleGraphEngine:
             
             # ノード名での部分一致（中程度の優先度）
             node_name_words = normalized_node_name.split()
-            input_words = normalized_input.split()
             for word in node_name_words:
                 if word and len(word) >= 2:  # 2文字以上の単語のみ
                     if word in normalized_input:
@@ -5625,12 +5636,21 @@ class SimpleGraphEngine:
                 # 完全一致
                 if normalized_keyword == normalized_input or normalized_input == normalized_keyword:
                     score += 50
+                    matched_keywords_count += 1
+                    matched_chars += len(normalized_keyword)
+                    longest_matched_keyword_length = max(longest_matched_keyword_length, len(normalized_keyword))
                 # 部分一致（キーワードが入力に含まれる）
                 elif normalized_keyword in normalized_input:
                     score += 25
+                    matched_keywords_count += 1
+                    matched_chars += len(normalized_keyword)
+                    longest_matched_keyword_length = max(longest_matched_keyword_length, len(normalized_keyword))
                 # 部分一致（入力がキーワードに含まれる）
                 elif normalized_input in normalized_keyword and len(normalized_input) >= 2:
                     score += 20
+                    matched_keywords_count += 1
+                    matched_chars += len(normalized_input)
+                    longest_matched_keyword_length = max(longest_matched_keyword_length, len(normalized_input))
             
             # サブカテゴリでの一致
             if subcategory:
@@ -5638,18 +5658,75 @@ class SimpleGraphEngine:
                 if normalized_subcategory in normalized_input or normalized_input in normalized_subcategory:
                     score += 15
             
-            # 優先度による減点（優先度が低いほど減点）
+            # 「忘年会」専用ノードへの特別処理
+            # 「忘年会」「年末の宴会」「忘年会プラン」などが含まれる場合のみ有効化
+            bonenkai_bonus = 0
+            has_bonenkai_keyword = False
+            bonenkai_keywords = [
+                "忘年会", "忘新年会", "会社の忘年会", "職場の忘年会", 
+                "忘年会プラン", "忘年会メニュー", "忘年会コース",
+                "年末の宴会", "年末飲み会", "年末"  # 「年末」関連を追加
+            ]
+            
+            # ユーザー入力に「忘年会」系キーワードが含まれているかチェック
+            for bonenkai_kw in bonenkai_keywords:
+                normalized_bonenkai_kw = self._normalize_text(bonenkai_kw.lower())
+                if normalized_bonenkai_kw in normalized_input:
+                    has_bonenkai_keyword = True
+                    break
+            
+            # bonenkai_introノードの特別処理
+            if node_id == "bonenkai_intro":
+                if has_bonenkai_keyword:
+                    # 「忘年会」が含まれる場合は大幅加点
+                    bonenkai_bonus = 100
+                else:
+                    # 「忘年会」が含まれない場合は、このノードを無効化（大幅減点）
+                    score -= 1000
+            
+            # 優先度による加点（優先度が高いほど加点）
+            # priority: 1〜5 の場合、1が最も高スコアになるように
             # priorityがNoneの場合は99とする
-            score -= (priority if priority is not None else 99)
+            # ただし、「忘年会」専用ボーナスがある場合は優先度の差を小さくする
+            priority_value = priority if priority is not None else 99
+            if bonenkai_bonus > 0:
+                # 忘年会ボーナスがある場合は優先度の重みを小さくする
+                priority_bonus = (10 - priority_value) * 2
+            else:
+                # 通常時は優先度の重みを控えめに
+                priority_bonus = (10 - priority_value) * 3
+            score += priority_bonus
+            score += bonenkai_bonus
+            
+            # 長いキーワード優遇（より具体的なマッチを優先）
+            if longest_matched_keyword_length > 0:
+                score += longest_matched_keyword_length * 3  # より具体的な一致を強く優遇
+            
+            # 実装クラスによる小さな補正（最小限）
+            # BanquetEntryNodeなど特定クラスへの過度な優遇を避ける
+            if implementation_class == 'BanquetEntryNode':
+                score += 5  # banquet_entryを「宴会」発話時に選ばれやすくする
+            
+            # デバッグ情報を保存
+            debug_scores[node_name] = {
+                'score': score,
+                'priority': priority_value,
+                'priority_bonus': priority_bonus,
+                'matched_keywords_count': matched_keywords_count,
+                'matched_chars': matched_chars,
+                'longest_matched': longest_matched_keyword_length
+            }
             
             # スコアが最も高いノードを選択
             if score > best_score:
                 best_score = score
                 best_match = node_data
         
-        # スコアが閾値以上の場合は返す（より柔軟な閾値）
-        if best_score >= -80:  # 優先度99でもキーワードマッチすれば返す（閾値を緩和）
-            logger.info(f"[KeywordMatch] ノード検索: '{user_input}' → {best_match.get('name', '不明')} (スコア: {best_score})")
+        # スコアが閾値以上の場合は返す
+        if best_score > 0:  # 何かしらマッチした場合
+            matched_name = best_match.get('name', '不明')
+            logger.info(f"[KeywordMatch] ノード検索: '{user_input}' → {matched_name} (スコア: {best_score})")
+            logger.debug(f"[KeywordMatch] スコア詳細: {debug_scores.get(matched_name, {})}")
             return best_match
         
         logger.debug(f"[KeywordMatch] マッチなし: '{user_input}' (最高スコア: {best_score})")
