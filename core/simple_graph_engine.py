@@ -52,6 +52,10 @@ class SimpleGraphEngine:
         self.conversation_system = conversation_system
         self.graph = None
         self._fried_cache: Dict[str, Any] = {}
+        
+        # クロスリフレクションエンジン（遅延初期化対応）
+        self.cross_reflection_engine = None
+        self._initialize_cross_reflection_engine()
     
     def build_graph(self):
         """グラフ構築"""
@@ -97,6 +101,46 @@ class SimpleGraphEngine:
         return self.graph
     
     # --- ノード実装 ---
+
+    def _initialize_cross_reflection_engine(self) -> bool:
+        """
+        クロスリフレクションエンジンを初期化
+        
+        Returns:
+            bool: 初期化に成功した場合True
+        """
+        if self.cross_reflection_engine is not None:
+            return True
+        
+        try:
+            from core.cross_reflection_engine import CrossReflectionEngine
+            self.cross_reflection_engine = CrossReflectionEngine(
+                llm=self.llm,
+                notion_client=self.notion_client,
+                menu_service=self.menu_service,
+                config=self.config
+            )
+            logger.info(
+                "[CrossReflection] ✅ クロスリフレクションエンジンを初期化しました "
+                f"(llm_available={self.llm is not None}, "
+                f"notion_client={self.notion_client is not None}, "
+                f"menu_service={self.menu_service is not None})"
+            )
+            return True
+        except ImportError as e:
+            logger.warning(f"[CrossReflection] ⚠️ インポートエラー: {e}")
+            logger.warning("[CrossReflection] クロスリフレクション機能は無効化されます")
+        except Exception as e:
+            logger.warning(f"[CrossReflection] ⚠️ クロスリフレクションエンジンの初期化に失敗: {e}")
+            import traceback
+            logger.warning(f"[CrossReflection] トレースバック: {traceback.format_exc()}")
+        
+        self.cross_reflection_engine = None
+        return False
+    
+    def _ensure_cross_reflection_engine(self) -> bool:
+        """必要に応じてクロスリフレクションエンジンを初期化"""
+        return self._initialize_cross_reflection_engine()
     
     def greeting(self, state: State) -> State:
         """挨拶ノード（人間味のある接客・時間帯対応）"""
@@ -636,8 +680,37 @@ class SimpleGraphEngine:
                     "テイクアウト一品"
                 ]
             
-            state["response"] = response_text + menu_text
+            response_final = response_text + menu_text
+            state["response"] = response_final
             state["options"] = menu_options
+            
+            # クロスリフレクション適用（価格問い合わせは重要な応答）
+            if self._ensure_cross_reflection_engine() and any(kw in last_message for kw in ["値段", "価格", "いくら", "料金"]):
+                try:
+                    initial_response = state.get("response", "")
+                    
+                    # コンテキストを構築
+                    context_parts = []
+                    if menu_text:
+                        context_parts.append(f"メニュー情報:\n{menu_text}")
+                    reflection_context = "\n\n".join(context_parts) if context_parts else None
+                    
+                    # クロスリフレクション適用
+                    improved_response = self.cross_reflection_engine.apply_reflection(
+                        user_message=last_message,
+                        initial_response=initial_response,
+                        intent="price",
+                        context=reflection_context
+                    )
+                    
+                    if improved_response != initial_response:
+                        logger.info(f"[CrossReflection] 価格応答を改善しました: {len(initial_response)}文字 → {len(improved_response)}文字")
+                        state["response"] = improved_response
+                    else:
+                        logger.debug("[CrossReflection] 価格応答改善なし（スキップまたはスコア高）")
+                except Exception as e:
+                    logger.error(f"[CrossReflection] エラー（フォールバック）: {e}")
+                    # エラーが発生しても元の応答を使用
             
         except Exception as e:
             logger.error(f"弁当メニュー取得エラー: {e}")
@@ -844,6 +917,52 @@ class SimpleGraphEngine:
                     
                     state["response"] = response_text
                     state["options"] = options if options else ["おすすめメニューはこちら", "メニューを見る"]
+                    
+                    # クロスリフレクション適用（価格問い合わせは重要な応答）
+                    price_keywords = ["値段", "価格", "いくら", "料金", "いくつ"]
+                    is_price_query = any(kw in last_message for kw in price_keywords)
+                    
+                    if is_price_query:
+                        engine_ready = self._ensure_cross_reflection_engine()
+                        logger.info(f"[CrossReflection] 価格問い合わせ検出: '{last_message}'")
+                        logger.info(f"[CrossReflection] クロスリフレクションエンジン状態: {engine_ready}")
+                    else:
+                        engine_ready = False
+                    
+                    if engine_ready and is_price_query:
+                        try:
+                            initial_response = state.get("response", "")
+                            logger.info(f"[CrossReflection] 刺身価格応答にクロスリフレクション適用開始: {len(initial_response)}文字")
+                            
+                            # コンテキストを構築
+                            context_parts = []
+                            if template:
+                                context_parts.append(f"テンプレート:\n{template}")
+                            # menu_textは変数スコープの問題で直接参照できないため、response_textから取得
+                            if "🐟 刺身メニュー:" in response_text:
+                                menu_section = response_text.split("🐟 刺身メニュー:")[-1]
+                                context_parts.append(f"メニュー情報:\n{menu_section}")
+                            reflection_context = "\n\n".join(context_parts) if context_parts else None
+                            
+                            # クロスリフレクション適用
+                            improved_response = self.cross_reflection_engine.apply_reflection(
+                                user_message=last_message,
+                                initial_response=initial_response,
+                                intent="price",
+                                context=reflection_context
+                            )
+                            
+                            if improved_response != initial_response:
+                                logger.info(f"[CrossReflection] ✅ 刺身価格応答を改善しました: {len(initial_response)}文字 → {len(improved_response)}文字")
+                                state["response"] = improved_response
+                            else:
+                                logger.info("[CrossReflection] ℹ️ 刺身価格応答改善なし（スキップまたはスコア高）")
+                        except Exception as e:
+                            logger.error(f"[CrossReflection] ❌ エラー（フォールバック）: {e}")
+                            import traceback
+                            logger.error(f"[CrossReflection] トレースバック: {traceback.format_exc()}")
+                            # エラーが発生しても元の応答を使用
+                    
                     logger.info(f"[Sashimi] 会話ノードを使用: {len(options)}件の選択肢")
                     return state
                 else:
@@ -1177,6 +1296,46 @@ class SimpleGraphEngine:
             # 遷移先が0件の場合はボタンなし
             state["response"] = response_text
             state["options"] = options if options else ["メニューを見る"]
+            
+            # クロスリフレクション適用（宴会・忘年会は重要な応答）
+            engine_ready = False
+            if state.get("response"):
+                engine_ready = self._ensure_cross_reflection_engine()
+                logger.info(f"[CrossReflection] 宴会応答検出: response_length={len(state.get('response', ''))}")
+                logger.info(f"[CrossReflection] クロスリフレクションエンジン状態: {engine_ready}")
+            
+            if engine_ready and state.get("response"):
+                try:
+                    last_message = state.get("messages", [])[-1] if state.get("messages") else ""
+                    initial_response = state.get("response", "")
+                    logger.info(f"[CrossReflection] 宴会応答にクロスリフレクション適用開始: {len(initial_response)}文字")
+                    
+                    # コンテキストを構築
+                    context_parts = []
+                    if template:
+                        context_parts.append(f"テンプレート:\n{template}")
+                    if node_id:
+                        context_parts.append(f"ノードID: {node_id}")
+                    reflection_context = "\n\n".join(context_parts) if context_parts else None
+                    
+                    # クロスリフレクション適用
+                    improved_response = self.cross_reflection_engine.apply_reflection(
+                        user_message=last_message,
+                        initial_response=initial_response,
+                        intent="banquet",
+                        context=reflection_context
+                    )
+                    
+                    if improved_response != initial_response:
+                        logger.info(f"[CrossReflection] ✅ 宴会応答を改善しました: {len(initial_response)}文字 → {len(improved_response)}文字")
+                        state["response"] = improved_response
+                    else:
+                        logger.info("[CrossReflection] ℹ️ 宴会応答改善なし（スキップまたはスコア高）")
+                except Exception as e:
+                    logger.error(f"[CrossReflection] ❌ エラー（フォールバック）: {e}")
+                    import traceback
+                    logger.error(f"[CrossReflection] トレースバック: {traceback.format_exc()}")
+                    # エラーが発生しても元の応答を使用
             
             logger.info(f"[Banquet] ノード表示完了: {node_id}, ボタン数: {len(options)}")
             return state
@@ -4310,6 +4469,48 @@ class SimpleGraphEngine:
                 response_text = response.content
                 if is_menu_query or is_general_menu_query:
                     response_text = self._add_order_instruction(response_text)
+                
+                # クロスリフレクション適用（重要な応答の場合）
+                if self._ensure_cross_reflection_engine():
+                    try:
+                        # 意図を取得（stateから）
+                        detected_intent = state.get("intent", "")
+                        
+                        # 重要な意図かどうかを確認
+                        is_critical = self.cross_reflection_engine.is_critical_intent(last_message, detected_intent)
+                        logger.info(f"[CrossReflection] general_response: 重要な意図={is_critical}, intent={detected_intent}, message='{last_message[:50]}...'")
+                        
+                        if is_critical:
+                            logger.info(f"[CrossReflection] general_responseにクロスリフレクション適用開始: {len(response_text)}文字")
+                            
+                            # コンテキストを構築
+                            context_parts = []
+                            if menu_result:
+                                context_parts.append(f"メニュー情報:\n{menu_result}")
+                            if context:
+                                context_parts.append(f"追加コンテキスト:\n{context}")
+                            reflection_context = "\n\n".join(context_parts) if context_parts else None
+                            
+                            # クロスリフレクション適用
+                            improved_response = self.cross_reflection_engine.apply_reflection(
+                                user_message=last_message,
+                                initial_response=response_text,
+                                intent=detected_intent,
+                                context=reflection_context
+                            )
+                            
+                            if improved_response != response_text:
+                                logger.info(f"[CrossReflection] ✅ general_response応答を改善しました: {len(response_text)}文字 → {len(improved_response)}文字")
+                                response_text = improved_response
+                            else:
+                                logger.info("[CrossReflection] ℹ️ general_response応答改善なし（スキップまたはスコア高）")
+                        else:
+                            logger.debug(f"[CrossReflection] general_response: 重要な意図ではないためスキップ")
+                    except Exception as e:
+                        logger.error(f"[CrossReflection] ❌ general_responseエラー（フォールバック）: {e}")
+                        import traceback
+                        logger.error(f"[CrossReflection] トレースバック: {traceback.format_exc()}")
+                        # エラーが発生しても元の応答を使用
                 
                 state["response"] = response_text
                 
