@@ -298,14 +298,29 @@ class NotionClient:
         
         Returns:
             データベースのプロパティ情報
+        
+        Raises:
+            Exception: Notion APIエラーが発生した場合
         """
         if not self.client:
             logger.warning("Notionクライアントが初期化されていません")
-            return {}
+            raise ValueError("Notionクライアントが初期化されていません")
         
         try:
+            logger.debug(f"[DEBUG] データベース情報を取得中: {database_id[:8]}...")
             db_info = self.client.databases.retrieve(database_id=database_id)
+            
+            if not db_info:
+                logger.error("❌ データベース情報が空です")
+                raise ValueError("データベース情報が取得できませんでした")
+            
             properties = db_info.get("properties", {})
+            
+            if not properties:
+                logger.warning("⚠️ データベースにプロパティが存在しません")
+                return {}
+            
+            logger.debug(f"[DEBUG] プロパティ数: {len(properties)}")
             
             schema = {}
             for prop_name, prop_info in properties.items():
@@ -319,11 +334,41 @@ class NotionClient:
                     options = prop_info.get("select", {}).get("options", [])
                     schema[prop_name]["options"] = [opt.get("name") for opt in options]
             
+            logger.info(f"[OK] スキーマ取得完了: {len(schema)}件のプロパティ")
             return schema
         
         except Exception as e:
-            logger.error(f"データベーススキーマ取得エラー: {e}")
-            return {}
+            # エラーの詳細をログに記録
+            error_msg = str(e)
+            error_type = type(e).__name__
+            
+            # Notion APIエラーの詳細を解析
+            from notion_client.errors import APIResponseError
+            if isinstance(e, APIResponseError):
+                logger.error(f"❌ Notion API エラー: status={e.status}, code={e.code}")
+                logger.error(f"   メッセージ: {error_msg}")
+                
+                if e.status == 404:
+                    logger.error("【対処方法】")
+                    logger.error("  1. データベースIDが正しいか確認")
+                    logger.error("  2. Notion Integrationがデータベースに接続されているか確認")
+                    logger.error("  3. データベースが削除されていないか確認")
+                elif e.status == 401:
+                    logger.error("【対処方法】")
+                    logger.error("  1. NOTION_API_KEYが正しく設定されているか確認")
+                    logger.error("  2. API Keyが有効か確認")
+                elif e.status == 403:
+                    logger.error("【対処方法】")
+                    logger.error("  1. Notion Integrationがデータベースに接続されているか確認")
+                    logger.error("  2. Integrationに適切な権限が設定されているか確認")
+            else:
+                logger.error(f"データベーススキーマ取得エラー: {error_type}: {error_msg}")
+            
+            import traceback
+            logger.debug(f"トレースバック: {traceback.format_exc()}")
+            
+            # エラーを再発生させて、呼び出し側で処理できるようにする
+            raise
     
     def pages_to_text(self, pages: List[Dict[str, Any]]) -> str:
         """
@@ -1169,7 +1214,9 @@ class NotionClient:
         timestamp: Optional[datetime] = None,
         satisfaction: Optional[int] = None,
         menu_reference: Optional[str] = None,
-        channel: str = "Web"
+        channel: str = "Web",
+        intent: Optional[str] = None,
+        search_keyword: Optional[str] = None
     ) -> bool:
         """
         会話履歴をNotionデータベースに保存（リトライ機能付き）
@@ -1183,6 +1230,8 @@ class NotionClient:
             satisfaction: 満足度（1-5の整数、オプション）
             menu_reference: 参照されたメニュー名（オプション）
             channel: チャネル（LINE/Web/電話/店頭/その他、デフォルト: Web）
+            intent: 意図（Menu.search / Menu.detail / Reservation.ask / Hours.ask / Access.ask / Price.ask / Other、オプション）
+            search_keyword: 検索キーワード（オプション）
         
         Returns:
             保存成功時True、失敗時False
@@ -1247,6 +1296,26 @@ class NotionClient:
                 }
             }
         }
+        
+        # 意図が指定されている場合は追加（select型）
+        if intent and intent.strip():
+            properties["意図"] = {
+                "select": {
+                    "name": intent[:100]  # Notionの制限に合わせて切り詰め
+                }
+            }
+        
+        # 検索キーワードが指定されている場合は追加（rich_text型）
+        if search_keyword and search_keyword.strip():
+            properties["検索キーワード"] = {
+                "rich_text": [
+                    {
+                        "text": {
+                            "content": search_keyword[:2000]  # Notionの制限に合わせて切り詰め
+                        }
+                    }
+                ]
+            }
         
         # 満足度が指定されている場合は追加（1-5の整数）
         if satisfaction is not None:

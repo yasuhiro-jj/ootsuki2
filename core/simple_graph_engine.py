@@ -4559,6 +4559,25 @@ class SimpleGraphEngine:
             logger.info(f"[Route] 選択肢クリック判定: '{last_message}' → option_click")
             return "option_click"
         
+        # 【重要】忘年会キーワードを最優先検出（刺身キーワードより前に配置）
+        # 会話ノードDBから忘年会ノードを検索
+        bonenkai_keywords = [
+            "忘年会", "ぼうねんかい", "bounenkai",
+            "忘新年会", "ぼうしんねんかい",
+            "年末", "ねんまつ", "年末の宴会", "年末飲み会"
+        ]
+        if any(kw in last_message for kw in bonenkai_keywords):
+            # 会話ノードDBから忘年会ノードを検索
+            if self.conversation_system:
+                conversation_nodes = self.conversation_system.get_conversation_nodes()
+                matched_node = self._find_node_by_keywords(last_message, conversation_nodes)
+                if matched_node:
+                    node_id = matched_node.get("id", "")
+                    # 忘年会関連のノードIDか確認
+                    if "bonenkai" in node_id.lower() or "忘年会" in str(matched_node.get("name", "")):
+                        logger.info(f"[Route] 忘年会ノード検出: '{last_message}' → {node_id} (キーワードマッチング)")
+                        return "general"  # general_responseで処理される
+        
         # テイクアウト/弁当キーワードを宴会インテント検出より前に配置（誤検出防止）
         # 完全一致検索でテイクアウト/弁当キーワードをチェック
         bento_keywords_precheck = [
@@ -4587,7 +4606,7 @@ class SimpleGraphEngine:
                     state["context"]["banquet_node_id"] = node_id
                     return "banquet_flow"
         
-        # 刺身関連キーワードを最優先検出（intent.sashimi）- 部分一致検索より前に配置
+        # 刺身関連キーワードを検出（intent.sashimi）- 「たい」の誤検出を防ぐため、より厳密に
         sashimi_keywords = [
             # 基本的な刺身表現
             "刺身", "さしみ", "お刺身", "海鮮刺身", "刺身盛り", "刺身定食",
@@ -4599,10 +4618,10 @@ class SimpleGraphEngine:
             "さば刺", "サバ刺", "鯖刺", "ぶり刺", "ブリ刺", "鰤刺", "かつお刺", "カツオ刺", "鰹刺",
             "たこ刺", "タコ刺", "蛸刺", "えび刺", "エビ刺", "海老刺", "あなご刺", "アナゴ刺", "穴子刺",
             
-            # 魚名のみ（刺身文脈）- 正規化を通じてカタカナ・ひらがなを統一
+            # 魚名のみ（刺身文脈）- 「たい」は単独では検出しない（誤検出防止）
             "まぐろ", "鮪", "tuna", "ツナ", "つな",
             "サーモン", "さーもん", "鮭", "しゃけ", "salmon",
-            "鯛", "たい", "真鯛", "まだい",
+            "鯛", "真鯛", "まだい", "タイ",  # 「たい」を削除（誤検出防止）
             "あじ", "鯵", "アジ",
             "いか", "烏賊", "イカ",
             "ほたて", "帆立", "ホタテ",
@@ -4617,8 +4636,20 @@ class SimpleGraphEngine:
             "生魚", "なまざかな", "海鮮", "かいせん", "活魚", "鮮魚", "新鮮", "生"
         ]
         
-        # 正規化して比較
-        sashimi_matches = [kw for kw in sashimi_keywords if self._normalize_text(kw) in normalized_last_message]
+        # 正規化して比較（ただし「たい」は単独では検出しない）
+        sashimi_matches = []
+        for kw in sashimi_keywords:
+            normalized_kw = self._normalize_text(kw)
+            if normalized_kw in normalized_last_message:
+                # 「たい」の場合は、文脈を確認（「鯛」「タイ」などと組み合わせた場合のみ）
+                if normalized_kw == "たい":
+                    # 「たい」が単独で含まれている場合はスキップ（誤検出防止）
+                    # 「鯛」「タイ」などと組み合わせた場合のみ検出
+                    if "鯛" in last_message or "タイ" in last_message or "たい刺" in last_message or "タイ刺" in last_message:
+                        sashimi_matches.append(kw)
+                else:
+                    sashimi_matches.append(kw)
+        
         if sashimi_matches:
             logger.info(f"[Route] 刺身キーワード検出: {sashimi_matches}")
             logger.info(f"[Route] '{last_message}' → sashimi_flow にルーティング")

@@ -351,6 +351,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
             response_options: list = []
             response_message = ""
             agent_used = False
+            detected_intent = "Other"  # デフォルトの意図
 
             if agent_engine:
                 try:
@@ -387,6 +388,10 @@ def create_app(config: ConfigLoader) -> FastAPI:
                         final_state = graph_engine.invoke(initial_state)
                         response_message = final_state.get("response", "")
                         response_options = final_state.get("options", [])
+                        # 意図を取得（存在する場合）
+                        detected_intent = final_state.get("user_intent", "Other")
+                        if not detected_intent or detected_intent.strip() == "":
+                            detected_intent = "Other"
 
                         session = ai_engine.get_session(session_id)
                         if session:
@@ -394,7 +399,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
                             session.add_message("assistant", response_message)
 
                         logger.info(
-                            f"[OK] LangGraphで応答生成: {final_state.get('current_step')} (options: {len(response_options)})"
+                            f"[OK] LangGraphで応答生成: {final_state.get('current_step')} (options: {len(response_options)}, intent: {detected_intent})"
                         )
                     except Exception as e:
                         logger.warning(f"[WARN] LangGraphエラー、通常モードで応答: {e}")
@@ -418,14 +423,18 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     conversation_db_id = config.get("notion.database_ids.conversation_history_db")
                     if conversation_db_id and conversation_db_id.strip():
                         customer_id = request.customer_id or session_id[:8]  # セッションIDの最初の8文字を使用
+                        # 検索キーワードはユーザーの発話そのものを使用
+                        search_keyword = request.message.strip()
                         notion_client.save_conversation_history(
                             database_id=conversation_db_id,
                             customer_id=customer_id,
                             question=request.message,
                             answer=response_message,
-                            timestamp=datetime.now()
+                            timestamp=datetime.now(),
+                            intent=detected_intent,
+                            search_keyword=search_keyword
                         )
-                        logger.info(f"[OK] 会話履歴を保存しました: {customer_id}")
+                        logger.info(f"[OK] 会話履歴を保存しました: {customer_id}, intent: {detected_intent}")
                     else:
                         logger.warning("[WARN] 会話履歴データベースIDが設定されていません")
                 except Exception as e:
@@ -646,20 +655,29 @@ def create_app(config: ConfigLoader) -> FastAPI:
                         ws_manager.session_states[session_id] = result
                         logger.info(f"[WS] stateをセッションに保存: options={len(result.get('options', []))}件, context_keys={list(result.get('context', {}).keys())}")
                         
+                        # 意図を取得（存在する場合、デフォルトは"Other"）
+                        detected_intent = result.get("intent", "Other")
+                        if not detected_intent or detected_intent.strip() == "":
+                            detected_intent = "Other"
+                        
                         # 会話履歴をNotionに保存（設定で有効な場合）
                         if config.get("features.save_conversation", False):
                             try:
                                 conversation_db_id = config.get("notion.database_ids.conversation_history_db")
                                 if conversation_db_id and conversation_db_id.strip():
                                     customer_id = session_id[:8]  # セッションIDの最初の8文字を使用
+                                    # 検索キーワードはユーザーの発話そのものを使用
+                                    search_keyword = message.strip()
                                     notion_client.save_conversation_history(
                                         database_id=conversation_db_id,
                                         customer_id=customer_id,
                                         question=message,
                                         answer=result.get("response", ""),
-                                        timestamp=datetime.now()
+                                        timestamp=datetime.now(),
+                                        intent=detected_intent,
+                                        search_keyword=search_keyword
                                     )
-                                    logger.info(f"[WS] 会話履歴を保存しました: {customer_id}")
+                                    logger.info(f"[WS] 会話履歴を保存しました: {customer_id}, intent: {detected_intent}")
                                 else:
                                     logger.warning("[WARN] 会話履歴データベースIDが設定されていません")
                             except Exception as e:

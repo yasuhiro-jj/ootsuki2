@@ -241,6 +241,45 @@ A: Notion API Key とデータベースIDが正しいか確認してください
 - [ ] 多言語対応
 - [ ] Docker対応
 - [ ] クラウドデプロイ対応
+- [ ] **LangGraphによる次ステップ自動推論機能**（実装予定）
+
+### LangGraphによる次ステップ自動推論機能
+
+**概要：**  
+ユーザーの入力とState（状態）を基に、AIが次に必要なステップを自動判断し、適切な質問や提案を出す機能を実装予定。
+
+**主な機能：**
+- **State管理**: `user_input`, `user_goal`, `extracted_info`, `missing_info`, `next_action`, `step`, `history` を管理
+- **次アクション推論ノード**: Stateを分析し、以下のアクションから最適な1つを自動選択
+  - `ask_detail`: 情報が足りない場合、追加質問を生成
+  - `propose_solution`: 提案に進む
+  - `clarify_goal`: 目的を明確にする必要がある場合
+  - `generate_result`: レシピ・診断・回答を生成
+  - `offer_alternative`: 別案を提示
+- **Conditional Edge**: `next_action`の結果に応じて自動分岐
+- **情報抽出ノード**: ユーザー入力から必要情報を抽出
+- **提案ノード**: 状況に応じた回答・提案を生成
+
+**実装予定ファイル構成：**
+```
+src/
+  graph/
+    state.py              # State型定義
+    nodes/
+      extract_info.py     # 情報抽出ノード
+      next_action.py      # 次アクション推論ノード
+      ask_detail.py       # 追加質問ノード
+      propose_solution.py # 提案ノード
+      generate_result.py  # 結果生成ノード
+    workflow.py           # LangGraphワークフロー定義
+  main.py
+```
+
+**技術的な特徴：**
+- AIがStateを見て自動的に「次に何をすべきか」を判断
+- 不足情報がある場合は自動的に質問を生成
+- 情報が揃ったら自動的に最終回答に進む
+- 会話の文脈をStateで保持し、適切なタイミングで提案や質問を行う
 
 ---
 
