@@ -5930,19 +5930,56 @@ class SimpleGraphEngine:
                     # 「忘年会」が含まれない場合は、このノードを無効化（大幅減点）
                     score -= 1000
             
+            # 「おせち・年末料理」専用ノードへの特別処理
+            # おせち関連キーワードが含まれる場合、osechi_infoノードを最優先にする
+            osechi_bonus = 0
+            has_osechi_keyword = False
+            osechi_keywords = [
+                "おせち", "お節", "おせち料理", "正月料理", "おせち予約", 
+                "おせち注文", "おせちいつまで", "おせち受け取り",
+                "年末料理", "年末オードブル", "年末オードブル予約"
+            ]
+            
+            # ユーザー入力におせち系キーワードが含まれているかチェック
+            # ただし「オードブル」単独は除外（「年末オードブル」は含める）
+            # 「オードブル」単独の場合は除外するためのフラグ
+            is_ordoruburu_only = False
+            if "オードブル" in normalized_input:
+                # 「年末オードブル」や「年末オードブル予約」が含まれているかチェック
+                if "年末オードブル" not in normalized_input:
+                    # 「オードブル」単独の場合は、おせちキーワードチェックをスキップ
+                    is_ordoruburu_only = True
+            
+            if not is_ordoruburu_only:
+                for osechi_kw in osechi_keywords:
+                    normalized_osechi_kw = self._normalize_text(osechi_kw.lower())
+                    if normalized_osechi_kw in normalized_input:
+                        has_osechi_keyword = True
+                        break
+            
+            # osechi_infoノードの特別処理
+            if node_id == "osechi_info":
+                if has_osechi_keyword:
+                    # おせち関連キーワードが含まれる場合は大幅加点（最優先）
+                    osechi_bonus = 200  # 忘年会より高いボーナスで最優先にする
+                else:
+                    # おせち関連キーワードが含まれない場合は、このノードを無効化（大幅減点）
+                    score -= 1000
+            
             # 優先度による加点（優先度が高いほど加点）
             # priority: 1〜5 の場合、1が最も高スコアになるように
             # priorityがNoneの場合は99とする
-            # ただし、「忘年会」専用ボーナスがある場合は優先度の差を小さくする
+            # ただし、「忘年会」または「おせち」専用ボーナスがある場合は優先度の差を小さくする
             priority_value = priority if priority is not None else 99
-            if bonenkai_bonus > 0:
-                # 忘年会ボーナスがある場合は優先度の重みを小さくする
+            if bonenkai_bonus > 0 or osechi_bonus > 0:
+                # 忘年会またはおせちボーナスがある場合は優先度の重みを小さくする
                 priority_bonus = (10 - priority_value) * 2
             else:
                 # 通常時は優先度の重みを控えめに
                 priority_bonus = (10 - priority_value) * 3
             score += priority_bonus
             score += bonenkai_bonus
+            score += osechi_bonus
             
             # 長いキーワード優遇（より具体的なマッチを優先）
             if longest_matched_keyword_length > 0:
