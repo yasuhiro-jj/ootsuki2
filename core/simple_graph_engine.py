@@ -4090,6 +4090,24 @@ class SimpleGraphEngine:
                     if self._should_add_cross_sell_text_for_node(matched_node):
                         response_text = self._add_cross_sell_text(response_text, matched_node.get("id"))
                     
+                    # URLプロパティがある場合、レスポンス末尾にリンクを追加
+                    node_url = matched_node.get("url", "")
+                    if node_url and node_url.strip():
+                        # レスポンステキストの末尾に改行を追加（まだない場合）
+                        if response_text and not response_text.endswith('\n'):
+                            response_text += '\n'
+                        # URLが相対パスの場合は、設定からbase_urlを取得して正規化
+                        full_url = node_url.strip()
+                        if full_url.startswith('/'):
+                            # 相対パスの場合、設定からbase_urlを取得（なければ空文字のまま）
+                            base_url = self.config.get("server.base_url", "") if self.config else ""
+                            if base_url:
+                                # base_urlの末尾のスラッシュを除去してから結合
+                                base_url = base_url.rstrip('/')
+                                full_url = f"{base_url}{full_url}"
+                        # Markdown形式のリンクを追加
+                        response_text += f"\n[詳細はこちら]({full_url})"
+                    
                     # 選択肢を構築（先に構築してからクロスセル選択肢を追加）
                     options = []
                     for next_node_id in next_nodes:

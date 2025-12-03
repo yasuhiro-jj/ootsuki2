@@ -964,6 +964,40 @@
             // 太字 **text** → <strong>text</strong>
             text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
             
+            // Markdown形式のリンク [ラベル](URL) → <a href="URL">ラベル</a>
+            // 既にHTMLリンクタグで囲まれている場合はスキップ
+            text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(match, label, url, offset, fullText) {
+                // 既にリンクタグ内にある場合はスキップ
+                const beforeMatch = fullText.substring(0, offset);
+                const lastOpenTag = beforeMatch.lastIndexOf('<a');
+                const lastCloseTag = beforeMatch.lastIndexOf('</a>');
+                if (lastOpenTag !== -1 && lastOpenTag > lastCloseTag) {
+                    return match;
+                }
+                // URLが相対パスの場合は、現在のドメインをベースにする
+                let fullUrl = url;
+                if (url.startsWith('/')) {
+                    fullUrl = window.location.origin + url;
+                } else if (!url.match(/^https?:\/\//)) {
+                    // プロトコルがない場合はhttps://を追加
+                    fullUrl = 'https://' + url;
+                }
+                return `<a href="${fullUrl}" target="_blank" rel="noopener noreferrer" style="color: #667eea; text-decoration: underline; font-weight: bold; cursor: pointer;">${label}</a>`;
+            });
+            
+            // フルURLテキスト（https://〜 または http://〜）を自動リンク化
+            // 既にリンクタグで囲まれている場合はスキップ
+            text = text.replace(/(https?:\/\/[^\s<>"']+)/g, function(url, offset, fullText) {
+                // 既にリンクタグ内にある場合はスキップ
+                const beforeUrl = fullText.substring(0, offset);
+                const lastOpenTag = beforeUrl.lastIndexOf('<a');
+                const lastCloseTag = beforeUrl.lastIndexOf('</a>');
+                if (lastOpenTag !== -1 && lastOpenTag > lastCloseTag) {
+                    return url;
+                }
+                return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: #667eea; text-decoration: underline; font-weight: bold; cursor: pointer;">${url}</a>`;
+            });
+            
             // 箇条書きをHTMLリストに変換
             const lines = text.split('\n');
             let html = '';
