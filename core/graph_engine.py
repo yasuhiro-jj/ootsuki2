@@ -349,7 +349,60 @@ class GraphEngine:
     def _store_info_node(self, state: ConversationState) -> ConversationState:
         """店舗情報ノード"""
         state["current_step"] = "store_info"
-        state["response"] = self._generate_response(state, "店舗情報をご案内します。")
+        
+        # StoreInfoServiceを使用して店舗情報を取得
+        try:
+            from core.store_info_service import StoreInfoService
+            
+            # 店舗情報DBのIDを取得
+            store_db_id = None
+            if self.config:
+                store_db_id = self.config.get("notion.database_ids.store_db")
+            
+            if self.notion_client and store_db_id:
+                store_service = StoreInfoService(self.notion_client, store_db_id)
+                
+                # ユーザーの質問内容に応じて情報を取得
+                user_message = state.get("messages", [])[-1] if state.get("messages") else ""
+                user_text = str(user_message).lower() if user_message else ""
+                
+                # キーワードマッチで適切な情報を返す
+                if "営業時間" in user_text or "何時" in user_text or "年末年始" in user_text:
+                    current_hours = store_service.get_current_business_hours()
+                    
+                    # 特別営業期間かチェック
+                    if store_service.is_special_period():
+                        special_hours = store_service.get_special_hours()
+                        if special_hours:
+                            response = f"{current_hours}\n\n※現在、特別営業時間で営業しております"
+                        else:
+                            response = current_hours
+                    else:
+                        response = current_hours
+                    
+                    state["response"] = self._generate_response(state, response)
+                elif "アクセス" in user_text or "場所" in user_text or "住所" in user_text:
+                    access_info = store_service.get_access_info()
+                    if access_info:
+                        state["response"] = self._generate_response(state, access_info.get("content", ""))
+                    else:
+                        state["response"] = self._generate_response(state, "アクセス情報については店舗にお問い合わせください。")
+                elif "定休日" in user_text or "休み" in user_text:
+                    holidays = store_service.get_holidays()
+                    if holidays:
+                        state["response"] = self._generate_response(state, holidays.get("content", ""))
+                    else:
+                        state["response"] = self._generate_response(state, "定休日については店舗にお問い合わせください。")
+                else:
+                    # 全体の店舗情報を表示
+                    store_info = store_service.format_store_info_for_display()
+                    state["response"] = self._generate_response(state, store_info)
+            else:
+                state["response"] = self._generate_response(state, "店舗情報をご案内します。")
+        
+        except Exception as e:
+            logger.error(f"店舗情報取得エラー: {e}")
+            state["response"] = self._generate_response(state, "店舗情報をご案内します。")
         
         # 店舗情報の場合は、カテゴリ選択肢を提供
         state["options"] = ["営業時間", "アクセス", "駐車場", "予約方法"]

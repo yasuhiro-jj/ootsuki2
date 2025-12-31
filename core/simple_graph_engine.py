@@ -3565,6 +3565,33 @@ class SimpleGraphEngine:
                     category = matched_node.get("category", "")
                     subcategory = matched_node.get("subcategory", "")
                     
+                    # {{STORE_HOURS}}を営業時間に置き換え
+                    if "{{STORE_HOURS}}" in template or "STORE_HOURS" in template:
+                        try:
+                            from core.store_info_service import StoreInfoService
+                            
+                            store_db_id = self.config.get("notion.database_ids.store_db")
+                            if self.notion_client and store_db_id:
+                                store_service = StoreInfoService(self.notion_client, store_db_id)
+                                
+                                # 現在有効な営業時間を取得
+                                current_hours = store_service.get_current_business_hours()
+                                
+                                # 特別営業期間かチェック
+                                if store_service.is_special_period():
+                                    hours_text = f"{current_hours}\n\n※現在、特別営業時間で営業しております"
+                                else:
+                                    hours_text = current_hours
+                                
+                                # テンプレートを置き換え
+                                template = template.replace("{{STORE_HOURS}}", hours_text)
+                                template = template.replace("STORE_HOURS", hours_text)
+                                logger.info(f"[StoreHours] 営業時間を置き換えました")
+                        except Exception as e:
+                            logger.error(f"[StoreHours] 営業時間取得エラー: {e}")
+                            template = template.replace("{{STORE_HOURS}}", "営業時間については店舗にお問い合わせください")
+                            template = template.replace("STORE_HOURS", "営業時間については店舗にお問い合わせください")
+                    
                     # テンプレートは正規化せずにそのまま使用（応答テキストとして使用するため）
                     response_text = template
                     
@@ -4070,6 +4097,33 @@ class SimpleGraphEngine:
                     template = matched_node.get("template", "")
                     next_nodes = matched_node.get("next", [])
                     subcategory = matched_node.get("subcategory", "")
+                    
+                    # {{STORE_HOURS}}を営業時間に置き換え
+                    if "{{STORE_HOURS}}" in template or "STORE_HOURS" in template:
+                        try:
+                            from core.store_info_service import StoreInfoService
+                            
+                            store_db_id = self.config.get("notion.database_ids.store_db")
+                            if self.notion_client and store_db_id:
+                                store_service = StoreInfoService(self.notion_client, store_db_id)
+                                
+                                # 現在有効な営業時間を取得
+                                current_hours = store_service.get_current_business_hours()
+                                
+                                # 特別営業期間かチェック
+                                if store_service.is_special_period():
+                                    hours_text = f"{current_hours}\n\n※現在、特別営業時間で営業しております"
+                                else:
+                                    hours_text = current_hours
+                                
+                                # テンプレートを置き換え
+                                template = template.replace("{{STORE_HOURS}}", hours_text)
+                                template = template.replace("STORE_HOURS", hours_text)
+                                logger.info(f"[StoreHours] 営業時間を置き換えました")
+                        except Exception as e:
+                            logger.error(f"[StoreHours] 営業時間取得エラー: {e}")
+                            template = template.replace("{{STORE_HOURS}}", "営業時間については店舗にお問い合わせください")
+                            template = template.replace("STORE_HOURS", "営業時間については店舗にお問い合わせください")
                     
                     # テンプレートは正規化せずにそのまま使用（応答テキストとして使用するため）
                     response_text = template

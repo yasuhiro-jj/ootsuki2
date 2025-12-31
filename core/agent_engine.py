@@ -187,11 +187,44 @@ class AgentEngine:
                 formatted.append(f"[{idx}] {text}")
             return "\n".join(formatted)
 
-        def store_info_tool(_: str) -> str:
-            info = self._config.get("store_info.default_message")
-            if info:
-                return info
-            return "営業時間やアクセスなどはスタッフにお尋ねください。"
+        def store_info_tool(query: str) -> str:
+            """店舗情報取得ツール（営業時間、特別営業時間対応）"""
+            try:
+                from core.store_info_service import StoreInfoService
+                
+                # 店舗情報DBのIDを取得
+                store_db_id = self._config.get("notion.database_ids.store_db")
+                
+                if self._notion_client and store_db_id:
+                    store_service = StoreInfoService(self._notion_client, store_db_id)
+                    
+                    # クエリに応じて適切な情報を返す
+                    query_lower = query.lower()
+                    
+                    if "営業時間" in query_lower or "何時" in query_lower or "年末年始" in query_lower:
+                        current_hours = store_service.get_current_business_hours()
+                        if store_service.is_special_period():
+                            return f"{current_hours}\n※現在、特別営業時間で営業しております"
+                        return current_hours
+                    elif "アクセス" in query_lower or "場所" in query_lower or "住所" in query_lower:
+                        access_info = store_service.get_access_info()
+                        return access_info.get("content", "") if access_info else "アクセス情報については店舗にお問い合わせください。"
+                    elif "定休日" in query_lower or "休み" in query_lower:
+                        holidays = store_service.get_holidays()
+                        return holidays.get("content", "") if holidays else "定休日については店舗にお問い合わせください。"
+                    else:
+                        # 全体の店舗情報を返す
+                        return store_service.format_store_info_for_display()
+                
+                # フォールバック
+                info = self._config.get("store_info.default_message")
+                if info:
+                    return info
+                return "営業時間やアクセスなどはスタッフにお尋ねください。"
+            
+            except Exception as e:
+                logger.error(f"店舗情報取得エラー: {e}")
+                return "営業時間やアクセスなどはスタッフにお尋ねください。"
 
         tools: List[Tool] = [
             Tool(
