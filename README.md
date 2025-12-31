@@ -93,6 +93,32 @@ LANGSMITH_API_KEY=...
 SERPAPI_API_KEY=...
 ```
 
+
+
+
+
+# ① プロジェクトフォルダへ移動
+cd "C:\Users\PC user\OneDrive\Desktop\移行用まとめフォルダー\カーソル　個人\ootsuki2"
+
+# ②（初回のみ）環境作成
+conda create -n ootsuki2 python=3.11
+
+# ③ 環境を有効化
+conda activate ootsuki2
+
+# ④（初回のみ）依存パッケージをインストール
+pip install -r requirements.txt
+
+# ⑤ ローカルサーバ起動（おおつき飲食店BOT）
+python main.py ootuki_restaurant
+
+
+
+
+
+
+
+
 ### 4. 設定ファイルの編集
 
 `config/ootuki_restaurant.yaml` を編集：

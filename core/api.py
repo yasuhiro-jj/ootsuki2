@@ -691,6 +691,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
                             "options": result.get("options", []),
                             "timestamp": datetime.now().isoformat()
                         }
+                        logger.info(f"[WS] 送信メッセージ詳細: {response['message']}")
                         await websocket.send_json(response)
                         
                         logger.info(f"[WS] 送信 ({session_id[:8]}...): {result.get('response', '')[:50]}...")

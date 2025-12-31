@@ -13,6 +13,8 @@ from typing_extensions import TypedDict
 from datetime import datetime
 import logging
 
+from .line_contact import append_line_contact_link, log_unknown_keyword_to_notion
+
 logger = logging.getLogger(__name__)
 
 # --- 状態定義 ---
@@ -4650,13 +4652,23 @@ class SimpleGraphEngine:
         if not state.get("response"):
             state["response"] = "ご注文が決まりましたらお声がけください。"
         
+        # 元のレスポンスを保持しておく（不明キーワード判定用）
+        original_response = state.get("response", "")
+        state["original_response"] = original_response
+
+        # すべての最終応答にLINE問い合わせリンクを付与
+        try:
+            state["response"] = append_line_contact_link(original_response)
+        except Exception as e:
+            logger.error(f"[LineContact] LINEリンク付与エラー: {e}")
+        
         # 不明な質問をNotionに記録
         self._log_unknown_keywords(state)
         
         return state
     
     def _log_unknown_keywords(self, state: State) -> None:
-        """不明なキーワードをNotionに記録"""
+        """不明なキーワードをNotionに記録（LINEリンク付きの最終応答を保存）"""
         if not self.config or not self.notion_client:
             return
         
@@ -4665,7 +4677,8 @@ class SimpleGraphEngine:
             return
         
         last_message = messages[-1]
-        response = state.get("response", "")
+        # 不明キーワード判定にはLINEリンク付与前のテキストを使用する
+        original_response = state.get("original_response", state.get("response", ""))
         current_step = state.get("current_step", "")
         
         # end_flowに到達した場合は記録
@@ -4684,37 +4697,39 @@ class SimpleGraphEngine:
             "ご注文が決まりましたらお声がけください"
         ]
         
-        if any(pattern in response for pattern in unknown_patterns):
+        if any(pattern in original_response for pattern in unknown_patterns):
             should_log = True
             logger.info(f"[UnknownKeywords] パターンマッチ: {last_message}")
         
         # 条件3: RAG検索結果がない、または信頼度が低い場合
         rag_results = state.get("rag_results", [])
         if not rag_results or len(rag_results) == 0:
-            if not any(pattern in response for pattern in ["ありがとう", "メニュー", "おすすめ"]):
+            if not any(pattern in original_response for pattern in ["ありがとう", "メニュー", "おすすめ"]):
                 should_log = True
                 logger.info(f"[UnknownKeywords] RAG結果なし: {last_message}")
         
         if should_log:
             try:
-                unknown_db_id = self.config.get("notion.database_ids.unknown_keywords_db")
-                if unknown_db_id:
-                    from datetime import datetime
-                    
-                    # 前後のメッセージをコンテキストとして取得
-                    context = str(messages[-3:]) if len(messages) >= 3 else str(messages)
-                    
-                    self.notion_client.create_page(
-                        database_id=unknown_db_id,
-                        properties={
-                            "質問内容": {"title": [{"text": {"content": last_message}}]},
-                            "日時": {"date": {"start": datetime.now().isoformat()}},
-                            "セッションID": {"rich_text": [{"text": {"content": state.get("session_id", "")}}]},
-                            "コンテキスト": {"rich_text": [{"text": {"content": context}}]},
-                            "ステータス": {"select": {"name": "未対応"}}
-                        }
-                    )
-                    logger.info(f"[UnknownKeywords] 記録完了: {last_message}")
+                # 直近メッセージをコンテキストとして渡す
+                context_messages = messages[-3:] if len(messages) >= 3 else messages
+                
+                # state["response"] には既にLINEリンク付きの最終応答が入っている
+                full_response = state.get("response", "")
+                logger.info(f"[UnknownKeywords] 保存用フルレスポンス: {full_response}")
+                
+                log_unknown_keyword_to_notion(
+                    question=last_message,
+                    context={
+                        "messages": context_messages,
+                        "current_step": current_step,
+                        "rag_results": rag_results,
+                    },
+                    response=full_response,
+                    notion_client=self.notion_client,
+                    config=self.config,
+                    session_id=state.get("session_id", ""),
+                )
+                logger.info(f"[UnknownKeywords] 記録完了: {last_message}")
             except Exception as e:
                 logger.error(f"不明キーワード記録エラー: {e}")
     
