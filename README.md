@@ -256,6 +256,188 @@ python main.py ootuki_restaurant
 
 A: Notion API Key とデータベースIDが正しいか確認してください
 
+### Q: Gitプッシュでエラーが発生する
+
+A: 以下の手順を確認してください（[Git操作ガイド](#git操作変更のプッシュ)を参照）
+
+---
+
+## Git操作（変更のプッシュ）
+
+コードを変更した後、GitHubにプッシュする手順です。
+
+### ⚠️ 重要な注意事項
+
+1. **必ずプロジェクトフォルダー直下で作業する**
+   - ❌ 間違い: `移行用まとめフォルダー` で作業
+   - ✅ 正しい: `ootsuki2` フォルダー直下で作業
+
+2. **GitHubのURLは必ずコピーする**
+   - ❌ 間違い: 手入力やプレースホルダー文字列を使用
+   - ✅ 正しい: GitHubの「Code」ボタンからHTTPS URLをコピー
+
+### 基本的なプッシュ手順
+
+#### 1. プロジェクトフォルダーに移動
+
+```bash
+cd "C:\Users\PC user\OneDrive\Desktop\移行用まとめフォルダー\カーソル　個人\ootsuki2"
+```
+
+#### 2. Gitリポジトリの状態確認
+
+```bash
+git status
+```
+
+既にGitリポジトリが初期化されている場合は、ステップ3に進みます。  
+初期化されていない場合は、ステップ3の前に `git init` を実行してください。
+
+#### 3. リモートリポジトリの設定確認
+
+```bash
+git remote -v
+```
+
+リモートが設定されていない、または間違っている場合は：
+
+1. GitHubでリポジトリページを開く
+2. 緑の「**Code**」ボタンをクリック
+3. 「**HTTPS**」タブを選択
+4. URLをコピー（例: `https://github.com/yasuhiro-jj/ootsuki2.git`）
+5. 以下のコマンドで設定：
+
+```bash
+# 既存のoriginを削除（エラーが出てもOK）
+git remote remove origin
+
+# 正しいURLを設定（コピーしたURLをそのまま貼り付け）
+git remote add origin https://github.com/yasuhiro-jj/ootsuki2.git
+
+# 設定確認
+git remote -v
+```
+
+#### 4. リモート接続の確認
+
+```bash
+git ls-remote origin
+```
+
+このコマンドが成功すれば、URLと認証は正しく設定されています。  
+失敗する場合は、ステップ3を再確認してください。
+
+#### 5. 変更をステージング
+
+```bash
+# すべての変更を追加
+git add .
+
+# または、特定のファイルだけ追加
+git add core/api.py
+git add core/unknown_keyword_service.py
+```
+
+#### 6. コミット
+
+```bash
+git commit -m "feat: 変更内容の説明"
+```
+
+コミットメッセージの例：
+- `feat: 不明キーワード時に標準回答を優先`
+- `fix: バグ修正の内容`
+- `docs: ドキュメント更新`
+
+#### 7. プッシュ
+
+```bash
+git push -u origin main
+```
+
+ブランチ名が `master` の場合は：
+```bash
+git push -u origin master
+```
+
+### よくあるエラーと対処法
+
+#### エラー1: `Repository not found`
+
+**原因**: URLが間違っている、または認証ができていない
+
+**対処法**:
+1. GitHubの「Code」ボタンから正しいHTTPS URLをコピー
+2. `git remote set-url origin <コピーしたURL>` で再設定
+3. `git ls-remote origin` で確認
+
+#### エラー2: `nothing added to commit but untracked files present`
+
+**原因**: `.gitignore` でファイルが無視されている、またはファイルパスが間違っている
+
+**対処法**:
+1. `git status` で無視されているファイルを確認
+2. 必要なら `git add -f <ファイル名>` で強制追加
+3. または `.gitignore` を確認して、無視する必要がないファイルは除外ルールを削除
+
+#### エラー3: `non-fast-forward`
+
+**原因**: リモートに新しいコミットがある
+
+**対処法**:
+```bash
+# リモートの変更を取得
+git fetch origin
+
+# リベースして統合
+git pull --rebase origin main
+
+# 再度プッシュ
+git push -u origin main
+```
+
+#### エラー4: 認証エラー（GitHubログインが求められる）
+
+**対処法**:
+```bash
+# GitHub CLIがインストールされている場合
+gh auth login
+
+# または、ブラウザでGitHubにログインしてから再度試す
+```
+
+### クイックリファレンス
+
+```bash
+# 1. フォルダー移動
+cd "C:\Users\PC user\OneDrive\Desktop\移行用まとめフォルダー\カーソル　個人\ootsuki2"
+
+# 2. 状態確認
+git status
+
+# 3. リモート確認
+git remote -v
+
+# 4. 変更を追加
+git add .
+
+# 5. コミット
+git commit -m "変更内容"
+
+# 6. プッシュ
+git push -u origin main
+```
+
+### 注意事項
+
+- **Notionデータベースの変更はGitプッシュ不要**
+  - Notionのデータ変更は、サーバー再起動だけで反映されます
+  - Gitプッシュが必要なのは、**コードファイル（.py, .yamlなど）の変更**のみです
+
+- **コミット前に確認**
+  - `git status` で変更内容を確認してからコミット
+  - 不要なファイル（`.env`, `__pycache__`など）が含まれていないか確認
+
 ---
 
 ## 今後の展開
