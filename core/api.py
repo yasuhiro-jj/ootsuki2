@@ -24,6 +24,23 @@ from .unknown_keyword_service import UnknownKeywordSearchService
 
 logger = logging.getLogger(__name__)
 
+LINE_CONTACT_FOOTER = (
+    "詳しくはLINEでお問い合わせください：\n"
+    "https://j2vwf7ca.autosns.app/addfriend/s/rrgjaO8SXk/@241usmjy"
+)
+
+
+def append_line_contact_footer(message: str) -> str:
+    """ユーザー向け回答の末尾にLINE案内を重複なく付与する。"""
+    if not message:
+        return LINE_CONTACT_FOOTER
+
+    normalized = message.rstrip()
+    if LINE_CONTACT_FOOTER in normalized:
+        return normalized
+
+    return f"{normalized}\n\n{LINE_CONTACT_FOOTER}"
+
 # LangGraphは条件付きimport（使用時のみ）
 try:
     from .graph_engine import GraphEngine, ConversationState
@@ -365,7 +382,9 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     unknown_result = unknown_keyword_service.search_similar_question(user_message)
                     if unknown_result and unknown_result.get("standard_answer"):
                         # 標準回答が見つかった場合、それを優先的に返す
-                        standard_answer = unknown_result["standard_answer"]
+                        standard_answer = append_line_contact_footer(
+                            unknown_result["standard_answer"]
+                        )
                         similarity_score = unknown_result.get("similarity_score", 0.0)
                         matched_question_title = unknown_result.get("question_title", "")
                         
@@ -468,6 +487,8 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     response_options = []
             
             # 会話履歴をNotionに保存（設定で有効な場合）
+            response_message = append_line_contact_footer(response_message)
+
             if config.get("features.save_conversation", False):
                 try:
                     conversation_db_id = config.get("notion.database_ids.conversation_history_db")
