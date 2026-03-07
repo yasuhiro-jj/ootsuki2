@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 import { QuickReplyButtons } from './QuickReplyButtons';
-import { createSession, sendChatMessage, type ChatResponse } from '@/lib/api';
+import { createSession, sendChatMessage, type ChatResponse } from '../lib/api';
 
 interface Message {
   id: string;
