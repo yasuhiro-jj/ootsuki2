@@ -24,11 +24,17 @@ from .unknown_keyword_service import UnknownKeywordSearchService
 
 logger = logging.getLogger(__name__)
 
+PHONE_CONTACT_NUMBER = "0545-52-2124"
+PHONE_CONTACT_TEL_URL = "tel:0545522124"
 LINE_CONTACT_URL = "https://j2vwf7ca.autosns.app/addfriend/s/rrgjaO8SXk/@241usmjy"
 LINE_CONTACT_FOOTER = (
-    "詳しくはLINEでお問い合わせください：<br>"
-    f'<a href="{LINE_CONTACT_URL}" target="_blank" rel="noopener noreferrer">'
-    f"{LINE_CONTACT_URL}"
+    "詳しくはLINEもしくは、お電話でお問い合わせください：<br>"
+    "お電話<br>"
+    f'&nbsp;&nbsp;<a href="{PHONE_CONTACT_TEL_URL}">{PHONE_CONTACT_NUMBER}</a><br>'
+    "LINE(24時間受付中)<br>"
+    "&nbsp;&nbsp;↓<br>"
+    f'&nbsp;&nbsp;<a href="{LINE_CONTACT_URL}" target="_blank" rel="noopener noreferrer">'
+    "こちらから追加"
     "</a>"
 )
 
