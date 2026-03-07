@@ -24,9 +24,12 @@ from .unknown_keyword_service import UnknownKeywordSearchService
 
 logger = logging.getLogger(__name__)
 
+LINE_CONTACT_URL = "https://j2vwf7ca.autosns.app/addfriend/s/rrgjaO8SXk/@241usmjy"
 LINE_CONTACT_FOOTER = (
-    "詳しくはLINEでお問い合わせください：\n"
-    "https://j2vwf7ca.autosns.app/addfriend/s/rrgjaO8SXk/@241usmjy"
+    "詳しくはLINEでお問い合わせください：<br>"
+    f'<a href="{LINE_CONTACT_URL}" target="_blank" rel="noopener noreferrer">'
+    f"{LINE_CONTACT_URL}"
+    "</a>"
 )
 
 
