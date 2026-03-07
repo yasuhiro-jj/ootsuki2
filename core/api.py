@@ -78,6 +78,7 @@ class ChatResponse(BaseModel):
     session_id: str
     timestamp: str
     options: Optional[list] = []  # ハイブリッドUI用選択肢
+    suggestions: Optional[list] = None  # Next.jsフロントエンド用（optionsのエイリアス）
 
 
 class ConnectionManager:
@@ -446,7 +447,8 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 message=response_message,
                 session_id=session_id,
                 timestamp=datetime.now().isoformat(),
-                options=response_options
+                options=response_options,
+                suggestions=response_options if response_options else None  # Next.jsフロントエンド用
             )
         
         except Exception as e:
