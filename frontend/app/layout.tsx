@@ -20,7 +20,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ja" className={notoSansJP.variable}>
-      <body className="font-sans antialiased min-h-screen bg-slate-900 text-gray-900">
+      <body className="font-sans antialiased min-h-screen bg-[#f5efe6] text-gray-900">
         {children}
       </body>
     </html>

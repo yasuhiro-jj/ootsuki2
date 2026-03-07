@@ -29,15 +29,15 @@ body {
 }
 
 .chat-scrollbar::-webkit-scrollbar-track {
-  background: rgba(148, 163, 184, 0.12);
+  background: rgba(120, 83, 45, 0.12);
   border-radius: 999px;
 }
 
 .chat-scrollbar::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(34, 211, 238, 0.75), rgba(37, 99, 235, 0.75));
+  background: linear-gradient(180deg, rgba(191, 114, 63, 0.78), rgba(133, 76, 46, 0.78));
   border-radius: 999px;
 }
 
 .chat-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, rgba(34, 211, 238, 0.95), rgba(37, 99, 235, 0.95));
+  background: linear-gradient(180deg, rgba(191, 114, 63, 0.95), rgba(133, 76, 46, 0.95));
 }
