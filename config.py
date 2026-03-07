@@ -14,3 +14,5 @@ LINE_CONTACT_MESSAGE = "\n\n詳しくはLINEでお問い合わせください：
 
 
 
+
+

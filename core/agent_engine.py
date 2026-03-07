@@ -1,7 +1,7 @@
 """
 Agent Executor Engine
 
-LangChain AgentExecutor を利用してツール呼び出し型の会話制御を提供する
+LangChainの新しいエージェントAPI（create_openai_tools_agent）を利用してツール呼び出し型の会話制御を提供する
 """
 
 from __future__ import annotations
@@ -10,18 +10,25 @@ import logging
 from typing import Any, Dict, List, Optional
 
 try:
-    from langchain.agents import AgentExecutor, AgentType, initialize_agent
-except ImportError as exc:  # pragma: no cover - import 安全対策
-    raise ImportError(
-        "LangChain Agents モジュールが見つかりません。'langchain' パッケージを更新してください。"
-    ) from exc
+    from langchain.agents import AgentExecutor, create_openai_tools_agent
+except ImportError:
+    # フォールバック: 別のパスからインポートを試みる
+    try:
+        from langchain.agents.openai_tools.base import create_openai_tools_agent
+        from langchain.agents import AgentExecutor
+    except ImportError as exc:
+        raise ImportError(
+            "LangChain Agents モジュールが見つかりません。'langchain' パッケージを更新してください。"
+            f"（バージョン0.3.0以上が必要です）: {exc}"
+        ) from exc
 
 try:
     from langchain.tools import Tool
 except ImportError:  # pragma: no cover - 旧API互換
     from langchain.agents import Tool  # type: ignore
 
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from .menu_service import MenuService, MenuItemView
 
@@ -33,7 +40,15 @@ class AgentEngineError(Exception):
 
 
 class AgentEngine:
-    """AgentExecutor を用いた高度な会話制御"""
+    """
+    LangChainの新しいエージェントAPI（create_openai_tools_agent）を用いた高度な会話制御
+    
+    特徴:
+    - 新しいLangChain APIを使用（create_openai_tools_agent）
+    - セッション履歴をChatPromptTemplateに統合
+    - 既存のAIEngineセッション管理を維持
+    - カスタムツール（menu_search, menu_price_lookup等）をサポート
+    """
 
     def __init__(
         self,
@@ -71,7 +86,7 @@ class AgentEngine:
         user_message: str,
         rag_results: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
-        """AgentExecutor で応答を生成"""
+        """新しいLangChainエージェントAPIで応答を生成"""
 
         if not user_message:
             raise AgentEngineError("ユーザーメッセージが空です")
@@ -84,13 +99,19 @@ class AgentEngine:
         # RAGコンテキストを付与
         message_with_context = self._compose_message(user_message, rag_results)
 
-        # LangChain 1.0では ConversationBufferMemory が廃止されたため、
-        # メモリへの追加は行いません（セッション履歴は _ai_engine で管理）
+        # セッション履歴を取得してメッセージ形式に変換
+        chat_history = self._get_session_messages(actual_session_id)
 
         try:
-            response = executor.invoke({"input": message_with_context})
+            # 新しいAPIでは、chat_historyとinputを分けて渡す
+            response = executor.invoke({
+                "input": message_with_context,
+                "chat_history": chat_history,
+            })
         except Exception as exc:
             logger.error(f"[Agent] 実行エラー: {exc}")
+            import traceback
+            logger.error(f"[Agent] トレースバック: {traceback.format_exc()}")
             raise AgentEngineError("AgentExecutor の実行に失敗しました") from exc
 
         if isinstance(response, dict):
@@ -104,7 +125,6 @@ class AgentEngine:
         if session:
             session.add_message("user", user_message)
             session.add_message("assistant", output)
-        # メモリへの追加は不要（セッション履歴で管理）
 
         return output
 
@@ -128,18 +148,33 @@ class AgentEngine:
         if executor:
             return executor
 
-        # LangChain 1.0では ConversationBufferMemory は廃止されました
-        # メモリなしでAgentExecutorを初期化します
+        # 新しいLangChainエージェントAPIを使用
         try:
-            executor = initialize_agent(
-                tools=self._tools,
+            # ChatPromptTemplateを作成（セッション履歴とagent_scratchpadを含む）
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", self._system_prompt),
+                MessagesPlaceholder(variable_name="chat_history"),
+                ("human", "{input}"),
+                MessagesPlaceholder(variable_name="agent_scratchpad"),
+            ])
+
+            # create_openai_tools_agentでエージェントを作成
+            agent = create_openai_tools_agent(
                 llm=self._llm,
-                agent=AgentType.OPENAI_FUNCTIONS,
+                tools=self._tools,
+                prompt=prompt,
+            )
+
+            # AgentExecutorでラップ
+            executor = AgentExecutor(
+                agent=agent,
+                tools=self._tools,
                 verbose=False,
                 handle_parsing_errors=True,
                 max_iterations=self._max_iterations,
-                agent_kwargs={"system_message": SystemMessage(content=self._system_prompt)},
             )
+
+            logger.info(f"[Agent] 新しいエージェントAPIで初期化しました: {actual_session_id[:8]}...")
         except Exception as e:
             logger.error(f"[Agent] AgentExecutor初期化エラー: {e}")
             import traceback
@@ -147,8 +182,34 @@ class AgentEngine:
             raise AgentEngineError(f"AgentExecutor初期化に失敗しました: {e}") from e
 
         self._executors[actual_session_id] = executor
-        # メモリ管理は廃止されたため、_hydrate_memory_from_session は呼び出しません
         return executor
+
+    def _get_session_messages(self, session_id: str) -> List[BaseMessage]:
+        """
+        セッション履歴をLangChainのメッセージ形式に変換
+        
+        Args:
+            session_id: セッションID
+            
+        Returns:
+            HumanMessage/AIMessageのリスト
+        """
+        session = self._ai_engine.get_session(session_id)
+        if not session:
+            return []
+        
+        messages: List[BaseMessage] = []
+        for msg in session.messages:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            
+            if role == "user":
+                messages.append(HumanMessage(content=content))
+            elif role == "assistant":
+                messages.append(AIMessage(content=content))
+            # systemメッセージはスキップ（プロンプトテンプレートで既に設定済み）
+        
+        return messages
 
     def _build_tools(self) -> List[Tool]:
         def menu_search_tool(query: str) -> str:
@@ -253,17 +314,6 @@ class AgentEngine:
 
         logger.info(f"[Agent] ツールを登録しました: {[tool.name for tool in tools]}")
         return tools
-
-    # LangChain 1.0では ConversationBufferMemory が廃止されたため、
-    # これらのメソッドは使用しません（セッション履歴は _ai_engine で管理）
-    
-    # def _hydrate_memory_from_session(self, executor, session) -> None:
-    #     # 廃止: メモリ機能が削除されました
-    #     pass
-
-    # def _append_to_memory(self, executor, role: str, content: str) -> None:
-    #     # 廃止: メモリ機能が削除されました
-    #     pass
 
     def _compose_message(
         self,

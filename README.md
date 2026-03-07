@@ -95,7 +95,7 @@ SERPAPI_API_KEY=...
 
 
 
-
+サーバーを起動
 
 # ① プロジェクトフォルダへ移動
 cd "C:\Users\PC user\OneDrive\Desktop\移行用まとめフォルダー\カーソル　個人\ootsuki2"
@@ -112,6 +112,19 @@ pip install -r requirements.txt
 # ⑤ ローカルサーバ起動（おおつき飲食店BOT）
 python main.py ootuki_restaurant
 
+
+
+サーバーを起動2
+
+
+# プロジェクトフォルダに移動
+cd "c:\Users\PC user\OneDrive\Desktop\移行用まとめフォルダー\カーソル　個人\ootsuki2"
+
+# conda環境を有効化（使用している場合）
+conda activate ootsuki2
+
+# サーバーを起動
+python main.py ootuki_restaurant
 
 
 
@@ -444,6 +457,107 @@ git push -u origin main
 
 ---
 
+## Notionデータベースの変更と反映方法
+
+Notionデータベースに新しいノードやデータを追加した場合の反映方法について説明します。
+
+### 📊 各データベースの特性
+
+| データベース | 反映方法 | 再起動の必要性 | 備考 |
+|------------|---------|--------------|------|
+| **不明キーワード記録DB** | 即座に反映 | ❌ 不要 | 毎回Notionから取得（キャッシュなし） |
+| **メニューDB** | 即座に反映 | ❌ 不要 | AgentExecutorツールが毎回取得 |
+| **店舗情報DB** | 即座に反映 | ❌ 不要 | AgentExecutorツールが毎回取得 |
+| **会話ノードDB** | 5分待つ or 再起動 | ⚠️ 推奨 | 5分間のキャッシュあり |
+| **会話履歴DB** | 即座に反映 | ❌ 不要 | 書き込み専用（読み取りはしない） |
+| **ナレッジベース** | RAG再構築が必要 | ✅ 必須 | `apps/ootuki_restaurant/knowledge/`フォルダのファイル |
+
+### 🎯 推奨アクション
+
+**結論：NotionDBに追記したら、再起動するのが一番確実です**
+
+#### 理由
+
+1. **即座に反映されるDBでも、再起動で確実**
+   - 不明キーワードDB、メニューDB、店舗情報DBは毎回Notionから取得するため、理論上は再起動不要
+   - ただし、接続エラーやタイムアウトが発生した場合、再起動で確実に反映される
+
+2. **キャッシュがあるDBは再起動が確実**
+   - 会話ノードDBは5分間のキャッシュがあるため、再起動すれば即座に反映される
+   - 5分待つよりも再起動の方が早い
+
+3. **統一的な運用が簡単**
+   - 「NotionDBを変更したら再起動」というルールで統一すれば、迷わない
+
+### 📝 再起動手順
+
+```powershell
+# 1. バックエンドサーバーを停止
+# ターミナルで Ctrl + C を押す
+
+# 2. プロジェクトフォルダに移動
+cd "c:\Users\PC user\OneDrive\Desktop\移行用まとめフォルダー\カーソル　個人\ootsuki2"
+
+# 3. conda環境を有効化（使用している場合）
+conda activate ootsuki2
+
+# 4. サーバーを再起動
+python main.py ootuki_restaurant
+```
+
+### 🔍 各DBの詳細
+
+#### 1. 不明キーワード記録DB（即座に反映）
+
+- **実装**: `unknown_keyword_service.py`
+- **動作**: 毎回`get_all_pages()`でNotionから全レコードを取得
+- **反映**: 理論上は即座に反映されるが、**再起動で確実**
+
+#### 2. メニューDB / 店舗情報DB（即座に反映）
+
+- **実装**: `agent_engine.py`のツール（`menu_search`, `store_info_default`）
+- **動作**: AgentExecutorがツール呼び出し時に毎回Notionから取得
+- **反映**: 理論上は即座に反映されるが、**再起動で確実**
+
+#### 3. 会話ノードDB（5分キャッシュ or 再起動）
+
+- **実装**: `conversation_node_system.py`
+- **動作**: 5分間のキャッシュあり。キャッシュ期限切れ後に自動取得
+- **反映方法**:
+  - **方法1**: 5分待つ（キャッシュ期限切れ後に自動取得）
+  - **方法2**: **再起動（推奨）** - 即座に反映される
+
+#### 4. ナレッジベース（RAG再構築が必要）
+
+- **実装**: `chroma_client.py`
+- **動作**: 起動時に`apps/ootuki_restaurant/knowledge/`フォルダから読み込み
+- **反映方法**:
+  ```powershell
+  # RAG再構築バッチファイルを実行
+  .\rebuild_rag.bat
+  
+  # または、APIエンドポイントを呼び出す
+  # POST /rag/rebuild
+  ```
+  - その後、サーバー再起動
+
+### ✅ チェックリスト
+
+NotionDBに新しいノードを追加した場合：
+
+- [ ] Notionでノードを作成・編集
+- [ ] **バックエンドサーバーを再起動**（推奨・確実）
+- [ ] チャットボットでテストして動作確認
+- [ ] Gitプッシュは不要（Notionデータの変更はコード変更ではないため）
+
+### 🎯 まとめ
+
+- **NotionDBに追記したら、再起動するのが一番確実**
+- Gitプッシュは不要（Notionデータの変更はコード変更ではないため）
+- コードファイル（.py, .yamlなど）を変更した場合は、Gitプッシュが必要
+
+---
+
 ## 不明キーワードDBへの回答追加
 
 チャットボットが答えられない質問や、特定の質問に対して標準的な回答を返したい場合、**Notionの「📝 不明キーワード記録」データベース**に標準回答を登録できます。
@@ -655,6 +769,80 @@ WiFiあります。
 
 ---
 
+## エージェント機能について
+
+### ootsuki2のエージェント機能（新API実装）
+
+ootsuki2では、**LangChainの新しいエージェントAPI**（`create_openai_tools_agent`）を使用したエージェント機能を実装しています。
+
+#### 実装の特徴
+
+- **使用API**: `langchain.agents.create_openai_tools_agent` + `AgentExecutor`（新API）
+- **エージェントタイプ**: OpenAI Functions（ツール呼び出し型）
+- **LangChainバージョン**: LangChain 0.3.0以上対応
+- **セッション管理**: `AIEngine`で管理（既存のセッション管理を維持）
+
+#### 利用可能なツール
+
+1. **menu_search**: NotionのメニューDBを検索
+2. **menu_price_lookup**: メニュー名から価格と特徴を取得
+3. **knowledge_base_lookup**: RAGナレッジベースから情報を検索
+4. **store_info_default**: 営業時間・アクセスなどの店舗情報を取得
+
+#### 動作の流れ
+
+1. ユーザーが質問を入力
+2. セッション履歴を取得して`ChatPromptTemplate`に統合
+3. `create_openai_tools_agent`でエージェントを作成
+4. AgentExecutorが質問を分析し、必要なツールを自動的に選択・実行
+5. ツールの結果を統合して回答を生成
+6. セッション履歴に保存
+
+#### 設定方法
+
+`config/ootuki_restaurant.yaml`で有効化：
+
+```yaml
+features:
+  enable_agent_executor: true  # AgentExecutorを有効化
+
+agent:
+  max_iterations: 5  # 最大反復回数
+  system_prompt: |
+    あなたは「食事処おおつき」のAIスタッフです。
+    ...
+```
+
+#### 技術的な詳細
+
+**プロンプトテンプレート構造:**
+```python
+prompt = ChatPromptTemplate.from_messages([
+    ("system", system_prompt),
+    MessagesPlaceholder(variable_name="chat_history"),  # セッション履歴
+    ("human", "{input}"),  # ユーザー入力
+    MessagesPlaceholder(variable_name="agent_scratchpad"),  # エージェントの思考過程
+])
+```
+
+**セッション履歴の統合:**
+- `AIEngine.get_session()`から履歴を取得
+- `HumanMessage`/`AIMessage`に変換してプロンプトに渡す
+- 会話の文脈を保持したままツール呼び出しを実行
+
+**メリット:**
+- ✅ 最新のLangChain APIを使用（将来性が高い）
+- ✅ 標準化されたエージェント実装
+- ✅ セッション履歴を適切に統合
+- ✅ 既存のツール定義をそのまま使用可能
+- ✅ エラーハンドリングが改善
+
+**注意事項:**
+- LangChain 0.3.0以上が必要です
+- `requirements.txt`で`langchain>=0.3.0`が指定されていることを確認してください
+
+---
+
 ## 今後の展開
 
 - [ ] 保険比較BOTの実装
@@ -665,6 +853,7 @@ WiFiあります。
 - [ ] Docker対応
 - [ ] クラウドデプロイ対応
 - [ ] **LangGraphによる次ステップ自動推論機能**（実装予定）
+- [ ] **新しいLangChainエージェントAPIへの移行**（検討中）
 
 ### LangGraphによる次ステップ自動推論機能
 
