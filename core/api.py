@@ -20,6 +20,7 @@ from .config_loader import ConfigLoader
 from .ai_engine import AIEngine
 from .chroma_client import ChromaClient
 from .notion_client import NotionClient
+from .unknown_keyword_service import UnknownKeywordSearchService
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +187,18 @@ def create_app(config: ConfigLoader) -> FastAPI:
     
     notion_client = NotionClient()
     
+    # 不明キーワード検索サービス初期化
+    unknown_keywords_db_id = config.get("notion.database_ids.unknown_keywords_db")
+    unknown_keyword_service = None
+    if unknown_keywords_db_id:
+        unknown_keyword_service = UnknownKeywordSearchService(
+            notion_client=notion_client,
+            database_id=unknown_keywords_db_id
+        )
+        logger.info(f"[OK] 不明キーワード検索サービスを初期化しました: {unknown_keywords_db_id[:20]}...")
+    else:
+        logger.warning("[WARN] 不明キーワード記録DB IDが設定されていません")
+    
     # LangGraph初期化（有効な場合かつimport成功時）
     graph_engine = None
     logger.info(f"[DEBUG] LangGraph初期化チェック: enable_langgraph={config.get('features.enable_langgraph', False)}, _HAS_LANGGRAPH={_HAS_LANGGRAPH}")
@@ -344,10 +357,46 @@ def create_app(config: ConfigLoader) -> FastAPI:
             if not session_id:
                 session_id = ai_engine.create_session(request.customer_id)
             
+            user_message = request.message
+            
+            # 【優先】不明キーワードDB検索を最初に実行（RAG結果に関係なく）
+            if unknown_keyword_service:
+                try:
+                    unknown_result = unknown_keyword_service.search_similar_question(user_message)
+                    if unknown_result and unknown_result.get("standard_answer"):
+                        # 標準回答が見つかった場合、それを優先的に返す
+                        standard_answer = unknown_result["standard_answer"]
+                        similarity_score = unknown_result.get("similarity_score", 0.0)
+                        matched_question_title = unknown_result.get("question_title", "")
+                        
+                        logger.info(
+                            f"[UnknownKeywordPriority] 標準回答を優先採用: "
+                            f"score={similarity_score:.1f}, "
+                            f"question='{matched_question_title[:50]}'"
+                        )
+                        
+                        # セッションにメッセージを追加
+                        session = ai_engine.get_session(session_id)
+                        if session:
+                            session.add_message("user", user_message)
+                            session.add_message("assistant", standard_answer)
+                        
+                        return ChatResponse(
+                            message=standard_answer,
+                            session_id=session_id,
+                            timestamp=datetime.now().isoformat(),
+                            options=[],
+                            suggestions=None
+                        )
+                except Exception as uk_err:
+                    logger.warning(f"不明キーワードDB検索エラー: {uk_err}")
+                    # エラーが発生しても処理を続行（RAG検索にフォールバック）
+            
+            # 不明キーワード検索でマッチしなかった場合、RAG検索を実行
             # RAG検索（件数を増やして複数メニュー提案に対応）
             rag_results = []
             if chroma_client._built:
-                rag_results = chroma_client.query(request.message, k=15)
+                rag_results = chroma_client.query(user_message, k=15)
             
             response_options: list = []
             response_message = ""
