@@ -5,7 +5,7 @@ import React from 'react';
 export interface MessageBubbleProps {
   content: string;
   isUser: boolean;
-  suggestions?: string[];
+  suggestions?: string[] | null;
   onSuggestionClick?: (text: string) => void;
 }
 
@@ -15,6 +15,8 @@ export function MessageBubble({
   suggestions = [],
   onSuggestionClick,
 }: MessageBubbleProps) {
+  const safeSuggestions = suggestions ?? [];
+
   return (
     <div
       className={`mb-5 flex items-end gap-3 animate-[messageSlide_0.45s_ease-out] ${
@@ -41,9 +43,9 @@ export function MessageBubble({
           dangerouslySetInnerHTML={{ __html: content.replace(/\n/g, '<br />') }}
         />
 
-        {!isUser && suggestions.length > 0 && (
+        {!isUser && safeSuggestions.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2">
-            {suggestions.map((s) => (
+            {safeSuggestions.map((s) => (
               <button
                 key={s}
                 type="button"

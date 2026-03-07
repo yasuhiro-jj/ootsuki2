@@ -10,7 +10,7 @@ interface Message {
   id: string;
   content: string;
   isUser: boolean;
-  suggestions?: string[];
+  suggestions?: string[] | null;
 }
 
 export function ChatWindow() {
@@ -72,7 +72,7 @@ export function ChatWindow() {
           id: `bot-${Date.now()}`,
           content: res.message,
           isUser: false,
-          suggestions: res.suggestions,
+          suggestions: res.suggestions ?? res.options ?? null,
         };
         setMessages((prev) => [...prev, botMsg]);
       } catch (err) {
