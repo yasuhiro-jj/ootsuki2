@@ -112,7 +112,7 @@ export function ChatWindow() {
 
   return (
     <div className="flex h-full flex-col bg-gradient-to-b from-slate-950/20 to-slate-900/30">
-      <div className="chat-scrollbar flex-1 overflow-y-auto px-4 pb-3 pt-5 md:px-6">
+      <div className="chat-scrollbar flex-1 overflow-y-auto px-3 pb-2 pt-3 md:px-6 md:pb-3 md:pt-5">
         {messages.map((m) => (
           <MessageBubble
             key={m.id}
@@ -141,7 +141,7 @@ export function ChatWindow() {
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="border-t border-white/15 bg-slate-950/35 px-2 pb-2 pt-1 backdrop-blur-xl md:px-3">
+      <div className="border-t border-white/15 bg-slate-950/35 px-2 pb-1.5 pt-1 backdrop-blur-xl md:px-3 md:pb-2">
         <QuickReplyButtons onSelect={handleSend} />
         <ChatInput onSend={handleSend} disabled={loading} />
       </div>
