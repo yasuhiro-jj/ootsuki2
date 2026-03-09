@@ -503,8 +503,21 @@ conda activate ootsuki2
 
 # 4. サーバーを再起動
 python main.py ootuki_restaurant
+
+
+
+フロントエンドの起動
+
+
+    cd "c:\Users\PC user\OneDrive\Desktop\移行用まとめフォルダー\カーソル　個人\ootsuki2\frontend"
 ```
 
+
+    npm run dev
+
+
+
+    
 ### 🔍 各DBの詳細
 
 #### 1. 不明キーワード記録DB（即座に反映）
