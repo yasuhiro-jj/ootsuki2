@@ -3,8 +3,6 @@
 import React from 'react';
 
 const QUICK_REPLIES = [
-  'ランチメニューを見せて',
-  'おすすめの料理は？',
   '営業時間を教えて',
   'テイクアウトできますか？',
   '宴会の予約について',

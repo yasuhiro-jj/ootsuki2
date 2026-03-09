@@ -40,6 +40,19 @@ export function ChatWindow() {
               content:
                 'いらっしゃいませ！おおつきチャットボットでございます。\n伝統の味と心で、皆様のお越しをお待ちしております。\nメニューや店舗情報について、何でもお気軽にお聞かせください。',
               isUser: false,
+              suggestions: [
+                '日替わりランチ（月曜～金曜）',
+                '寿司ランチ',
+                'おすすめ定食',
+                '海鮮定食',
+                '定食屋メニュー',
+                '逸品料理',
+                '海鮮刺身',
+                '今晩のおすすめ一品',
+                '酒のつまみ',
+                '焼き鳥',
+                '静岡名物料理フェア',
+              ],
             },
           ]);
         }
@@ -104,7 +117,7 @@ export function ChatWindow() {
         </p>
         <p className="mb-2 text-base font-medium text-white">{initError}</p>
         <p className="text-sm text-slate-300">
-          バックエンド（http://localhost:8000）が起動しているか確認してください。
+          バックエンド（http://localhost:8011）が起動しているか確認してください。
         </p>
       </div>
     );
