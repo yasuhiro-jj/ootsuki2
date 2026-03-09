@@ -11,6 +11,7 @@ const notoSansJP = Noto_Sans_JP({
 export const metadata: Metadata = {
   title: 'おおつきチャットボット',
   description: '伝統の味と心でおもてなし。メニューや店舗情報をお気軽にお聞きください。',
+  viewport: 'width=device-width, initial-scale=1, viewport-fit=cover',
 };
 
 export default function RootLayout({

@@ -9,7 +9,9 @@ export default function Home() {
       {/* スマホ: 画面全体 / PC: 中央に広めのカード */}
       <div className="relative mx-auto flex w-full max-w-[390px] md:min-h-screen md:max-w-xl md:items-end md:px-8 md:pb-6 md:pt-10">
         <section className="flex h-[100svh] w-full flex-col overflow-hidden md:h-[85vh] md:min-h-[560px] md:max-h-[820px] md:rounded-3xl md:border md:border-amber-900/10 md:bg-white/75 md:shadow-[0_20px_80px_rgba(71,45,24,0.18)] md:backdrop-blur-2xl">
-          <header className="shrink-0 overflow-hidden border-b border-amber-900/10 bg-gradient-to-r from-[#a85632]/95 via-[#8f4d2d]/95 to-[#6f3c26]/95 px-4 py-3 text-white md:px-8 md:py-6">
+          <header className="shrink-0 overflow-hidden border-b border-amber-900/10 bg-gradient-to-r from-[#a85632]/95 via-[#8f4d2d]/95 to-[#6f3c26]/95 px-4 py-3 text-white md:px-8 md:py-6"
+            style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}
+          >
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(255,255,255,0.18),transparent_50%)]" />
             <div className="relative">
               <h1 className="text-center text-lg font-bold tracking-wide md:text-3xl">
