@@ -17,40 +17,63 @@ export interface SessionResponse {
 }
 
 export async function createSession(): Promise<SessionResponse> {
-  const response = await fetch(`${API_BASE}/session`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
+  try {
+    const response = await fetch(`${API_BASE}/session`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || 'セッション作成に失敗しました');
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      const errorMessage = error.detail || `HTTP ${response.status}: ${response.statusText}`;
+      console.error('[API] セッション作成エラー:', errorMessage);
+      throw new Error(errorMessage);
+    }
+
+    return response.json();
+  } catch (error: any) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    console.error('[API] セッション作成エラー:', error);
+    throw new Error('セッション作成に失敗しました: ' + String(error));
   }
-
-  return response.json();
 }
 
 export async function sendChatMessage(
   message: string,
   sessionId: string | null
 ): Promise<ChatResponse> {
-  const response = await fetch(`${API_BASE}/chat`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      message,
-      session_id: sessionId,
-    }),
-  });
+  try {
+    const response = await fetch(`${API_BASE}/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message,
+        session_id: sessionId,
+      }),
+    });
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || 'チャット送信に失敗しました');
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      const errorMessage = error.detail || `HTTP ${response.status}: ${response.statusText}`;
+      console.error('[API] チャット送信エラー:', errorMessage, {
+        status: response.status,
+        statusText: response.statusText,
+      });
+      throw new Error(errorMessage);
+    }
+
+    return response.json();
+  } catch (error: any) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    console.error('[API] チャット送信エラー:', error);
+    throw new Error('チャット送信に失敗しました: ' + String(error));
   }
-
-  return response.json();
 }

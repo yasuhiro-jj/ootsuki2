@@ -34,8 +34,13 @@ LINE_CONTACT_FOOTER = (
     "LINE(24時間受付中)<br>"
     "&nbsp;&nbsp;↓<br>"
     f'&nbsp;&nbsp;<a href="{LINE_CONTACT_URL}" target="_blank" rel="noopener noreferrer">'
-    "こちらから追加"
-    "</a>"
+    "こちらから友達追加"
+    "</a><br><br>"
+    "メニューは下記のボタンをタップしてご覧ください<br>"
+    '<a href="https://fuji-ootsuki.com/" target="_blank" rel="noopener noreferrer" '
+    'style="display:inline-block;margin-top:6px;padding:5px 14px;border-radius:20px;'
+    'border:1px solid #94a3b8;background:#ffffff;color:#334155;font-size:12px;'
+    'font-weight:600;text-decoration:none;">メニューを見る</a>'
 )
 
 
