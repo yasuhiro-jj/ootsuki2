@@ -110,6 +110,10 @@ export function ChatWindow() {
   );
 
   if (initError) {
+    const isDevelopment = typeof window !== 'undefined' && 
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    const backendUrl = isDevelopment ? 'http://localhost:8011' : 'バックエンドサーバー';
+    
     return (
       <div className="flex min-h-[400px] flex-col items-center justify-center p-8 text-center">
         <p className="mb-3 rounded-full border border-red-300 bg-red-500/10 px-4 py-1 text-sm text-red-200">
@@ -117,7 +121,9 @@ export function ChatWindow() {
         </p>
         <p className="mb-2 text-base font-medium text-white">{initError}</p>
         <p className="text-sm text-slate-300">
-          バックエンド（http://localhost:8011）が起動しているか確認してください。
+          {isDevelopment 
+            ? `バックエンド（${backendUrl}）が起動しているか確認してください。`
+            : 'バックエンドサーバーへの接続に失敗しました。しばらく待ってから再度お試しください。'}
         </p>
       </div>
     );

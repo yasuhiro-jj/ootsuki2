@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8011';
+// 本番環境では環境変数が必須
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 
+  (process.env.VERCEL ? '' : 'http://localhost:8011'); // 開発環境のみlocalhost
 
 export async function GET(
   request: NextRequest,
@@ -35,6 +37,17 @@ async function proxyRequest(
   pathSegments: string[],
   method: string
 ) {
+  // 本番環境で環境変数が設定されていない場合
+  if (!BACKEND_URL) {
+    console.error('[API Proxy] NEXT_PUBLIC_API_URL is not set');
+    return NextResponse.json(
+      {
+        detail: 'バックエンドURLが設定されていません。NEXT_PUBLIC_API_URL環境変数を設定してください。',
+      },
+      { status: 500 }
+    );
+  }
+
   try {
     const path = pathSegments.join('/');
     const url = `${BACKEND_URL}/${path}`;
