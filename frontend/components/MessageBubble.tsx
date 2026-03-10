@@ -42,6 +42,21 @@ export function MessageBubble({
           }`}
           dangerouslySetInnerHTML={{ __html: content.replace(/\n/g, '<br />') }}
         />
+
+        {!isUser && safeSuggestions.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {safeSuggestions.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => onSuggestionClick?.(s)}
+                className="rounded-full border border-slate-300/70 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-all duration-200 hover:-translate-y-0.5 hover:border-cyan-400 hover:bg-cyan-500 hover:text-white hover:shadow"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {isUser && (

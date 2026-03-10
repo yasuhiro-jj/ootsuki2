@@ -1130,11 +1130,7 @@ class GraphEngine:
                 state["response"] = response_text
                 logger.info(f"[OK] 選択肢処理: {selected_option} - {len(menu_details)}件表示")
                 
-                # 最初の6件を表示した場合、「その他のメニューはこちら」オプションを追加
-                if show_more_option:
-                    state["options"] = ["その他のメニューはこちら"]
-                else:
-                    state["options"] = []
+                state["options"] = []
                 
             else:
                 # メニューが見つからない場合、フォールバックとして全メニューから取得を試みる
