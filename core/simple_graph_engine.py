@@ -14,6 +14,7 @@ from datetime import datetime
 import logging
 
 from .line_contact import append_line_contact_link, log_unknown_keyword_to_notion
+from .conversation_utils import build_chat_messages
 
 logger = logging.getLogger(__name__)
 
@@ -4532,11 +4533,11 @@ class SimpleGraphEngine:
                 elif context:
                     system_prompt += f"\n\n{context}"
                 
-                messages = [
-                    SystemMessage(content=system_prompt),
-                    HumanMessage(content=last_message)
-                ]
-                
+                messages = build_chat_messages(
+                    system_prompt,
+                    state.get("context", {}).get("conversation_turns", []) or [],
+                    last_message,
+                )
                 response = self.llm.invoke(messages)
                 
                 # メニュー問い合わせの場合は注文案内を追加

@@ -9,6 +9,8 @@ from typing import Dict, Any, TypedDict, Literal, Optional, List, Tuple
 
 logger = logging.getLogger(__name__)
 
+from .conversation_utils import build_chat_messages
+
 # LangGraphのimportを安全に行う
 try:
     from langgraph.graph import StateGraph, END
@@ -606,12 +608,18 @@ class GraphEngine:
             last_message = messages[-1] if messages else "こんにちは"
             if isinstance(last_message, dict):
                 last_message = last_message.get("content", "こんにちは")
-            
-            # LLMで応答生成
-            response = self.llm.invoke([
-                SystemMessage(content=system_content),
-                HumanMessage(content=last_message)
-            ])
+
+            conversation_turns = (
+                state.get("context", {}) or {}
+            ).get("conversation_turns", []) or []
+
+            # LLMで応答生成（過去ターンがあれば多ターン文脈で）
+            lc_messages = build_chat_messages(
+                system_content,
+                conversation_turns,
+                last_message,
+            )
+            response = self.llm.invoke(lc_messages)
             
             return response.content
         

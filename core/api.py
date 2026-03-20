@@ -457,11 +457,13 @@ def create_app(config: ConfigLoader) -> FastAPI:
             if not agent_used:
                 if graph_engine and config.get("features.enable_langgraph", False):
                     try:
+                        ai_engine.ensure_session(session_id)
+                        conv_turns = ai_engine.get_llm_conversation_turns(session_id)
                         initial_state: ConversationState = {
                             "messages": [request.message],
                             "current_step": "",
                             "user_intent": "",
-                            "context": {},
+                            "context": {"conversation_turns": conv_turns},
                             "rag_results": rag_results,
                             "response": "",
                             "options": [],
@@ -708,13 +710,18 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     logger.info(f"[WS] SimpleGraphEngine使用: {message}")
                     try:
                         # セッションのstateを取得または作成
+                        ai_engine.ensure_session(session_id)
+                        conv_turns = ai_engine.get_llm_conversation_turns(session_id)
+
                         if session_id in ws_manager.session_states:
                             # 既存のstateを取得し、コンテキストを保持
                             existing_state = ws_manager.session_states[session_id]
+                            merged_ctx = dict(existing_state.get("context", {"trigger": "user"}))
+                            merged_ctx["conversation_turns"] = conv_turns
                             state: State = {
                                 "messages": [message],
                                 "intent": "",
-                                "context": existing_state.get("context", {"trigger": "user"}),
+                                "context": merged_ctx,
                                 "response": "",
                                 "options": [],
                                 "should_push": False,
@@ -726,7 +733,10 @@ def create_app(config: ConfigLoader) -> FastAPI:
                             state: State = {
                                 "messages": [message],
                                 "intent": "",
-                                "context": {"trigger": "user"},
+                                "context": {
+                                    "trigger": "user",
+                                    "conversation_turns": conv_turns,
+                                },
                                 "response": "",
                                 "options": [],
                                 "should_push": False,
@@ -737,6 +747,12 @@ def create_app(config: ConfigLoader) -> FastAPI:
                         result = simple_graph.invoke(state)
                         logger.info(f"[WS] SimpleGraphEngine invoke完了: {result.get('response', '')[:50]}...")
                         
+                        if message.strip():
+                            sess = ai_engine.get_session(session_id)
+                            if sess:
+                                sess.add_message("user", message)
+                                sess.add_message("assistant", result.get("response", ""))
+
                         # stateをセッションに保存（コンテキストを保持）
                         ws_manager.session_states[session_id] = result
                         logger.info(f"[WS] stateをセッションに保存: options={len(result.get('options', []))}件, context_keys={list(result.get('context', {}).keys())}")

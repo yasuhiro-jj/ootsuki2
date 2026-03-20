@@ -273,3 +273,40 @@ class AIEngine:
             return session.messages
         return []
 
+    def ensure_session(
+        self, session_id: str, customer_id: Optional[str] = None
+    ) -> ChatSession:
+        """
+        既存セッションを返す。無い場合は指定された session_id で新規作成する。
+        WebSocket などでクライアントが先に session_id を持っている場合に使う。
+        """
+        existing = self.sessions.get(session_id)
+        if existing:
+            return existing
+        cid = customer_id or f"customer_{session_id[:8]}"
+        session = ChatSession(session_id=session_id, customer_id=cid)
+        session.add_message("system", self.system_prompt)
+        self.sessions[session_id] = session
+        logger.info(f"[OK] セッションを確保（新規）: {session_id[:8]}...")
+        return session
+
+    def get_llm_conversation_turns(
+        self, session_id: str, max_pairs: int = 10
+    ) -> List[Dict[str, str]]:
+        """
+        LLM に渡す直前の user/assistant のみ（system 除外）。
+        現在処理中のユーザー発話は含めない（呼び出し側で Human として別途付与する）。
+        """
+        session = self.sessions.get(session_id)
+        if not session:
+            return []
+        out: List[Dict[str, str]] = []
+        for msg in session.messages:
+            role = msg.get("role", "")
+            if role in ("user", "assistant"):
+                out.append({"role": role, "content": msg.get("content", "")})
+        max_msgs = max(1, max_pairs) * 2
+        if len(out) > max_msgs:
+            out = out[-max_msgs:]
+        return out
+
