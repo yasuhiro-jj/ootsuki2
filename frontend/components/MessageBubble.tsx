@@ -7,6 +7,8 @@ export interface MessageBubbleProps {
   isUser: boolean;
   suggestions?: string[] | null;
   onSuggestionClick?: (text: string) => void;
+  /** ボット側のみ。本文の上に表示 */
+  imageUrl?: string | null;
 }
 
 export function MessageBubble({
@@ -14,6 +16,7 @@ export function MessageBubble({
   isUser,
   suggestions = [],
   onSuggestionClick,
+  imageUrl,
 }: MessageBubbleProps) {
   const safeSuggestions = suggestions ?? [];
 
@@ -36,6 +39,16 @@ export function MessageBubble({
             : 'rounded-bl-md border border-white/25 bg-white/85 text-slate-800 backdrop-blur'
         }`}
       >
+        {!isUser && imageUrl ? (
+          <div className="mb-3 overflow-hidden rounded-xl border border-slate-200/80 bg-slate-100/50">
+            <img
+              src={imageUrl}
+              alt=""
+              className="max-h-64 w-full object-contain"
+              loading="lazy"
+            />
+          </div>
+        ) : null}
         <div
           className={`break-words whitespace-pre-wrap text-sm leading-relaxed md:text-[15px] ${
             isUser ? 'text-white' : 'text-slate-700'

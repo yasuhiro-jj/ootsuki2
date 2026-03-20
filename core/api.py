@@ -6,7 +6,7 @@ FastAPIベースの汎用APIフレームワーク
 
 import logging
 import asyncio
-from typing import Optional, Dict, Any, Set
+from typing import Optional, Dict, Any, Set, List
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -111,6 +111,8 @@ class ChatResponse(BaseModel):
     timestamp: str
     options: Optional[list] = []  # ハイブリッドUI用選択肢
     suggestions: Optional[list] = None  # Next.jsフロントエンド用（optionsのエイリアス）
+    image_url: Optional[str] = None  # メニュー先頭1件の検証済み画像URL
+    line_reply_messages: Optional[List[Dict[str, Any]]] = None  # LINE Messaging API 用
 
 
 class ConnectionManager:
@@ -217,6 +219,12 @@ def create_app(config: ConfigLoader) -> FastAPI:
     )
     
     notion_client = NotionClient()
+
+    from .menu_service import MenuService
+    from .menu_image_resolve import attach_line_messages_if_image, resolve_menu_image_for_chat
+
+    _menu_db_id = config.get("notion.database_ids.menu_db")
+    shared_menu_service = MenuService(notion_client, _menu_db_id)
     
     # 不明キーワード検索サービス初期化
     unknown_keywords_db_id = config.get("notion.database_ids.unknown_keywords_db")
@@ -280,11 +288,8 @@ def create_app(config: ConfigLoader) -> FastAPI:
         try:
             logger.info("[DEBUG] SimpleGraphEngine初期化開始...")
             
-            # MenuServiceを初期化
-            from core.menu_service import MenuService
-            menu_db_id = config.get("notion.database_ids.menu_db")
-            menu_service = MenuService(notion_client, menu_db_id)
-            logger.info(f"[DEBUG] MenuService初期化完了 (DB ID: {menu_db_id})")
+            menu_service = shared_menu_service
+            logger.info(f"[DEBUG] MenuService初期化完了 (DB ID: {_menu_db_id})")
             
             # ConversationNodeSystemを初期化
             conversation_system = None
@@ -396,8 +401,15 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     unknown_result = unknown_keyword_service.search_similar_question(user_message)
                     if unknown_result and unknown_result.get("standard_answer"):
                         # 標準回答が見つかった場合、それを優先的に返す
+                        menu_image_url, menu_image_log = resolve_menu_image_for_chat(
+                            shared_menu_service, user_message
+                        )
+                        logger.info(menu_image_log)
                         standard_answer = append_line_contact_footer(
                             unknown_result["standard_answer"]
+                        )
+                        line_reply_messages = attach_line_messages_if_image(
+                            standard_answer, menu_image_url
                         )
                         similarity_score = unknown_result.get("similarity_score", 0.0)
                         matched_question_title = unknown_result.get("question_title", "")
@@ -419,7 +431,9 @@ def create_app(config: ConfigLoader) -> FastAPI:
                             session_id=session_id,
                             timestamp=datetime.now().isoformat(),
                             options=[],
-                            suggestions=None
+                            suggestions=None,
+                            image_url=menu_image_url,
+                            line_reply_messages=line_reply_messages,
                         )
                 except Exception as uk_err:
                     logger.warning(f"不明キーワードDB検索エラー: {uk_err}")
@@ -503,7 +517,14 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     response_options = []
             
             # 会話履歴をNotionに保存（設定で有効な場合）
+            menu_image_url, menu_image_log = resolve_menu_image_for_chat(
+                shared_menu_service, user_message
+            )
+            logger.info(menu_image_log)
             response_message = append_line_contact_footer(response_message)
+            line_reply_messages = attach_line_messages_if_image(
+                response_message, menu_image_url
+            )
 
             if config.get("features.save_conversation", False):
                 try:
@@ -534,7 +555,9 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 session_id=session_id,
                 timestamp=datetime.now().isoformat(),
                 options=response_options,
-                suggestions=response_options if response_options else None  # Next.jsフロントエンド用
+                suggestions=response_options if response_options else None,  # Next.jsフロントエンド用
+                image_url=menu_image_url,
+                line_reply_messages=line_reply_messages,
             )
         
         except Exception as e:
@@ -786,12 +809,22 @@ def create_app(config: ConfigLoader) -> FastAPI:
                                 logger.error(f"[WS] 会話履歴の保存に失敗: {e}")
                                 # エラーが発生しても会話は続行
                         
-                        # 応答をWebSocket経由で返す
+                        # 応答をWebSocket経由で返す（画像URLは HTTP /chat と同じ解決ロジック）
+                        display_text = result.get("response", "")
+                        full_with_footer = append_line_contact_footer(display_text)
+                        ws_img_url, ws_menu_log = resolve_menu_image_for_chat(
+                            shared_menu_service, message
+                        )
+                        logger.info(ws_menu_log)
                         response = {
                             "type": "response",
-                            "message": result.get("response", ""),
+                            "message": display_text,
                             "options": result.get("options", []),
-                            "timestamp": datetime.now().isoformat()
+                            "timestamp": datetime.now().isoformat(),
+                            "image_url": ws_img_url,
+                            "line_reply_messages": attach_line_messages_if_image(
+                                full_with_footer, ws_img_url
+                            ),
                         }
                         logger.info(f"[WS] 送信メッセージ詳細: {response['message']}")
                         await websocket.send_json(response)

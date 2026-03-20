@@ -917,6 +917,18 @@ WiFiあります。
 4. 保存
 5. **サーバーを再起動**
 
+
+
+# バックエンドサーバーのターミナルで Ctrl+C を押して停止
+
+# 再起動
+cd "c:\Users\PC user\OneDrive\Desktop\移行用まとめフォルダー\カーソル　個人\ootsuki2"
+conda activate ootsuki2
+python main.py ootuki_restaurant
+```
+
+
+
 ### ⚠️ 重要な注意事項
 
 1. **類似度の閾値**: 類似度75%以上でマッチします

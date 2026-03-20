@@ -22,6 +22,8 @@ class MenuItemView:
     one_liner: Optional[str] = None  # 一言紹介
     description: Optional[str] = None
     recommendation: Optional[str] = None  # おすすめ理由
+    page_id: Optional[str] = None  # Notion page id
+    image_url: Optional[str] = None  # メイン画像URL優先、なければ Image URL（生値）
 
 
 class MenuService:
@@ -63,6 +65,27 @@ class MenuService:
             if rich_text_array and len(rich_text_array) > 0:
                 return rich_text_array[0].get("plain_text", "")
         return ""
+
+    def _get_url_property(self, properties: Dict[str, Any], key: str) -> str:
+        """url / rich_text から URL 文字列を取得"""
+        prop = properties.get(key, {})
+        ptype = prop.get("type")
+        if ptype == "url":
+            u = prop.get("url")
+            return (u or "").strip()
+        if ptype == "rich_text":
+            rich_text_array = prop.get("rich_text", [])
+            if rich_text_array:
+                return (rich_text_array[0].get("plain_text", "") or "").strip()
+        return ""
+
+    def _resolve_image_url_from_properties(self, properties: Dict[str, Any]) -> Optional[str]:
+        """メイン画像URL を優先し、空なら Image URL。"""
+        main_u = self._get_url_property(properties, "メイン画像URL")
+        if main_u:
+            return main_u
+        alt = self._get_url_property(properties, "Image URL")
+        return alt or None
     
     def fetch_menu_items(
         self,
@@ -361,7 +384,9 @@ class MenuService:
                 price=self._get_number(properties, "Price"),
                 one_liner=self._get_rich_text(properties, "一言紹介"),
                 description=self._get_rich_text(properties, "Description"),
-                recommendation=self._get_rich_text(properties, "おすすめ理由")
+                recommendation=self._get_rich_text(properties, "おすすめ理由"),
+                page_id=page.get("id"),
+                image_url=self._resolve_image_url_from_properties(properties),
             )
             
             if menu_item.name:  # 名前がある場合のみ追加
@@ -422,6 +447,45 @@ class MenuService:
         items = self.fetch_menu_items(keyword, limit, category, in_stock)
         return self.format_menu_items(items)
     
+    def search_menu_items_by_query(self, query: str, limit: int = 5) -> List[MenuItemView]:
+        """
+        ユーザーの質問からメニューアイテムを検索（重複除去・先頭 limit 件）。
+        画像URL付与やチャット用の先頭1件ピックに利用する。
+        """
+        if not query:
+            return []
+
+        keywords = self._extract_keywords_from_query(query)
+        if not keywords:
+            return []
+
+        all_items: List[MenuItemView] = []
+        for keyword in keywords:
+            logger.info(f"[MenuService] キーワード検索開始: '{keyword}'")
+            items = self.fetch_menu_items(keyword, limit=limit)
+            logger.info(f"[MenuService] キーワード '{keyword}' 検索結果: {len(items)}件")
+
+            if items:
+                for i, item in enumerate(items, 1):
+                    logger.info(f"[MenuService]   {i}. {item.name} (¥{item.price})")
+
+            all_items.extend(items)
+
+            if keyword == "せんべろセット" and len(items) == 0:
+                logger.info("[MenuService] せんべろセットが見つからないため、せんべろで再検索")
+                fallback_items = self.fetch_menu_items("せんべろ", limit=limit)
+                logger.info(f"[MenuService] フォールバック検索結果: {len(fallback_items)}件")
+                all_items.extend(fallback_items)
+
+        unique_items: List[MenuItemView] = []
+        seen_names = set()
+        for item in all_items:
+            if item.name and item.name not in seen_names:
+                unique_items.append(item)
+                seen_names.add(item.name)
+
+        return unique_items[:limit]
+
     def search_menu_by_query(self, query: str, limit: int = 5) -> str:
         """
         ユーザーの質問からメニューを検索
@@ -433,48 +497,7 @@ class MenuService:
         Returns:
             フォーマットされたメニュー文字列
         """
-        if not query:
-            return ""
-        
-        # 質問からキーワードを抽出
-        keywords = self._extract_keywords_from_query(query)
-        
-        if not keywords:
-            return ""
-        
-            # 各キーワードでメニューを検索
-        all_items = []
-        for keyword in keywords:
-            logger.info(f"[MenuService] キーワード検索開始: '{keyword}'")
-            items = self.fetch_menu_items(keyword, limit=limit)
-            logger.info(f"[MenuService] キーワード '{keyword}' 検索結果: {len(items)}件")
-            
-            # 検索結果の詳細ログ
-            if items:
-                for i, item in enumerate(items, 1):
-                    logger.info(f"[MenuService]   {i}. {item.name} (¥{item.price})")
-            
-            all_items.extend(items)
-            
-            # せんべろセットで結果が見つからない場合、せんべろで再検索
-            if keyword == "せんべろセット" and len(items) == 0:
-                logger.info(f"[MenuService] せんべろセットが見つからないため、せんべろで再検索")
-                fallback_items = self.fetch_menu_items("せんべろ", limit=limit)
-                logger.info(f"[MenuService] フォールバック検索結果: {len(fallback_items)}件")
-                all_items.extend(fallback_items)
-        
-        # 重複を除去
-        unique_items = []
-        seen_names = set()
-        for item in all_items:
-            if item.name not in seen_names:
-                unique_items.append(item)
-                seen_names.add(item.name)
-        
-        # 上限を適用
-        unique_items = unique_items[:limit]
-        
-        return self.format_menu_items(unique_items)
+        return self.format_menu_items(self.search_menu_items_by_query(query, limit))
     
     def _extract_keywords_from_query(self, query: str) -> List[str]:
         """

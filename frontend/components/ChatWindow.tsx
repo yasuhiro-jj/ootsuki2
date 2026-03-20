@@ -11,6 +11,7 @@ interface Message {
   content: string;
   isUser: boolean;
   suggestions?: string[] | null;
+  imageUrl?: string | null;
 }
 
 export function ChatWindow() {
@@ -86,6 +87,7 @@ export function ChatWindow() {
           content: res.message,
           isUser: false,
           suggestions: res.suggestions ?? res.options ?? null,
+          imageUrl: res.image_url ?? null,
         };
         setMessages((prev) => [...prev, botMsg]);
       } catch (err) {
@@ -141,6 +143,7 @@ export function ChatWindow() {
             isUser={m.isUser}
             suggestions={m.suggestions}
             onSuggestionClick={handleSuggestionClick}
+            imageUrl={m.imageUrl}
           />
         ))}
 

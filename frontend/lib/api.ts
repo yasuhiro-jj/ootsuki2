@@ -10,6 +10,10 @@ export interface ChatResponse {
   timestamp?: string;
   suggestions?: string[];
   options?: string[];
+  /** 検証済みの直接画像URL（先頭メニュー1件のみ） */
+  image_url?: string | null;
+  /** LINE Messaging API 用 messages 配列（任意） */
+  line_reply_messages?: Record<string, unknown>[] | null;
 }
 
 export interface SessionResponse {
