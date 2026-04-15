@@ -19,6 +19,7 @@ from pathlib import Path
 from .config_loader import ConfigLoader
 from .ai_engine import AIEngine
 from .chroma_client import ChromaClient
+from .intent_classifier import IntentClassifier, IntentType
 from .notion_client import NotionClient
 from .unknown_keyword_service import UnknownKeywordSearchService
 
@@ -219,6 +220,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
     )
     
     notion_client = NotionClient()
+    intent_classifier = IntentClassifier()
 
     from .menu_service import MenuService
     from .menu_image_resolve import attach_line_messages_if_image, resolve_menu_image_for_chat
@@ -394,6 +396,31 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 session_id = ai_engine.create_session(request.customer_id)
             
             user_message = request.message
+            intent_result = intent_classifier.classify(user_message)
+            ai_engine.save_memory(
+                session_id,
+                {
+                    "intent": intent_result.intent.value,
+                    "topic": intent_result.topic,
+                    "user_type": intent_result.user_type,
+                    "last_intent_reason": intent_result.reason,
+                },
+            )
+            logger.info(
+                "[Intent] session=%s intent=%s confidence=%.2f reason=%s topic=%s",
+                session_id[:8],
+                intent_result.intent.value,
+                intent_result.confidence,
+                intent_result.reason,
+                intent_result.topic,
+            )
+
+            response_mode = (
+                "suggestion"
+                if intent_result.intent in {IntentType.PROPOSAL, IntentType.TROUBLE, IntentType.UNKNOWN}
+                else "normal"
+            )
+            tone = ai_engine.adjust_tone(intent_result.intent.value)
             
             # 【優先】不明キーワードDB検索を最初に実行（RAG結果に関係なく）
             if unknown_keyword_service:
@@ -418,6 +445,12 @@ def create_app(config: ConfigLoader) -> FastAPI:
                             f"[UnknownKeywordPriority] 標準回答を優先採用: "
                             f"score={similarity_score:.1f}, "
                             f"question='{matched_question_title[:50]}'"
+                        )
+                        logger.info(
+                            "[Decision] session=%s source=unknown_keyword intent=%s mode=%s",
+                            session_id[:8],
+                            intent_result.intent.value,
+                            response_mode,
                         )
                         
                         # セッションにメッセージを追加
@@ -444,11 +477,30 @@ def create_app(config: ConfigLoader) -> FastAPI:
             rag_results = []
             if chroma_client._built:
                 rag_results = chroma_client.query(user_message, k=15)
+
+            unknown_context_result = None
+            if unknown_keyword_service and response_mode == "suggestion":
+                try:
+                    unknown_context_result = unknown_keyword_service.search_similar_question(
+                        user_message,
+                        threshold=60.0,
+                    )
+                except Exception as context_err:
+                    logger.warning(f"不明キーワード補助検索エラー: {context_err}")
+
+            notion_context = [unknown_context_result] if unknown_context_result else []
+            combined_context = ai_engine.build_context(
+                user_input=user_message,
+                session_id=session_id,
+                rag_data=rag_results,
+                notion_data=notion_context,
+                intent_result=intent_result,
+            )
             
             response_options: list = []
             response_message = ""
             agent_used = False
-            detected_intent = "Other"  # デフォルトの意図
+            detected_intent = intent_result.intent.value
 
             if agent_engine:
                 try:
@@ -468,16 +520,30 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     import traceback
                     logger.error(f"[ERROR] AgentExecutor予期せぬエラー詳細: {traceback.format_exc()}")
 
+            should_use_graph = intent_result.intent in {
+                IntentType.QUESTION,
+                IntentType.COMPARISON,
+            }
+
             if not agent_used:
-                if graph_engine and config.get("features.enable_langgraph", False):
+                if (
+                    should_use_graph
+                    and graph_engine
+                    and config.get("features.enable_langgraph", False)
+                ):
                     try:
                         ai_engine.ensure_session(session_id)
                         conv_turns = ai_engine.get_llm_conversation_turns(session_id)
                         initial_state: ConversationState = {
                             "messages": [request.message],
                             "current_step": "",
-                            "user_intent": "",
-                            "context": {"conversation_turns": conv_turns},
+                            "user_intent": intent_result.intent.value,
+                            "context": {
+                                "conversation_turns": conv_turns,
+                                "combined_context": combined_context,
+                                "intent": intent_result.intent.value,
+                                "topic": intent_result.topic,
+                            },
                             "rag_results": rag_results,
                             "response": "",
                             "options": [],
@@ -502,19 +568,59 @@ def create_app(config: ConfigLoader) -> FastAPI:
                         )
                     except Exception as e:
                         logger.warning(f"[WARN] LangGraphエラー、通常モードで応答: {e}")
-                        response_message = ai_engine.generate_response_with_rag(
-                            session_id=session_id,
-                            user_message=request.message,
-                            rag_results=rag_results,
-                        )
+                        if rag_results:
+                            response_message = ai_engine.generate_response(
+                                session_id=session_id,
+                                user_message=request.message,
+                                context=combined_context,
+                                response_mode=response_mode,
+                                tone=tone,
+                                intent_result=intent_result,
+                            )
+                        else:
+                            response_message = ai_engine.generate_hypothesis_answer(
+                                session_id=session_id,
+                                user_message=request.message,
+                                intent_result=intent_result,
+                                context=combined_context,
+                            )
                         response_options = []
                 else:
-                    response_message = ai_engine.generate_response_with_rag(
-                        session_id=session_id,
-                        user_message=request.message,
-                        rag_results=rag_results,
-                    )
+                    if rag_results:
+                        response_message = ai_engine.generate_response(
+                            session_id=session_id,
+                            user_message=request.message,
+                            context=combined_context,
+                            response_mode=response_mode,
+                            tone=tone,
+                            intent_result=intent_result,
+                        )
+                    else:
+                        response_message = ai_engine.generate_hypothesis_answer(
+                            session_id=session_id,
+                            user_message=request.message,
+                            intent_result=intent_result,
+                            context=combined_context,
+                        )
                     response_options = []
+
+            logger.info(
+                "[Decision] session=%s source=%s intent=%s mode=%s rag_hits=%d notion_hits=%d",
+                session_id[:8],
+                (
+                    "agent"
+                    if agent_used
+                    else (
+                        "langgraph"
+                        if should_use_graph and graph_engine and config.get("features.enable_langgraph", False)
+                        else "ai_engine"
+                    )
+                ),
+                intent_result.intent.value,
+                response_mode,
+                len(rag_results),
+                len(notion_context),
+            )
             
             # 会話履歴をNotionに保存（設定で有効な場合）
             menu_image_url, menu_image_log = resolve_menu_image_for_chat(
@@ -944,4 +1050,3 @@ async def load_knowledge_base(
         logger.warning(f"[WARN] ローカルファイル読み込みエラー: {e}")
     
     return documents
-

@@ -14,6 +14,8 @@ from datetime import datetime
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
+from .intent_classifier import IntentResult, IntentType
+
 logger = logging.getLogger(__name__)
 
 # 🍣 人間味のある会話プロンプト（おおつき専用・褒める要素追加）
@@ -56,6 +58,12 @@ class ChatSession:
         self.session_id = session_id
         self.customer_id = customer_id
         self.messages: List[Dict[str, Any]] = []
+        self.memory: Dict[str, Any] = {
+            "intent": IntentType.UNKNOWN.value,
+            "topic": "general",
+            "user_type": "general",
+            "last_intent_reason": "",
+        }
         self.created_at = datetime.now()
         self.updated_at = datetime.now()
     
@@ -99,7 +107,16 @@ class AIEngine:
     
     def _default_system_prompt(self) -> str:
         """デフォルトのシステムプロンプト（人間味のある会話）"""
-        return HUMAN_LIKE_PROMPT
+        return (
+            HUMAN_LIKE_PROMPT
+            + "\n\n"
+            + "あなたは単なる回答AIではなく、ユーザーの状況を理解し、最適な提案を行うプロフェッショナルです。\n"
+            + "以下を必ず守ってください：\n"
+            + "- 単なる説明で終わらない\n"
+            + "- 必ず一歩踏み込んだ提案をする\n"
+            + "- ユーザーの目的を推測する\n"
+            + "- 不明でも仮説で答える"
+        )
     
     def _initialize_llm(self):
         """LLMを初期化"""
@@ -154,7 +171,10 @@ class AIEngine:
         self,
         session_id: str,
         user_message: str,
-        context: Optional[str] = None
+        context: Optional[str] = None,
+        response_mode: str = "normal",
+        tone: Optional[str] = None,
+        intent_result: Optional[IntentResult] = None,
     ) -> str:
         """
         ユーザーメッセージに対する応答を生成
@@ -181,7 +201,13 @@ class AIEngine:
             session.add_message("user", user_message)
             
             # メッセージ履歴を構築
-            messages = self._build_messages(session, context)
+            messages = self._build_messages(
+                session=session,
+                context=context,
+                response_mode=response_mode,
+                tone=tone,
+                intent_result=intent_result,
+            )
             
             # LLMで応答生成
             response = self.llm.invoke(messages)
@@ -200,7 +226,10 @@ class AIEngine:
     def _build_messages(
         self,
         session: ChatSession,
-        context: Optional[str] = None
+        context: Optional[str] = None,
+        response_mode: str = "normal",
+        tone: Optional[str] = None,
+        intent_result: Optional[IntentResult] = None,
     ) -> List[Any]:
         """
         LangChain用のメッセージリストを構築
@@ -213,9 +242,22 @@ class AIEngine:
             メッセージリスト
         """
         messages = []
-        
+
         # システムメッセージ
         system_content = self.system_prompt
+        if intent_result:
+            system_content += (
+                f"\n\n現在のIntent: {intent_result.intent.value}"
+                f"\n想定トピック: {intent_result.topic}"
+                f"\n想定ユーザータイプ: {intent_result.user_type}"
+            )
+        if tone:
+            system_content += f"\n回答トーン: {tone}"
+        if response_mode == "suggestion":
+            system_content += (
+                "\n回答形式: ①結論 ②理由 ③具体提案（3つ）"
+                "\n提案は実行しやすい順に整理してください。"
+            )
         if context:
             system_content += f"\n\n参考情報:\n{context}"
         messages.append(SystemMessage(content=system_content))
@@ -237,7 +279,10 @@ class AIEngine:
         self,
         session_id: str,
         user_message: str,
-        rag_results: List[Dict[str, Any]]
+        rag_results: List[Dict[str, Any]],
+        response_mode: str = "normal",
+        tone: Optional[str] = None,
+        intent_result: Optional[IntentResult] = None,
     ) -> str:
         """
         RAG検索結果を使用して応答を生成
@@ -259,7 +304,14 @@ class AIEngine:
         
         context = "\n\n".join(context_parts) if context_parts else None
         
-        return self.generate_response(session_id, user_message, context)
+        return self.generate_response(
+            session_id,
+            user_message,
+            context,
+            response_mode=response_mode,
+            tone=tone,
+            intent_result=intent_result,
+        )
     
     def set_system_prompt(self, prompt: str):
         """システムプロンプトを設定"""
@@ -272,6 +324,122 @@ class AIEngine:
         if session:
             return session.messages
         return []
+
+    def get_session_memory(self, session_id: str) -> Dict[str, Any]:
+        """セッションに保持している会話メモリを取得"""
+        session = self.sessions.get(session_id)
+        if not session:
+            return {}
+        return dict(session.memory)
+
+    def save_memory(self, session_id: str, memory: Dict[str, Any]) -> None:
+        """intent / topic / user_type を中心に会話メモリを更新"""
+        session = self.ensure_session(session_id)
+        session.memory.update({k: v for k, v in memory.items() if v is not None})
+        session.updated_at = datetime.now()
+        logger.info(
+            "[IntentMemory] session=%s intent=%s topic=%s user_type=%s",
+            session_id[:8],
+            session.memory.get("intent"),
+            session.memory.get("topic"),
+            session.memory.get("user_type"),
+        )
+
+    def adjust_tone(self, intent: str) -> str:
+        """Intentに応じて出力トーンを返す"""
+        if intent == IntentType.TROUBLE.value:
+            return "polite"
+        if intent == IntentType.PROPOSAL.value:
+            return "consulting"
+        if intent == IntentType.SMALLTALK.value:
+            return "casual"
+        return "friendly"
+
+    def build_context(
+        self,
+        user_input: str,
+        session_id: str,
+        rag_data: Optional[List[Dict[str, Any]]] = None,
+        notion_data: Optional[List[Dict[str, Any]]] = None,
+        intent_result: Optional[IntentResult] = None,
+    ) -> str:
+        """RAG / Notion / 履歴 / 意図メモリを統合してLLMに渡す"""
+        history = self.get_llm_conversation_turns(session_id, max_pairs=5)
+        memory = self.get_session_memory(session_id)
+
+        sections: List[str] = [f"[ユーザー入力]\n{user_input}"]
+
+        if intent_result:
+            sections.append(
+                "[Intent分析]\n"
+                f"intent={intent_result.intent.value}\n"
+                f"confidence={intent_result.confidence:.2f}\n"
+                f"reason={intent_result.reason}\n"
+                f"topic={intent_result.topic}\n"
+                f"user_type={intent_result.user_type}"
+            )
+
+        if memory:
+            sections.append(
+                "[セッション記憶]\n"
+                f"last_intent={memory.get('intent', '')}\n"
+                f"topic={memory.get('topic', '')}\n"
+                f"user_type={memory.get('user_type', '')}"
+            )
+
+        if history:
+            history_lines = [
+                f"{turn['role']}: {turn['content']}"
+                for turn in history[-6:]
+                if turn.get("content")
+            ]
+            if history_lines:
+                sections.append("[会話履歴]\n" + "\n".join(history_lines))
+
+        if rag_data:
+            rag_lines = []
+            for index, item in enumerate(rag_data[:5], 1):
+                text = (item.get("text") or item.get("content") or "").strip()
+                if text:
+                    rag_lines.append(f"{index}. {text[:400]}")
+            if rag_lines:
+                sections.append("[RAG情報]\n" + "\n".join(rag_lines))
+
+        if notion_data:
+            notion_lines = []
+            for index, item in enumerate(notion_data[:3], 1):
+                title = item.get("question_title") or item.get("title") or item.get("name") or "Notion"
+                answer = item.get("standard_answer") or item.get("content") or ""
+                notion_lines.append(f"{index}. {title}: {answer[:300]}")
+            if notion_lines:
+                sections.append("[Notion情報]\n" + "\n".join(notion_lines))
+
+        return "\n\n".join(sections)
+
+    def generate_hypothesis_answer(
+        self,
+        session_id: str,
+        user_message: str,
+        intent_result: Optional[IntentResult] = None,
+        context: Optional[str] = None,
+    ) -> str:
+        """情報不足時でも仮説ベースの提案回答を返す"""
+        prompt_context = context or ""
+        if prompt_context:
+            prompt_context += "\n\n"
+        prompt_context += (
+            "[仮説回答ガイド]\n"
+            "データが不足しているため断定は避けつつ、"
+            "『おそらく』『可能性があります』を使って仮説で答えてください。"
+        )
+        return self.generate_response(
+            session_id=session_id,
+            user_message=user_message,
+            context=prompt_context,
+            response_mode="suggestion",
+            tone=self.adjust_tone((intent_result.intent.value if intent_result else IntentType.UNKNOWN.value)),
+            intent_result=intent_result,
+        )
 
     def ensure_session(
         self, session_id: str, customer_id: Optional[str] = None
@@ -309,4 +477,3 @@ class AIEngine:
         if len(out) > max_msgs:
             out = out[-max_msgs:]
         return out
-
