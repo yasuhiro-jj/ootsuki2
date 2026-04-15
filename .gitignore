@@ -53,6 +53,8 @@ node_modules/
 .next/
 !frontend/lib/
 !frontend/lib/api.ts
+!ai-maneger/lib/
+!ai-maneger/lib/**
 frontend/node_modules/
 frontend/.next/
 frontend/.env.local
