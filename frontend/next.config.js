@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  outputFileTracingRoot: __dirname,
   // バックエンドAPIへのプロキシ（開発環境用）
   async rewrites() {
     // 本番環境では環境変数NEXT_PUBLIC_API_URLを使用

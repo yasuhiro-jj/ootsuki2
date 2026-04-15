@@ -41,6 +41,8 @@ export function MessageBubble({
       >
         {!isUser && imageUrl ? (
           <div className="mb-3 overflow-hidden rounded-xl border border-slate-200/80 bg-slate-100/50">
+            {/* External menu images can come from arbitrary Notion/backend URLs. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={imageUrl}
               alt=""
