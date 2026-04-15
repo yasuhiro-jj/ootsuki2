@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { ChatWindow } from '@/components/ChatWindow';
 
 export default function Home() {
@@ -14,6 +15,14 @@ export default function Home() {
           <header className="shrink-0 overflow-hidden border-b border-amber-900/10 bg-gradient-to-r from-[#a85632]/95 via-[#8f4d2d]/95 to-[#6f3c26]/95 px-4 py-3 text-white md:px-8 md:py-6">
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(255,255,255,0.18),transparent_50%)]" />
             <div className="relative">
+              <p className="mb-1 text-center">
+                <Link
+                  href="/agent"
+                  className="text-[11px] text-white/90 underline-offset-2 hover:text-white hover:underline md:text-sm"
+                >
+                  Notion Agent 版はこちら →
+                </Link>
+              </p>
               <h1 className="text-center text-lg font-bold tracking-wide md:text-3xl">
                 おおつきチャットボット
               </h1>

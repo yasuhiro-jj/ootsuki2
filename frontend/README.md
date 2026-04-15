@@ -1,21 +1,22 @@
 # おおつきチャットボット - Next.js フロントエンド
 
-## 起動手順
+## ドキュメント
 
-1. **バックエンドを起動**（プロジェクトルートで）
-   ```bash
-   conda activate campingrepare
-   set PYTHONPATH=%CD%
-   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-   ```
+**起動方法・環境変数・`/agent`（Notion 連携チャット）の説明は、リポジトリ直下の `README.md` にまとめています。**
 
-2. **フロントエンドを起動**（このフォルダで）
-   ```bash
-   npm install   # 初回のみ
-   npm run dev
-   ```
+→ **`../README.md`** のセクション **「Next.js フロントエンドと Notion 連携チャット（`/agent`）」** を参照してください。
 
-3. ブラウザで http://localhost:3000 にアクセス
+## 最短の起動（開発）
+
+```powershell
+cd frontend
+npm install
+# .env.local を用意（.env.local.example 参照）
+npm run dev
+```
+
+- **従来チャット:** http://localhost:3000
+- **Notion データ + OpenAI チャット:** http://localhost:3000/agent
 
 ## 技術スタック
 
@@ -23,15 +24,12 @@
 - TypeScript
 - Tailwind CSS
 
-## 構成
+## 構成（抜粋）
 
-- `app/page.tsx` - メインページ
-- `components/ChatWindow.tsx` - チャットウィンドウ
-- `components/MessageBubble.tsx` - メッセージ表示
-- `components/ChatInput.tsx` - 入力欄
-- `components/QuickReplyButtons.tsx` - クイックリプライ
-- `lib/api.ts` - バックエンド API クライアント
-
-## 環境変数
-
-- `NEXT_PUBLIC_API_URL` - 未設定時は `/api/proxy` 経由でバックエンドにプロキシ
+| パス | 内容 |
+|------|------|
+| `app/page.tsx` | メイン（既存チャット） |
+| `app/agent/page.tsx` | Notion 連携チャット |
+| `app/api/agent-chat/route.ts` | Notion DB 取得 → OpenAI |
+| `lib/notion-agent/` | Notion / OpenAI クライアント |
+| `lib/api.ts` | 既存 FastAPI 用クライアント |
