@@ -1,0 +1,6 @@
+.next
+.next.bak*
+node_modules
+.env.local
+out
+dist
