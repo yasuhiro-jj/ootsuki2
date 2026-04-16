@@ -176,7 +176,7 @@ export default async function DashboardPage() {
         <LineCopyCard title={lineMessage.title} body={lineMessage.body} enabled={agentChatEnabled} />
       </section>
 
-      <section className="mt-6 grid gap-6 xl:grid-cols-[1.05fr_0.9fr_1.05fr]">
+      <section className="mt-6 grid gap-6 xl:grid-cols-[1.05fr_1fr_1.05fr]">
         <SectionCard
           title="今週見る数字"
           description="週次集計から主要KPIを確認できます。未入力の項目だけアラート表示します。"
@@ -208,45 +208,6 @@ export default async function DashboardPage() {
               週次集計を再計算（JS無効時用リンク）
             </a>
           </noscript>
-        </SectionCard>
-
-        <SectionCard
-          title="LINE / 収益指標"
-          description="粗利率と LINE 関連の週次集計です。前週比は前週入力がある場合のみ表示します。"
-        >
-          <div className="grid gap-3">
-            <div className="rounded-2xl border border-stone-900/10 px-4 py-4">
-              <p className="text-xs uppercase tracking-[0.2em] text-stone-500">粗利率</p>
-              <p className="mt-2 text-2xl font-bold text-stone-900">
-                {formatPercentValue(weekSummary.grossMarginRate)}
-              </p>
-              <p className="mt-2 text-sm text-stone-500">
-                前週比 {formatPercentDelta(weekSummary.grossMarginRateWoW)}
-              </p>
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="rounded-2xl border border-stone-900/10 px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-stone-500">LINE登録数</p>
-                <p className="mt-2 text-2xl font-bold text-stone-900">
-                  {formatCount(weekSummary.lineRegistrations)}
-                </p>
-                <p className="mt-2 text-sm text-stone-500">
-                  前週比 {formatPercentDelta(weekSummary.lineRegistrationsWoW)}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-stone-900/10 px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-stone-500">
-                  LINE経由来店数
-                </p>
-                <p className="mt-2 text-2xl font-bold text-stone-900">
-                  {formatCount(weekSummary.lineVisits)}
-                </p>
-                <p className="mt-2 text-sm text-stone-500">
-                  前週比 {formatPercentDelta(weekSummary.lineVisitsWoW)}
-                </p>
-              </div>
-            </div>
-          </div>
         </SectionCard>
 
         <SectionCard

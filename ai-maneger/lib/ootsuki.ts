@@ -166,14 +166,6 @@ export function buildMetricAlerts(summary: WeeklyAggregate): DashboardMetricAler
           ? `${formatPercentValue(summary.grossMarginRate)} を記録済みです。`
           : "粗利率がまだ入っていません。",
     },
-    {
-      label: "LINE関連",
-      status: summary.lineRegistrations > 0 || summary.lineVisits > 0 ? "ok" : "missing",
-      detail:
-        summary.lineRegistrations > 0 || summary.lineVisits > 0
-          ? `登録 ${formatCount(summary.lineRegistrations)} / 来店 ${formatCount(summary.lineVisits)}`
-          : "LINE登録数・来店数がまだ入っていません。",
-    },
   ];
 }
 

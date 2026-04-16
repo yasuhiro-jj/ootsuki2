@@ -64,6 +64,23 @@ export function getPropertyByAliases(
   return undefined;
 }
 
+export function getPropertyNameByAliases(
+  properties: Record<string, NotionProperty>,
+  aliases: string[],
+) {
+  for (const alias of aliases) {
+    if (properties[alias]) return alias;
+  }
+
+  const loweredEntries = Object.keys(properties).map((key) => [key.toLowerCase(), key] as const);
+  for (const alias of aliases) {
+    const matched = loweredEntries.find(([key]) => key === alias.toLowerCase());
+    if (matched) return matched[1];
+  }
+
+  return undefined;
+}
+
 export function getPropertyText(properties: Record<string, NotionProperty>, aliases: string[]) {
   const prop = getPropertyByAliases(properties, aliases);
   if (!prop) return "";
@@ -74,6 +91,8 @@ export function getPropertyNumber(properties: Record<string, NotionProperty>, al
   const prop = getPropertyByAliases(properties, aliases);
   if (!prop) return undefined;
   if (typeof prop.number === "number") return prop.number;
+  if (typeof prop.formula?.number === "number") return prop.formula.number;
+  if (typeof prop.rollup?.number === "number") return prop.rollup.number;
   const text = propertyToText(prop).replace(/,/g, "");
   const parsed = Number(text);
   return Number.isFinite(parsed) ? parsed : undefined;
@@ -92,11 +111,18 @@ export function getPropertyDate(properties: Record<string, NotionProperty>, alia
   return prop.date?.start?.slice(0, 10) || propertyToText(prop).slice(0, 10);
 }
 
-export function propertyToText(prop?: NotionProperty) {
+export function propertyToText(prop?: NotionProperty): string {
   if (!prop) return "";
   if (prop.title) return toText(prop.title);
   if (prop.rich_text) return toText(prop.rich_text);
   if (typeof prop.number === "number") return String(prop.number);
+  if (typeof prop.formula?.number === "number") return String(prop.formula.number);
+  if (typeof prop.rollup?.number === "number") return String(prop.rollup.number);
+  if (typeof prop.formula?.string === "string") return prop.formula.string;
+  if (typeof prop.formula?.boolean === "boolean") return prop.formula.boolean ? "true" : "false";
+  if (prop.formula?.date?.start) return prop.formula.date.start;
+  if (prop.rollup?.date?.start) return prop.rollup.date.start;
+  if (prop.rollup?.array?.length) return prop.rollup.array.map((item) => propertyToText(item)).join(", ");
   if (typeof prop.checkbox === "boolean") return prop.checkbox ? "true" : "false";
   if (prop.url) return prop.url;
   if (prop.select?.name) return prop.select.name;

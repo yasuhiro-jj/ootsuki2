@@ -4,6 +4,7 @@ import {
   getPage,
   getPropertyCheckbox,
   getPropertyDate,
+  getPropertyNameByAliases,
   getPropertyNumber,
   getPropertyText,
   queryDatabaseAll,
@@ -19,7 +20,7 @@ import type {
   WeeklyReviewDraft,
   WeeklyReviewPayload,
 } from "@/types/ootsuki";
-import type { NotionBlock, NotionPage } from "@/types/notion";
+import type { NotionBlock, NotionPage, NotionProperty } from "@/types/notion";
 
 const OOTSUKI_PROJECT_PAGE_ID = process.env.NOTION_OOTSUKI_PROJECT_PAGE_ID?.trim() || "";
 const DAILY_SALES_DB_ID = process.env.NOTION_OOTSUKI_DAILY_SALES_DB_ID?.trim() || "";
@@ -37,30 +38,55 @@ const STATUS_KEYS = ["ステータス", "Status"];
 const SUMMARY_KEYS = ["要点", "要約", "Summary"];
 const RELATED_NUMBER_KEYS = ["関連数字", "数値", "Related Numbers"];
 const NEXT_ACTION_KEYS = ["次アクション", "次のアクション", "Next Action"];
-const TITLE_KEYS = ["タイトル", "件名", "名前", "Name", "title"];
+const TITLE_KEYS = ["タイトル", "件名", "名前", "Name", "title", "日付メモ", "週（メモ）"];
 const DATE_KEYS = ["日付", "Date"];
 const WEEK_START_KEYS = ["週開始", "開始週", "Week Start"];
 const WEEK_END_KEYS = ["週終了", "終了週", "Week End"];
-const SALES_KEYS = ["売上", "売上高", "Sales"];
+const SALES_KEYS = ["売上", "売上高", "Sales", "売上(税抜)"];
 const CUSTOMERS_KEYS = ["客数", "Customers"];
-const AVERAGE_SPEND_KEYS = ["客単価", "Average Spend"];
+const AVERAGE_SPEND_KEYS = ["客単価", "Average Spend", "客単価(自動)"];
 const GROSS_MARGIN_KEYS = ["粗利率(%)", "粗利率", "Gross Margin Rate"];
 const GROSS_PROFIT_KEYS = ["粗利", "粗利額", "Gross Profit"];
 const LINE_REGISTRATION_KEYS = ["LINE登録数", "LINE友だち追加数"];
 const LINE_VISIT_KEYS = ["LINE経由来店数", "LINE来店数"];
-const SALES_YOY_KEYS = ["売上昨対比", "売上前年差異", "Sales YoY"];
-const CUSTOMERS_YOY_KEYS = ["客数昨対比", "客数前年差", "Customers YoY"];
-const AVERAGE_SPEND_YOY_KEYS = ["客単価昨対比", "客単価前年差", "Average Spend YoY"];
+const SALES_YOY_KEYS = ["売上昨対比", "売上前年差異", "Sales YoY", "売上前年比(%)"];
+const CUSTOMERS_YOY_KEYS = ["客数昨対比", "客数前年差", "Customers YoY", "客数前年比(%)"];
+const AVERAGE_SPEND_YOY_KEYS = [
+  "客単価昨対比",
+  "客単価前年差",
+  "Average Spend YoY",
+  "客単価前年比(%)",
+];
 const RETURNS_KEYS = ["取消返品", "取消/返品金額", "返品金額"];
 const DISCOUNT_KEYS = ["値引き", "値引き金額"];
-const NOTES_KEYS = ["メモ", "備考", "Notes"];
-const PAYMENT_MEMO_KEYS = ["決済内訳メモ", "決済メモ"];
-const SOURCE_KEYS = ["ソース", "データソース", "Source"];
+const NOTES_KEYS = ["メモ", "備考", "Notes", "所感/メモ"];
+const PAYMENT_MEMO_KEYS = ["決済内訳メモ", "決済メモ", "決済内訳（メモ）"];
+const SOURCE_KEYS = ["ソース", "データソース", "Source", "ソース（CSV名等）", "ソース（貼付/URL）"];
 const ESTIMATED_COST_KEYS = ["想定原価", "原価", "Estimated Cost"];
 const EXCLUDED_KEYS = ["計算対象外", "除外", "Excluded"];
+const MEO_KEYS = ["MEO"];
+const LINE_DONE_KEYS = ["LINE"];
+const STORE_POP_KEYS = ["店頭POP"];
 
 function richText(content: string) {
   return [{ type: "text", text: { content: content || " " } }];
+}
+
+function setMappedProperty(
+  target: Record<string, unknown>,
+  schemaProperties: Record<string, NotionProperty>,
+  aliases: string[],
+  value: Record<string, unknown>,
+) {
+  const propertyName = getPropertyNameByAliases(schemaProperties, aliases);
+  if (propertyName) {
+    target[propertyName] = value;
+    return;
+  }
+
+  if (Object.keys(schemaProperties).length === 0) {
+    target[aliases[0]] = value;
+  }
 }
 
 function asParagraphText(block: NotionBlock) {
@@ -357,31 +383,37 @@ export async function saveDailyInput(payload: DailyInputPayload) {
   const pages = await queryDatabaseAll(DAILY_SALES_DB_ID);
   const existing = pages.find((page) => getPropertyDate(page.properties, DATE_KEYS) === payload.date);
   const weekRange = resolveWeekRange(payload.date);
+  const schemaProperties = existing?.properties ?? pages[0]?.properties ?? {};
+  const properties: Record<string, unknown> = {};
 
-  const properties = {
-    タイトル: { title: richText(`${payload.date} 日次売上`) },
-    日付: { date: { start: payload.date } },
-    週開始: { date: { start: weekRange.weekStart } },
-    週終了: { date: { start: weekRange.weekEnd } },
-    売上: { number: payload.sales },
-    客数: { number: payload.customers },
-    客単価: { number: payload.averageSpend },
-    "粗利率(%)": { number: payload.grossMarginRate },
-    粗利: { number: payload.grossProfit },
-    LINE登録数: { number: payload.lineRegistrations },
-    LINE経由来店数: { number: payload.lineVisits },
-    売上昨対比: { number: payload.salesYoY ?? null },
-    客数昨対比: { number: payload.customersYoY ?? null },
-    客単価昨対比: { number: payload.averageSpendYoY ?? null },
-    取消返品: { number: payload.returnsAmount },
-    値引き: { number: payload.discountAmount },
-    決済内訳メモ: { rich_text: richText(payload.paymentMemo || "") },
-    ソース: { rich_text: richText(payload.source || "Web日次入力") },
-    メモ: { rich_text: richText(payload.memo || "") },
-    MEO: { checkbox: payload.meoDone },
-    LINE: { checkbox: payload.lineDone },
-    店頭POP: { checkbox: payload.storePopDone },
-  };
+  setMappedProperty(properties, schemaProperties, TITLE_KEYS, { title: richText(`${payload.date} 日次売上`) });
+  setMappedProperty(properties, schemaProperties, DATE_KEYS, { date: { start: payload.date } });
+  setMappedProperty(properties, schemaProperties, WEEK_START_KEYS, { date: { start: weekRange.weekStart } });
+  setMappedProperty(properties, schemaProperties, WEEK_END_KEYS, { date: { start: weekRange.weekEnd } });
+  setMappedProperty(properties, schemaProperties, SALES_KEYS, { number: payload.sales });
+  setMappedProperty(properties, schemaProperties, CUSTOMERS_KEYS, { number: payload.customers });
+  setMappedProperty(properties, schemaProperties, AVERAGE_SPEND_KEYS, { number: payload.averageSpend });
+  setMappedProperty(properties, schemaProperties, GROSS_MARGIN_KEYS, { number: payload.grossMarginRate });
+  setMappedProperty(properties, schemaProperties, GROSS_PROFIT_KEYS, { number: payload.grossProfit });
+  setMappedProperty(properties, schemaProperties, LINE_REGISTRATION_KEYS, { number: payload.lineRegistrations });
+  setMappedProperty(properties, schemaProperties, LINE_VISIT_KEYS, { number: payload.lineVisits });
+  setMappedProperty(properties, schemaProperties, SALES_YOY_KEYS, { number: payload.salesYoY ?? null });
+  setMappedProperty(properties, schemaProperties, CUSTOMERS_YOY_KEYS, { number: payload.customersYoY ?? null });
+  setMappedProperty(properties, schemaProperties, AVERAGE_SPEND_YOY_KEYS, {
+    number: payload.averageSpendYoY ?? null,
+  });
+  setMappedProperty(properties, schemaProperties, RETURNS_KEYS, { number: payload.returnsAmount });
+  setMappedProperty(properties, schemaProperties, DISCOUNT_KEYS, { number: payload.discountAmount });
+  setMappedProperty(properties, schemaProperties, PAYMENT_MEMO_KEYS, {
+    rich_text: richText(payload.paymentMemo || ""),
+  });
+  setMappedProperty(properties, schemaProperties, SOURCE_KEYS, {
+    rich_text: richText(payload.source || "Web日次入力"),
+  });
+  setMappedProperty(properties, schemaProperties, NOTES_KEYS, { rich_text: richText(payload.memo || "") });
+  setMappedProperty(properties, schemaProperties, MEO_KEYS, { checkbox: payload.meoDone });
+  setMappedProperty(properties, schemaProperties, LINE_DONE_KEYS, { checkbox: payload.lineDone });
+  setMappedProperty(properties, schemaProperties, STORE_POP_KEYS, { checkbox: payload.storePopDone });
 
   if (existing) {
     await updatePage(existing.id, { properties });
@@ -443,20 +475,25 @@ export async function upsertWeeklySummary(referenceDate: string) {
     );
   });
 
-  const properties = {
-    タイトル: { title: richText(`週次集計 ${weekRange.weekStart}`) },
-    週開始: { date: { start: weekRange.weekStart } },
-    週終了: { date: { start: weekRange.weekEnd } },
-    売上: { number: sales },
-    客数: { number: customers },
-    客単価: { number: averageSpend },
-    "粗利率(%)": { number: grossMarginRate },
-    粗利: { number: grossProfit },
-    LINE登録数: { number: lineRegistrations },
-    LINE経由来店数: { number: lineVisits },
-    メモ: { rich_text: richText(note) },
-    ソース: { rich_text: richText("自動集計") },
-  };
+  const schemaProperties = existing?.properties ?? kpiPages[0]?.properties ?? {};
+  const properties: Record<string, unknown> = {};
+
+  setMappedProperty(properties, schemaProperties, TITLE_KEYS, {
+    title: richText(`週次集計 ${weekRange.weekStart}`),
+  });
+  setMappedProperty(properties, schemaProperties, WEEK_START_KEYS, { date: { start: weekRange.weekStart } });
+  setMappedProperty(properties, schemaProperties, WEEK_END_KEYS, { date: { start: weekRange.weekEnd } });
+  setMappedProperty(properties, schemaProperties, SALES_KEYS, { number: sales });
+  setMappedProperty(properties, schemaProperties, CUSTOMERS_KEYS, { number: customers });
+  setMappedProperty(properties, schemaProperties, AVERAGE_SPEND_KEYS, { number: averageSpend });
+  setMappedProperty(properties, schemaProperties, GROSS_MARGIN_KEYS, { number: grossMarginRate });
+  setMappedProperty(properties, schemaProperties, GROSS_PROFIT_KEYS, { number: grossProfit });
+  setMappedProperty(properties, schemaProperties, LINE_REGISTRATION_KEYS, { number: lineRegistrations });
+  setMappedProperty(properties, schemaProperties, LINE_VISIT_KEYS, { number: lineVisits });
+  setMappedProperty(properties, schemaProperties, NOTES_KEYS, { rich_text: richText(note) });
+  setMappedProperty(properties, schemaProperties, SOURCE_KEYS, {
+    rich_text: richText("自動集計"),
+  });
 
   if (existing) {
     await updatePage(existing.id, { properties });
