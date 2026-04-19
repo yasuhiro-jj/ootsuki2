@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { logTenantAudit } from "@/lib/api/audit";
+import { requireTenantAccess } from "@/lib/api/tenant-access";
 import { calculateAverageSpend } from "@/lib/ootsuki";
 import { saveDailyInput } from "@/lib/notion/ootsuki";
 
@@ -40,6 +42,9 @@ function str(value: unknown, fallback = ""): string {
 }
 
 export async function POST(request: Request) {
+  const access = await requireTenantAccess(request, "write");
+  if (!access.ok) return access.response;
+
   let body: DailyInputRequestBody;
   try {
     body = (await request.json()) as DailyInputRequestBody;
@@ -77,7 +82,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    console.log("[daily-input] saving…", { date });
+    console.log("[daily-input] saving…", { tenant: access.tenant, date });
     await saveDailyInput({
       date,
       sales,
@@ -104,6 +109,12 @@ export async function POST(request: Request) {
       lineDone: Boolean(body.lineDone),
       storePopDone: Boolean(body.storePopDone),
       memo: str(body.memo),
+    });
+    await logTenantAudit(request, access, {
+      action: "daily_input.save",
+      resourceType: "daily-input",
+      resourceId: date,
+      metadata: { sales, customers, source: str(body.source, "Web日次入力") },
     });
     console.log("[daily-input] saved OK");
 

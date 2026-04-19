@@ -5,10 +5,9 @@ import {
   queryDatabaseAll,
   updatePage,
 } from "@/lib/notion/client";
+import { getActiveTenantNotionConfig } from "@/lib/notion/tenant";
 import type { Project, ProjectUpdatePayload } from "@/types/project";
 import type { NotionPage } from "@/types/notion";
-
-const PROJECT_DB_ID = process.env.NOTION_PROJECT_DB_ID?.trim() || "";
 
 function mapProject(page: NotionPage): Project {
   const { properties } = page;
@@ -36,7 +35,8 @@ function buildRichText(content: string) {
 }
 
 export async function getProjects() {
-  const pages = await queryDatabaseAll(PROJECT_DB_ID, {
+  const tenantConfig = await getActiveTenantNotionConfig();
+  const pages = await queryDatabaseAll(tenantConfig.projectDbId, {
     sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
   });
   return pages.map(mapProject);

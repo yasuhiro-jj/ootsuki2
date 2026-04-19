@@ -7,6 +7,23 @@ export interface NotionProperty {
   title?: NotionRichTextItem[];
   rich_text?: NotionRichTextItem[];
   number?: number | null;
+  formula?:
+    | {
+        type?: "string" | "number" | "boolean" | "date";
+        string?: string | null;
+        number?: number | null;
+        boolean?: boolean | null;
+        date?: { start?: string | null } | null;
+      }
+    | null;
+  rollup?:
+    | {
+        type?: "number" | "date" | "array" | "incomplete" | "unsupported";
+        number?: number | null;
+        date?: { start?: string | null } | null;
+        array?: NotionProperty[];
+      }
+    | null;
   checkbox?: boolean;
   url?: string | null;
   select?: { name?: string | null } | null;

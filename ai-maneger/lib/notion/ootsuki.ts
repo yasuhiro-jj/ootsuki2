@@ -11,6 +11,7 @@ import {
   toText,
   updatePage,
 } from "@/lib/notion/client";
+import { getActiveTenantNotionConfig } from "@/lib/notion/tenant";
 import type {
   DailyInputPayload,
   KpiSnapshotEntry,
@@ -22,13 +23,9 @@ import type {
 } from "@/types/ootsuki";
 import type { NotionBlock, NotionPage, NotionProperty } from "@/types/notion";
 
-const OOTSUKI_PROJECT_PAGE_ID = process.env.NOTION_OOTSUKI_PROJECT_PAGE_ID?.trim() || "";
-const DAILY_SALES_DB_ID = process.env.NOTION_OOTSUKI_DAILY_SALES_DB_ID?.trim() || "";
-const KPI_DB_ID = process.env.NOTION_OOTSUKI_KPI_DB_ID?.trim() || "";
-const MEMO_DB_ID = process.env.NOTION_OOTSUKI_MEMO_DB_ID?.trim() || "";
-const LINE_REPORT_PAGE_ID = process.env.NOTION_OOTSUKI_LINE_REPORT_PAGE_ID?.trim() || "";
-const PRODUCT_COST_DB_ID = process.env.NOTION_OOTSUKI_PRODUCT_COST_DB_ID?.trim() || "";
-const WEEKLY_ACTIONS_DB_ID = process.env.NOTION_OOTSUKI_WEEKLY_ACTIONS_DB_ID?.trim() || "";
+async function cfg() {
+  return await getActiveTenantNotionConfig();
+}
 
 const PROJECT_NAME_KEYS = ["案件名", "名前", "Name", "title"];
 const KPI_TARGET_KEYS = ["KPI目標", "KPI Target"];
@@ -170,18 +167,20 @@ function mapKpiEntry(page: NotionPage): KpiSnapshotEntry {
 }
 
 export async function getOotsukiProjectOverview() {
-  if (OOTSUKI_PROJECT_PAGE_ID) {
+  const notion = await cfg();
+  const projectPageId = notion.ootsukiProjectPageId;
+  if (projectPageId) {
     try {
-      const page = await getPage(OOTSUKI_PROJECT_PAGE_ID);
+      const page = await getPage(projectPageId);
       return mapProjectOverview(page);
     } catch (error) {
       console.warn("[ootsuki] failed to load project page directly:", error);
     }
   }
 
-  const fallbackDbId = process.env.NOTION_PROJECT_DB_ID?.trim() || "";
+  const fallbackDbId = notion.projectDbId;
   const pages = await queryDatabaseAll(fallbackDbId);
-  const fallbackPage = pages.find((page) => !OOTSUKI_PROJECT_PAGE_ID || page.id === OOTSUKI_PROJECT_PAGE_ID);
+  const fallbackPage = pages.find((page) => !projectPageId || page.id === projectPageId);
   if (fallbackPage) return mapProjectOverview(fallbackPage);
 
   return {
@@ -195,15 +194,17 @@ export async function getOotsukiProjectOverview() {
 }
 
 export async function getKpiEntries() {
+  const notion = await cfg();
   const [dailyPages, summaryPages] = await Promise.all([
-    queryDatabaseAll(DAILY_SALES_DB_ID),
-    queryDatabaseAll(KPI_DB_ID),
+    queryDatabaseAll(notion.dailySalesDbId),
+    queryDatabaseAll(notion.kpiDbId),
   ]);
   return [...dailyPages, ...summaryPages].map(mapKpiEntry);
 }
 
 export async function getLatestDecisionMemoEntries(limit = 5) {
-  const pages = await queryDatabaseAll(MEMO_DB_ID, {
+  const notion = await cfg();
+  const pages = await queryDatabaseAll(notion.memoDbId, {
     sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
   });
   return pages.map(mapMemoEntry).filter((entry) => entry.category !== "振り返り").slice(0, limit);
@@ -215,7 +216,8 @@ export async function getLatestStrategyMemo() {
 }
 
 export async function getLatestWeeklyReviewEntries(limit = 3) {
-  const pages = await queryDatabaseAll(MEMO_DB_ID, {
+  const notion = await cfg();
+  const pages = await queryDatabaseAll(notion.memoDbId, {
     sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
   });
   return pages.map(mapMemoEntry).filter((entry) => entry.category === "振り返り").slice(0, limit);
@@ -248,16 +250,18 @@ export async function getWeeklyReviewDraft(weekStart: string, weekEnd: string): 
 }
 
 export async function getCurrentLineMessage() {
-  if (!LINE_REPORT_PAGE_ID) {
+  const notion = await cfg();
+  const lineReportPageId = notion.lineReportPageId;
+  if (!lineReportPageId) {
     return {
       title: "LINE配信文 未設定",
       body: "NOTION_OOTSUKI_LINE_REPORT_PAGE_ID を設定すると、最新のLINE配信文を表示できます。",
     };
   }
 
-  const response = await fetch(`https://api.notion.com/v1/blocks/${LINE_REPORT_PAGE_ID}/children?page_size=100`, {
+  const response = await fetch(`https://api.notion.com/v1/blocks/${lineReportPageId}/children?page_size=100`, {
     headers: {
-      Authorization: `Bearer ${process.env.NOTION_API_TOKEN?.trim() || process.env.NOTION_API_KEY?.trim() || ""}`,
+      Authorization: `Bearer ${notion.notionToken}`,
       "Notion-Version": process.env.NOTION_API_VERSION?.trim() || "2022-06-28",
       "Content-Type": "application/json",
     },
@@ -277,9 +281,11 @@ export async function getCurrentLineMessage() {
 }
 
 export async function getWeeklyActionPlan(weekStart: string, weekEnd: string): Promise<WeeklyActionPlan | null> {
-  if (!WEEKLY_ACTIONS_DB_ID) return null;
+  const notion = await cfg();
+  const weeklyActionsDbId = notion.weeklyActionsDbId;
+  if (!weeklyActionsDbId) return null;
 
-  const pages = await queryDatabaseAll(WEEKLY_ACTIONS_DB_ID, {
+  const pages = await queryDatabaseAll(weeklyActionsDbId, {
     sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
   });
   const matched = pages.find((page) => {
@@ -315,7 +321,9 @@ export async function saveWeeklyActionPlan(payload: {
   source?: string;
   status?: string;
 }) {
-  if (!WEEKLY_ACTIONS_DB_ID) {
+  const notion = await cfg();
+  const weeklyActionsDbId = notion.weeklyActionsDbId;
+  if (!weeklyActionsDbId) {
     throw new Error("NOTION_OOTSUKI_WEEKLY_ACTIONS_DB_ID が未設定です");
   }
 
@@ -335,14 +343,16 @@ export async function saveWeeklyActionPlan(payload: {
   }
 
   const created = await createPage({
-    parent: { database_id: WEEKLY_ACTIONS_DB_ID },
+    parent: { database_id: weeklyActionsDbId },
     properties,
   });
   return created.id;
 }
 
 export async function saveWeeklyReview(payload: WeeklyReviewPayload) {
-  const pages = await queryDatabaseAll(MEMO_DB_ID, {
+  const notion = await cfg();
+  const memoDbId = notion.memoDbId;
+  const pages = await queryDatabaseAll(memoDbId, {
     sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
   });
   const existing = pages.find((page) => {
@@ -369,18 +379,20 @@ export async function saveWeeklyReview(payload: WeeklyReviewPayload) {
   }
 
   const created = await createPage({
-    parent: { database_id: MEMO_DB_ID },
+    parent: { database_id: memoDbId },
     properties,
   });
   return created.id;
 }
 
 export async function saveDailyInput(payload: DailyInputPayload) {
-  if (!DAILY_SALES_DB_ID) {
+  const notion = await cfg();
+  const dailySalesDbId = notion.dailySalesDbId;
+  if (!dailySalesDbId) {
     throw new Error("NOTION_OOTSUKI_DAILY_SALES_DB_ID が未設定です");
   }
 
-  const pages = await queryDatabaseAll(DAILY_SALES_DB_ID);
+  const pages = await queryDatabaseAll(dailySalesDbId);
   const existing = pages.find((page) => getPropertyDate(page.properties, DATE_KEYS) === payload.date);
   const weekRange = resolveWeekRange(payload.date);
   const schemaProperties = existing?.properties ?? pages[0]?.properties ?? {};
@@ -419,7 +431,7 @@ export async function saveDailyInput(payload: DailyInputPayload) {
     await updatePage(existing.id, { properties });
   } else {
     await createPage({
-      parent: { database_id: DAILY_SALES_DB_ID },
+      parent: { database_id: dailySalesDbId },
       properties,
     });
   }
@@ -447,6 +459,8 @@ export async function saveDailyInputBatch(payloads: DailyInputPayload[]) {
 }
 
 export async function upsertWeeklySummary(referenceDate: string) {
+  const notion = await cfg();
+  const kpiDbId = notion.kpiDbId;
   const allEntries = await getKpiEntries();
   const weekRange = resolveWeekRange(referenceDate);
   const dailyEntries = allEntries.filter((entry) => entry.date);
@@ -463,7 +477,7 @@ export async function upsertWeeklySummary(referenceDate: string) {
   const grossMarginRate = sales > 0 ? (grossProfit / sales) * 100 : 0;
   const note = weeklyRows.map((entry) => entry.notes).filter(Boolean).join("\n");
 
-  const kpiPages = await queryDatabaseAll(KPI_DB_ID);
+  const kpiPages = await queryDatabaseAll(kpiDbId);
   const existing = kpiPages.find((page) => {
     const start = getPropertyDate(page.properties, WEEK_START_KEYS);
     const end = getPropertyDate(page.properties, WEEK_END_KEYS);
@@ -501,7 +515,7 @@ export async function upsertWeeklySummary(referenceDate: string) {
   }
 
   const created = await createPage({
-    parent: { database_id: KPI_DB_ID },
+    parent: { database_id: kpiDbId },
     properties,
   });
   return created.id;
@@ -510,7 +524,8 @@ export async function upsertWeeklySummary(referenceDate: string) {
 export async function getProductEstimatedCosts(
   _products: Array<{ productCode?: string; productName?: string }>,
 ) {
-  const pages = await queryDatabaseAll(PRODUCT_COST_DB_ID);
+  const notion = await cfg();
+  const pages = await queryDatabaseAll(notion.productCostDbId);
   const byCode: Record<string, { estimatedCost: number; excluded: boolean }> = {};
   const byName: Record<string, { estimatedCost: number; excluded: boolean }> = {};
 

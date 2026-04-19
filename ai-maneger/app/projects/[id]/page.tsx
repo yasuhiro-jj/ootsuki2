@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/common/app-shell";
+import { ErrorPanel } from "@/components/common/error-panel";
 import { SectionCard } from "@/components/common/section-card";
 import { StatusBadge } from "@/components/common/status-badge";
+import { getCurrentTenantAccessResult } from "@/lib/api/tenant-access";
 import { ProjectContent } from "@/components/projects/project-content";
 import { RecommendedAgentList } from "@/components/projects/recommended-agent-list";
 import { formatDate, formatDateTime } from "@/lib/format";
@@ -21,6 +23,15 @@ const detailFields = [
 ] as const;
 
 export default async function ProjectDetailPage({ params }: ProjectDetailPageProps) {
+  const access = await getCurrentTenantAccessResult("read");
+  if (!access.ok) {
+    return (
+      <AppShell title="アクセス不可" description="tenant / role の認可を満たした場合のみプロジェクト詳細を表示します。">
+        <ErrorPanel title="プロジェクト詳細を開けません" message={access.message} />
+      </AppShell>
+    );
+  }
+
   const [project, pageBlocks] = await Promise.all([
     getProjectById(params.id),
     getPageExcerpt(params.id),

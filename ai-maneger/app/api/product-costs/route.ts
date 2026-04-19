@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireTenantAccess } from "@/lib/api/tenant-access";
 import { getProductEstimatedCosts } from "@/lib/notion/ootsuki";
 
 interface ProductCostRequestBody {
@@ -9,6 +10,9 @@ interface ProductCostRequestBody {
 }
 
 export async function POST(request: Request) {
+  const access = await requireTenantAccess(request, "read");
+  if (!access.ok) return access.response;
+
   let body: ProductCostRequestBody;
   try {
     body = (await request.json()) as ProductCostRequestBody;

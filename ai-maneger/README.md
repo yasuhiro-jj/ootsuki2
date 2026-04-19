@@ -27,18 +27,252 @@ Notion のプロジェクトDBを正本として使う、`ootsuki2` 配下の管
 - `NOTION_OOTSUKI_PRODUCT_COST_DB_ID`
 - `NOTION_OOTSUKI_WEEKLY_ACTIONS_DB_ID`
 - `NEXT_PUBLIC_APP_NAME`
-- `BASIC_AUTH_USER`
-- `BASIC_AUTH_PASSWORD`
+- `APP_AUTH_SESSION_SECRET`
+- `APP_AUTH_USERS_JSON`
+- `AUTH_BOOTSTRAP_OWNER_IDS`（任意: tenant membership の初期 owner 投入）
+- `AUTH_BOOTSTRAP_DEMO_VIEWER_IDS`（任意: `demo` tenant の閲覧ユーザー投入）
 
 `NOTION_API_TOKEN` もフォールバックとして利用できます。
 
-公開環境では Basic 認証を必ず設定します。`BASIC_AUTH_USER` と `BASIC_AUTH_PASSWORD` が設定されていると、画面と `/api/*` の両方に認証がかかります。`NODE_ENV=production` で未設定の場合は、安全のため 503 を返します。
+個別ユーザー認証を必ず設定します。`APP_AUTH_SESSION_SECRET` と `APP_AUTH_USERS_JSON` が設定されていると、ログイン後のセッションで画面と `/api/*` の両方に認証がかかります。
+
+### 認証情報の置き場所
+
+実際のユーザーID / パスワードは **`AUTH_CREDENTIALS.md`** にまとめています（リポジトリを公開する場合は必ずローテーションしてください）。
+
+### `.env.local` の注意（重要）
+
+`APP_AUTH_USERS_JSON` の `passwordHash` は `scrypt$...$...` 形式で **`$` が含まれます**。  
+Next.js の環境変数展開で壊れないよう、`.env.local` では **`$` を `\$` にエスケープ**してください。
+
+### デモ閲覧ユーザー（`demo-viewer`）
+
+顧客にデモだけ見せたい場合は、`demo` tenant 用の閲覧ユーザーを使います。
+
+- ログインURLは必ず **`?tenant=demo` 付き**から入る  
+  例: `http://localhost:3002/login?tenant=demo`
+- 認証情報は `AUTH_CREDENTIALS.md` の **`demo-viewer`** を参照
+- `TENANT_CONFIG_STORE_ENABLED=true` の場合、`demo-viewer` を `demo` tenant の `viewer` として登録するために `npm run seed:tenant-config` を実行します  
+  （`demo` 側の Notion トークン未設定でも、membership だけは投入できるようにしてあります）
 
 AI運用アシスタント（`/api/agent-chat`）を本番でも使う場合は、次も設定します。
 
 - `OPENAI_API_KEY`（未設定だとダッシュボード上のチャットは無効表示）
 - 任意: `OPENAI_MODEL`（既定は `gpt-4o-mini`）
 - 任意: `OPENAI_TEMPERATURE`（0〜2、未設定時はアプリ側の既定値）
+
+## デモ環境（Notion）
+
+本番とは **アプリのコードや仕様は同じ**にし、**データの出どころだけデモ用 Notion** に切り替える運用です。
+
+- **Notion 側**: 本番と **同じ DB／ページ構成**（プロパティ名・型・リレーション）を保ち、**数値・レコード内容だけデモ用**（架空データ）にする。
+- **接続**: `.env.local`（または Vercel のプレビュー環境など）の `NOTION_API_KEY` と、上記「環境変数」に列挙した **各 `NOTION_*_ID` を、デモ用ワークスペースの ID に差し替える**。Notion の共有 URL は多くの場合 **1 リソース分**に過ぎないため、**本アプリが要求する全 DB／ページ分**の ID を個別に取得する。
+- **インテグレーション**: デモ用の各 DB／ページに、使うインテグレーションを **接続**する（本番用トークンと分けるかは運用次第）。
+- **タイミング**: **本番環境の挙動・データを少し検証してから**、デモ用ワークスペースの複製・整備を進めると安全。
+
+### デモ切替の実務手順（Runbook）
+
+デモ切替の実運用は、以下の 3 ファイルを順に使うと漏れを防げます。
+
+- 台帳: `docs/notion-demo/env-inventory.md`
+- 構築チェック: `docs/notion-demo/demo-workspace-checklist.md`
+- 切替/復旧手順: `docs/notion-demo/cutover-runbook.md`
+
+デモ用の環境変数テンプレートは `.env.demo.example` です。ローカルのデモ確認時は、`.env.local` にデモ値を反映したあと、次を実行します。
+```bash
+npm run check:notion-env
+```
+
+`check:notion-env` は demo モードで Notion の必須キーを検証し、`NOTION_ENV_LABEL=demo` の未設定や ID 形式の誤りを検出します。
+
+## マルチテナント / デモサイトの使い方
+
+このアプリでは、同じコードを使いながら `ootsuki` と `demo` を切り替えて運用します。
+
+- `ootsuki`: 本番運用の tenant
+- `demo`: 顧客向けデモや検証用の tenant
+
+考え方は「アプリは同じ、接続先データだけ tenant ごとに分ける」です。`demo` は本番の見た目や操作感を保ちつつ、参照先の Notion データだけをデモ用に切り替えて使います。
+
+### ふだんの使い分け
+
+- 日常運用は `ootsuki` で使う
+- 顧客説明、検証、画面確認は `demo` で使う
+- 権限管理や監査ログの確認は `ootsuki` の `admin` / `owner` で行う
+
+### tenant の切り替え方
+
+
+
+
+```text
+http://localhost:3002/dashboard?tenant=ootsuki
+http://localhost:3002/dashboard?tenant=demo
+```
+
+本番を Vercel にデプロイしている場合の例（プロジェクトに付いたドメインが `ai-maneger.vercel.app` のとき）:
+
+```text
+https://ai-maneger.vercel.app/dashboard
+https://ai-maneger.vercel.app/dashboard?tenant=ootsuki
+```
+
+- **`/dashboard` のみ（クエリなし）** — テナントは下記「段階2: tenant 自動判定」の優先順（`?tenant` → ヘッダ → Cookie → ホスト名 → `.env`）で決まります。`*.vercel.app` のような標準ホスト名だけではホストから `ootsuki` / `demo` は決まらないため、**本番の `ootsuki` を確実に見たい**ときは次のクエリ付きを推奨します。
+- **`?tenant=ootsuki` 付き** — 本番 tenant **`ootsuki` を明示**し、`tenant_key` Cookie に保存されます。`demo` を開いたあとに本番へ戻す、ブックマークで常に `ootsuki` に揃える、といった用途に向きます。
+
+上記は **デプロイ先が2つあるわけではなく**、同じダッシュボードに対して **tenant をクエリで明示するかどうか**の違いです。
+
+一度切り替えると `tenant_key` Cookie に保存されるため、その後の画面遷移や API 呼び出しでも同じ tenant が維持されます。
+
+画面右上のバッジに、現在の `tenant / principal / role` が表示されます。デモ確認の前には、ここが `demo` になっていることを必ず確認してください。
+
+### デモサイトとして使うときの流れ
+
+1. `demo` 用 Notion に本番と同じスキーマの DB / ページを用意する
+2. `demo` tenant の Notion ID とトークンを設定する
+3. `http://localhost:3002/dashboard?tenant=demo` を開く
+4. 右上バッジで `tenant=demo` を確認する
+5. ダッシュボードやプロジェクト画面をそのままデモに使う
+
+DB 設定ストアを有効にしている場合は、`demo` の Notion 設定は PostgreSQL の `tenant_configs` に保存します。未有効時は `.env.local` の `NOTION_DEMO_*` にフォールバックします。
+
+`demo` tenant は **本番 `ootsuki` の Notion 設定へフォールバックしません**。`NOTION_DEMO_*` または `tenant_configs` の `demo` 設定が不足している場合は、未設定のまま失敗させる前提です。
+
+### どこまで tenant ごとに分かれているか
+
+- Notion の接続先
+- API の tenant 判定
+- API の tenant / role 認可
+- membership
+- 監査ログ
+
+そのため、`demo` を使っている限り、更新先も監査ログも `demo` tenant 側として扱われます。
+
+### 管理画面の使い方
+
+管理画面は `\/admin\/tenant-access` です。ここでは次を確認できます。
+
+- tenant 設定の登録状況
+- membership 一覧と更新
+- 監査ログの閲覧
+- 監査ログの検索、期間フィルタ、CSV 出力
+
+この画面は `ootsuki` tenant の `admin` / `owner` 向けです。`demo` tenant で開いても管理操作はさせない前提で設計しています。
+
+### おすすめ運用
+
+- 本番確認は `ootsuki`
+- 顧客向け表示確認は `demo`
+- デモ前チェックは `check:notion-env -- --tenant=demo`
+- membership や監査確認は `ootsuki` で行う
+
+「本番に触らずに見せたい・試したい」作業は、基本的に `demo` tenant で実施すると安全です。
+
+## セキュリティ運用（マルチテナント）
+
+マルチテナント運用で必須にする運用基準は次を参照してください。
+
+- 運用基準: `docs/security/tenant-security-operations.md`
+- ローテーション記録テンプレート: `docs/security/key-rotation-log-template.md`
+- PR 必須チェックテンプレート: `.github/pull_request_template.md`
+
+## 段階1: 設定ストア化（DB保存 + envフォールバック）
+
+テナント設定を DB に保存する段階1を導入済みです。`TENANT_CONFIG_STORE_ENABLED=false` の間は従来どおり `.env` のみで動作し、既存本番運用を維持できます。
+
+### 使う環境変数
+
+- `TENANT_CONFIG_STORE_ENABLED` (`true` / `false`)
+- `TENANT_CONFIG_DB_URL` (PostgreSQL 接続文字列)
+- `APP_CONFIG_ENCRYPTION_KEY` (テナントトークン暗号化キー)
+
+Supabase を使う場合の取得手順は [docs/tenant-config-supabase.md](docs/tenant-config-supabase.md) を参照してください。
+
+### 初期化手順
+
+```bash
+npm install
+npm run migrate:tenant-config
+TENANT_CONFIG_STORE_ENABLED=true npm run seed:tenant-config
+```
+
+### 動作確認
+
+```bash
+npm run check:notion-env -- --tenant=demo
+npm run check:notion-env -- --tenant=ootsuki
+```
+
+DB に設定が無い場合は自動で tenant ごとの `.env` 値へフォールバックします。`demo` は `NOTION_DEMO_*` のみを参照し、本番 `ootsuki` 値は使いません。
+
+## 段階2: tenant 自動判定
+
+テナント判定は次の優先順で行います。
+
+1. URL クエリ `?tenant=demo` / `?tenant=ootsuki`
+2. リクエストヘッダ `x-tenant-key`
+3. `tenant_key` Cookie
+4. ホスト名 (`demo.*` / `ootsuki.*`)
+5. `.env` (`NOTION_ACTIVE_TENANT` / `NOTION_ENV_LABEL`)
+
+ローカルで切り替えるときは、たとえば次の URL を開くと `tenant_key` Cookie に保存されます。
+
+```text
+http://localhost:3002/dashboard?tenant=demo
+```
+
+ホスト名で切り替えたい場合は `TENANT_HOST_MAP` に JSON か `host=tenant` のカンマ区切りで設定できます。
+
+## 段階3: API tenant 認可ガード
+
+API ルートは `tenant` を特定できない場合に失敗し、さらに操作種別ごとの allowlist を確認します。
+
+- `TENANT_READ_ALLOWLIST` 既定: `ootsuki,demo`
+- `TENANT_WRITE_ALLOWLIST` 既定: `ootsuki,demo`
+- `TENANT_ADMIN_ALLOWLIST` 既定: `ootsuki`
+
+たとえば `demo` では管理APIを使わせたくない場合、既定のままで `GET/POST /api/admin/tenant-config` は `403` になります。
+
+### 段階3.5: user / role ベース認可
+
+`tenant_memberships` テーブルに `principalId -> tenant -> role` を保存し、API は次のロールで認可します。
+
+- `read`: `viewer` / `editor` / `admin` / `owner`
+- `write`: `editor` / `admin` / `owner`
+- `admin`: `admin` / `owner`
+
+初期 owner をまとめて投入したい場合は、`AUTH_BOOTSTRAP_OWNER_IDS=user1,user2` を設定して `seed:tenant-config` を実行します。
+
+`demo` tenant の閲覧専用ユーザーをまとめて投入したい場合は、`AUTH_BOOTSTRAP_DEMO_VIEWER_IDS=demo-viewer` を設定して `seed:tenant-config` を実行します（`demo` tenant に `viewer` ロールで登録されます）。
+
+ヘッダー右上には、現在の `tenant / principal / role` を表示します。role は `tenant_memberships` の値のみを使い、暫定許可の fallback は使いません。
+
+管理者向けの簡易 UI は `\/admin\/tenant-access` です。`ootsuki` tenant の `admin` / `owner` のみ開けます。
+
+### 段階6: 監査ログ
+
+主要な更新系 API は `tenant_audit_logs` に監査ログを書き込みます。現時点では次を記録します。
+
+- 日次入力
+- 日次一括入力
+- 週次レビュー
+- 週次アクション
+- 週次サマリー更新
+- tenant 設定更新
+- tenant membership 更新
+
+`/admin/tenant-access` の下部に「直近の監査ログ」を表示します。`tenant` / `action` 複数選択 / 期間 / 検索語で絞り込みでき、日時の並び順も切り替えられます。`Details` 列で件数や対象週などの要約を確認でき、現在の絞り込み条件のまま `CSV 出力` も可能です。
+
+この段階で、ローカル運用としては以下が利用可能です。
+
+- tenant 自動判定
+- API の tenant / role 認可
+- tenant / principal / role の画面表示
+- membership 管理 UI
+- 監査ログの保存と閲覧
+- 監査ログの期間フィルタ
+- 監査ログの CSV 出力
+- 監査ログの検索
 
 ## 実行
 
@@ -100,7 +334,7 @@ npm run dev
    - Output: Next.js 既定（変更不要）
 4. **Environment Variables** に、ローカルの `.env.local` と同じキーを登録する（本番・プレビューどちらに入れるかは用途に合わせて選択）。
   - 必須（Notion）: `NOTION_API_KEY`、`NOTION_PROJECT_DB_ID`、`NOTION_OOTSUKI_PROJECT_PAGE_ID`、`NOTION_OOTSUKI_DAILY_SALES_DB_ID`、`NOTION_OOTSUKI_KPI_DB_ID`、`NOTION_OOTSUKI_MEMO_DB_ID`、`NOTION_OOTSUKI_LINE_REPORT_PAGE_ID`、`NOTION_OOTSUKI_PRODUCT_COST_DB_ID`、`NOTION_OOTSUKI_WEEKLY_ACTIONS_DB_ID`
-   - 必須（公開ガード）: `BASIC_AUTH_USER`、`BASIC_AUTH_PASSWORD`
+   - 必須（個別認証）: `APP_AUTH_SESSION_SECRET`、`APP_AUTH_USERS_JSON`
    - 推奨: `NEXT_PUBLIC_APP_NAME`
    - 任意: `NOTION_API_TOKEN`（`NOTION_API_KEY` の代わり／併用のフォールバック）
    - AIチャットを本番で使う場合: `OPENAI_API_KEY`、および必要なら `OPENAI_MODEL` / `OPENAI_TEMPERATURE`
@@ -124,6 +358,7 @@ npx vercel --prod # 本番
 
 - `package.json` の `start` は `--port 3002` だが、**Vercel ではプラットフォームがポートを割り当てる**ため、本番では `next start` の既定動作に任せる想定で問題ない（ビルドは `next build` のみ使用）。
 - シークレットはリポジトリにコミットせず、必ず Vercel の環境変数にだけ置く。
+- 本番で常に `ootsuki` tenant で開きたい場合は、ブックマークを `https://（付与されたドメイン）/dashboard?tenant=ootsuki` にするとよい（詳細は上の「マルチテナント / デモサイトの使い方」→「tenant の切り替え方」）。
 
 ## SaaS 化のロードマップ（方向性）
 
@@ -197,7 +432,7 @@ npx vercel --prod # 本番
 
 - `.env.local.example` の `NOTION_API_KEY` を実トークンではなくダミー値に変更。
 - `middleware.ts` を追加し、Basic 認証で画面と `/api/*` をまとめて保護するようにした。
-- `.env.local.example` に `BASIC_AUTH_USER` / `BASIC_AUTH_PASSWORD` を追加。
+- `.env.local.example` に `APP_AUTH_SESSION_SECRET` / `APP_AUTH_USERS_JSON` を追加。
 - README の環境変数・Vercel デプロイ手順に Basic 認証の設定を追記。
 - `npm run lint` 通過。
 - `npm run build` 通過。
@@ -205,12 +440,12 @@ npx vercel --prod # 本番
 **現在の判断**
 
 - ローカルで自分だけが使う段階では、この状態でいったん問題なし。
-- Vercel など外部公開する場合は、必ず本番環境変数に `BASIC_AUTH_USER` と `BASIC_AUTH_PASSWORD` を設定する。
-- `BASIC_AUTH_PASSWORD` は短い値にせず、20文字以上のランダム文字列を使う。
+- Vercel など外部公開する場合は、必ず本番環境変数に `APP_AUTH_SESSION_SECRET` と `APP_AUTH_USERS_JSON` を設定する。
+- パスワードは `npm run hash:password -- <password>` でハッシュ化してから `APP_AUTH_USERS_JSON` に設定する。
 
 **次回再開時の確認**
 
-1. `.env.local` に `BASIC_AUTH_USER` / `BASIC_AUTH_PASSWORD` が入っているか確認。
+1. `.env.local` に `APP_AUTH_SESSION_SECRET` / `APP_AUTH_USERS_JSON` が入っているか確認。
 2. `npm run build` 後、`npm run start` で `http://localhost:3002` を開き、Basic 認証が表示されるか確認。
 3. Vercel に出す場合は、Environment Variables に Notion / OpenAI / Basic 認証の値を入れてからデプロイする。
 
@@ -225,6 +460,7 @@ npx vercel --prod # 本番
 - 下書き欄の見出しとラベル（「確認用下書き（必要ならコピペ利用）」「タイトル」「要点」「関連数字」「次アクション」）は**残す**。入力欄の**初期値は空欄**。
 
 **売上早見表**
+
 
 - 「今週の判断材料」付近に `売上早見表` カードを追加。
 - 表示月をセレクトで切り替え可能。

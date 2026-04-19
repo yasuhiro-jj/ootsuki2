@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { logCurrentTenantAudit } from "@/lib/api/audit";
+import { requireCurrentTenantAccess } from "@/lib/api/tenant-access";
 import { calculateAverageSpend } from "@/lib/ootsuki";
 import { saveDailyInput } from "@/lib/notion/ootsuki";
 
@@ -93,6 +95,7 @@ export async function saveDailyInputAction(
   const grossProfit = sales * (grossMarginRate / 100);
 
   try {
+    const access = await requireCurrentTenantAccess("write");
     await saveDailyInput({
       date,
       sales,
@@ -119,6 +122,13 @@ export async function saveDailyInputAction(
       lineDone: readChecked(formData, "lineDone"),
       storePopDone: readChecked(formData, "storePopDone"),
       memo,
+    });
+    await logCurrentTenantAudit(access, {
+      action: "daily_input.save",
+      resourceType: "daily-input",
+      resourceId: date,
+      metadata: { sales, customers, source: source || "ServerAction日次入力" },
+      path: "/dashboard",
     });
   } catch (error) {
     console.error("saveDailyInputAction failed", {

@@ -1,4 +1,5 @@
 import { AppShell } from "@/components/common/app-shell";
+import { ErrorPanel } from "@/components/common/error-panel";
 import { SectionCard } from "@/components/common/section-card";
 import { DailyInputForm } from "@/components/ootsuki/daily-input-form";
 import { AgentRequestHub } from "@/components/ootsuki/agent-request-hub";
@@ -11,6 +12,7 @@ import { UpdatedBanner } from "@/components/ootsuki/updated-banner";
 import { WeeklyActionsPanel } from "@/components/ootsuki/weekly-actions-panel";
 import { WeeklyJudgmentPanel } from "@/components/ootsuki/weekly-judgment-panel";
 import { recommendedAgents } from "@/lib/agents";
+import { getCurrentTenantAccessResult } from "@/lib/api/tenant-access";
 import { formatDateTime } from "@/lib/format";
 import {
   aggregateWeek,
@@ -32,6 +34,7 @@ import {
   getWeeklyActionPlan,
   getWeeklyReviewDraft,
 } from "@/lib/notion/ootsuki";
+import { getActiveTenantNotionConfig } from "@/lib/notion/tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +50,15 @@ function todayInTokyo() {
 }
 
 export default async function DashboardPage() {
+  const access = await getCurrentTenantAccessResult("read");
+  if (!access.ok) {
+    return (
+      <AppShell title="アクセス不可" description="tenant / role の認可を満たした場合のみダッシュボードを表示します。">
+        <ErrorPanel title="ダッシュボードを開けません" message={access.message} />
+      </AppShell>
+    );
+  }
+
   const [project, entries, latestMemo, latestWeeklyReviews, memoEntries, lineMessage] =
     await Promise.all([
     getOotsukiProjectOverview(),
@@ -85,11 +97,13 @@ export default async function DashboardPage() {
       entry.weekEnd === weekSummary.weekEnd,
   );
   const agentChatEnabled = Boolean(process.env.OPENAI_API_KEY?.trim());
-  const weeklyActionsConfigReady = Boolean(process.env.NOTION_OOTSUKI_WEEKLY_ACTIONS_DB_ID?.trim());
+  const weeklyActionsConfigReady = Boolean((await getActiveTenantNotionConfig()).weeklyActionsDbId);
+  const dashboardTitle = access.tenant === "demo" ? "デモダッシュボード" : "おおつき ダッシュボード";
+  const projectDisplayName = access.tenant === "demo" ? "デモ店" : project.name;
 
   return (
     <AppShell
-      title="おおつき ダッシュボード"
+      title={dashboardTitle}
       description="日次入力、今週の数字確認、週次レビュー、LINE配信文の確認までを一画面で回せる運用画面です。通常作業はこの画面を起点に進めます。"
     >
       <UpdatedBanner />
@@ -153,7 +167,7 @@ export default async function DashboardPage() {
           <div className="grid gap-4">
             <div className="rounded-2xl bg-stone-50 px-4 py-4">
               <p className="text-xs uppercase tracking-[0.2em] text-stone-500">案件名</p>
-              <p className="mt-2 text-base font-semibold text-stone-900">{project.name}</p>
+              <p className="mt-2 text-base font-semibold text-stone-900">{projectDisplayName}</p>
             </div>
             <div className="rounded-2xl bg-stone-50 px-4 py-4">
               <p className="text-xs uppercase tracking-[0.2em] text-stone-500">KPI目標</p>

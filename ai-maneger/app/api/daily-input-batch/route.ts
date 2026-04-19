@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { logTenantAudit } from "@/lib/api/audit";
+import { requireTenantAccess } from "@/lib/api/tenant-access";
 import { calculateAverageSpend } from "@/lib/ootsuki";
 import { saveDailyInputBatch } from "@/lib/notion/ootsuki";
 import type { DailyInputPayload } from "@/types/ootsuki";
@@ -38,6 +40,9 @@ function str(value: unknown, fallback = ""): string {
 }
 
 export async function POST(request: Request) {
+  const access = await requireTenantAccess(request, "write");
+  if (!access.ok) return access.response;
+
   let body: { rows?: RowInput[] };
   try {
     body = (await request.json()) as { rows?: RowInput[] };
@@ -107,10 +112,15 @@ export async function POST(request: Request) {
   }
 
   try {
-    console.log(`[daily-input-batch] saving ${payloads.length} rows…`);
+    console.log(`[daily-input-batch] saving ${payloads.length} rows…`, { tenant: access.tenant });
     const results = await saveDailyInputBatch(payloads);
     const succeeded = results.filter((r) => r.ok).length;
     const failed = results.filter((r) => !r.ok);
+    await logTenantAudit(request, access, {
+      action: "daily_input.batch_save",
+      resourceType: "daily-input-batch",
+      metadata: { total: payloads.length, succeeded, failed: failed.length },
+    });
     console.log(`[daily-input-batch] done: ${succeeded} OK, ${failed.length} failed`);
 
     return NextResponse.json({

@@ -1,14 +1,12 @@
 import type { MinimalPageBlock, NotionBlock, NotionPage, NotionProperty } from "@/types/notion";
+import { getActiveTenantNotionConfig } from "@/lib/notion/tenant";
 
 const NOTION_BASE = "https://api.notion.com/v1";
 const NOTION_VERSION = process.env.NOTION_API_VERSION?.trim() || "2022-06-28";
 
-function getToken() {
-  return process.env.NOTION_API_TOKEN?.trim() || process.env.NOTION_API_KEY?.trim() || "";
-}
-
-function notionHeaders() {
-  const token = getToken();
+async function notionHeaders() {
+  const config = await getActiveTenantNotionConfig();
+  const token = config.notionToken;
   if (!token) {
     throw new Error("NOTION_API_KEY が未設定です");
   }
@@ -21,10 +19,11 @@ function notionHeaders() {
 }
 
 async function notionFetch<T>(path: string, init?: RequestInit) {
+  const headers = await notionHeaders();
   const response = await fetch(`${NOTION_BASE}${path}`, {
     ...init,
     headers: {
-      ...notionHeaders(),
+      ...headers,
       ...(init?.headers ?? {}),
     },
     cache: "no-store",
