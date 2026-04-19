@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { logTenantAudit } from "@/lib/api/audit";
+import { requireTenantAccess } from "@/lib/api/tenant-access";
 import { getWeeklyActionPlan, saveWeeklyActionPlan } from "@/lib/notion/ootsuki";
 
 interface WeeklyActionsRequestBody {
@@ -10,6 +12,9 @@ interface WeeklyActionsRequestBody {
 }
 
 export async function POST(request: Request) {
+  const access = await requireTenantAccess(request, "write");
+  if (!access.ok) return access.response;
+
   let body: WeeklyActionsRequestBody;
   try {
     body = (await request.json()) as WeeklyActionsRequestBody;
@@ -37,6 +42,12 @@ export async function POST(request: Request) {
       actions,
       source: typeof body.source === "string" ? body.source.trim() : "",
       status: typeof body.status === "string" ? body.status.trim() : "",
+    });
+    await logTenantAudit(request, access, {
+      action: "weekly_actions.save",
+      resourceType: "weekly-actions",
+      resourceId: weekStart,
+      metadata: { weekEnd, actionsCount: actions.length },
     });
     const plan = await getWeeklyActionPlan(weekStart, weekEnd);
 

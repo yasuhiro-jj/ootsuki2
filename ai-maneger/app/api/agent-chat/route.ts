@@ -1,5 +1,13 @@
 import { NextResponse } from "next/server";
+import { requireTenantAccess } from "@/lib/api/tenant-access";
+import { resolveAgentProfile } from "@/lib/agent-profiles";
 import { generateReply, type ChatMessage } from "@/lib/agent-chat";
+import {
+  getAgentHubKnowledgeContext,
+  getKnowledgeContextFromUrls,
+  getRestaurantConsultingKnowledgeContext,
+} from "@/lib/notion/restaurant-consulting";
+import { getActiveTenantNotionConfig } from "@/lib/notion/tenant";
 import {
   getCurrentLineMessage,
   getKpiEntries,
@@ -23,15 +31,21 @@ export const runtime = "nodejs";
 
 const sessionStore = new Map<string, ChatMessage[]>();
 
-function getOrCreateSession(id?: string) {
-  if (id && sessionStore.has(id)) {
-    return { sessionId: id, history: sessionStore.get(id)! };
+function sessionKey(tenant: string, sessionId: string) {
+  return `${tenant}:${sessionId}`;
+}
+
+function getOrCreateSession(tenant: string, id?: string) {
+  const candidateId = id || crypto.randomUUID();
+  const key = sessionKey(tenant, candidateId);
+
+  if (sessionStore.has(key)) {
+    return { sessionId: candidateId, history: sessionStore.get(key)! };
   }
 
-  const sessionId = id || crypto.randomUUID();
   const history: ChatMessage[] = [];
-  sessionStore.set(sessionId, history);
-  return { sessionId, history };
+  sessionStore.set(key, history);
+  return { sessionId: candidateId, history };
 }
 
 async function buildDashboardContext() {
@@ -98,6 +112,9 @@ async function buildDashboardContext() {
 }
 
 export async function POST(request: Request) {
+  const access = await requireTenantAccess(request, "read");
+  if (!access.ok) return access.response;
+
   let body: AgentChatRequestBody;
   try {
     body = (await request.json()) as AgentChatRequestBody;
@@ -126,7 +143,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const notionToken = process.env.NOTION_API_TOKEN?.trim() || process.env.NOTION_API_KEY?.trim();
+  const tenantConfig = await getActiveTenantNotionConfig();
+  const notionToken = tenantConfig.notionToken;
   const openaiKey = process.env.OPENAI_API_KEY?.trim();
   if (!notionToken || !openaiKey) {
     return NextResponse.json(
@@ -140,18 +158,40 @@ export async function POST(request: Request) {
   }
 
   const { sessionId, history } = getOrCreateSession(
+    access.tenant,
     typeof body.sessionId === "string" && body.sessionId.trim() ? body.sessionId.trim() : undefined,
   );
 
   try {
+    const agentProfile = resolveAgentProfile(agentName, agentRole);
     const dashboardContext = await buildDashboardContext();
+    const agentHubKnowledgeContext = await getAgentHubKnowledgeContext();
+    const agentSpecificKnowledgeContext =
+      agentProfile.knowledgeLabel && agentProfile.knowledgeEnvKey
+        ? await getKnowledgeContextFromUrls(
+            agentProfile.knowledgeLabel,
+            process.env[agentProfile.knowledgeEnvKey]?.trim() || "",
+          )
+        : "";
+    const restaurantKnowledgeContext = agentProfile.useRestaurantKnowledge
+      ? await getRestaurantConsultingKnowledgeContext()
+      : "";
+    const fullContext = [
+      dashboardContext,
+      agentHubKnowledgeContext,
+      agentSpecificKnowledgeContext,
+      restaurantKnowledgeContext,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
     const agentScopedMessage =
       agentName || agentRole
         ? `${agentName ? `${agentName}として対応してください。` : ""}\n${agentRole ? `役割: ${agentRole}` : ""}\n\n依頼内容:\n${message}`.trim()
         : message;
     const reply = await generateReply({
       userMessage: agentScopedMessage,
-      dashboardContext,
+      dashboardContext: fullContext,
+      agentInstruction: agentProfile.expertInstruction,
       conversationHistory: history.slice(-20),
     });
 
@@ -162,7 +202,7 @@ export async function POST(request: Request) {
       ok: true,
       reply,
       sessionId,
-      source: "ootsuki-dashboard-agent",
+      source: `${access.tenant}-dashboard-agent`,
       fallbackUsed: false,
     });
   } catch (error) {

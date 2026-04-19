@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
+import { logTenantAudit } from "@/lib/api/audit";
+import { requireTenantAccess } from "@/lib/api/tenant-access";
 import { upsertWeeklySummary } from "@/lib/notion/ootsuki";
 
 export async function POST(request: Request) {
+  const access = await requireTenantAccess(request, "write");
+  if (!access.ok) return access.response;
+
   let body: { referenceDate?: string };
   try {
     body = (await request.json()) as { referenceDate?: string };
@@ -20,8 +25,13 @@ export async function POST(request: Request) {
         }).format(new Date());
 
   try {
-    console.log("[weekly-summary] updating…", { referenceDate });
+    console.log("[weekly-summary] updating…", { tenant: access.tenant, referenceDate });
     await upsertWeeklySummary(referenceDate);
+    await logTenantAudit(request, access, {
+      action: "weekly_summary.upsert",
+      resourceType: "weekly-summary",
+      resourceId: referenceDate,
+    });
     console.log("[weekly-summary] updated OK");
 
     return NextResponse.json({ ok: true, referenceDate });

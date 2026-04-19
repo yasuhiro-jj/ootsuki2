@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { AppShell } from "@/components/common/app-shell";
+import { ErrorPanel } from "@/components/common/error-panel";
 import { SectionCard } from "@/components/common/section-card";
 import { ProjectUpdateForm } from "@/components/projects/project-update-form";
+import { getCurrentTenantAccessResult } from "@/lib/api/tenant-access";
 import { getProjectById } from "@/lib/notion/projects";
 import { updateProjectAction } from "./actions";
 
@@ -10,6 +12,15 @@ interface EditProjectPageProps {
 }
 
 export default async function EditProjectPage({ params }: EditProjectPageProps) {
+  const access = await getCurrentTenantAccessResult("write");
+  if (!access.ok) {
+    return (
+      <AppShell title="アクセス不可" description="tenant / role の認可を満たした場合のみ更新画面を表示します。">
+        <ErrorPanel title="更新画面を開けません" message={access.message} />
+      </AppShell>
+    );
+  }
+
   const project = await getProjectById(params.id);
   const action = updateProjectAction.bind(null, params.id);
 

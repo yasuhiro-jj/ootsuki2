@@ -1,9 +1,12 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { LogoutButton } from "@/components/auth/LogoutButton";
+import { TenantAccessBadge } from "@/components/TenantAccessBadge";
 
 const navigationItems = [
   { href: "/dashboard", label: "ダッシュボード" },
   { href: "/projects", label: "プロジェクト" },
+  { href: "/admin/tenant-access", label: "権限管理" },
 ];
 
 interface AppShellProps {
@@ -57,6 +60,10 @@ export function AppShell({ title, description, actions, children }: AppShellProp
                 ) : null}
               </div>
               {actions ? <div className="shrink-0">{actions}</div> : null}
+            </div>
+            <div className="mt-4 flex flex-wrap items-center justify-end gap-3">
+              <TenantAccessBadge />
+              <LogoutButton />
             </div>
           </header>
 

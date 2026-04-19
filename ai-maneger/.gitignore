@@ -2,5 +2,9 @@
 .next.bak*
 node_modules
 .env.local
+.env.local.prod.bak
+docs/notion-env-ledger.md
 out
 dist
+
+.vercel

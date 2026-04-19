@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { logCurrentTenantAudit } from "@/lib/api/audit";
+import { requireCurrentTenantAccess } from "@/lib/api/tenant-access";
 import { saveWeeklyReview } from "@/lib/notion/ootsuki";
 
 interface WeeklyReviewState {
@@ -39,6 +41,7 @@ export async function saveWeeklyReviewAction(
   }
 
   try {
+    const access = await requireCurrentTenantAccess("write");
     await saveWeeklyReview({
       weekStart,
       weekEnd,
@@ -46,6 +49,13 @@ export async function saveWeeklyReviewAction(
       summary,
       relatedNumbers,
       nextActions,
+    });
+    await logCurrentTenantAudit(access, {
+      action: "weekly_review.save",
+      resourceType: "weekly-review",
+      resourceId: weekStart,
+      metadata: { weekEnd, status, nextActionsCount: nextActions.length },
+      path: "/dashboard",
     });
   } catch (error) {
     return {

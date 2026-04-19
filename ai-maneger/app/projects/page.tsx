@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { AppShell } from "@/components/common/app-shell";
 import { EmptyState } from "@/components/common/empty-state";
+import { ErrorPanel } from "@/components/common/error-panel";
 import { SectionCard } from "@/components/common/section-card";
 import { StatusBadge } from "@/components/common/status-badge";
+import { getCurrentTenantAccessResult } from "@/lib/api/tenant-access";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { getProjects } from "@/lib/notion/projects";
 import type { Project } from "@/types/project";
@@ -47,6 +49,15 @@ function filterProjects(projects: Project[], params: ProjectsPageProps["searchPa
 }
 
 export default async function ProjectsPage({ searchParams }: ProjectsPageProps) {
+  const access = await getCurrentTenantAccessResult("read");
+  if (!access.ok) {
+    return (
+      <AppShell title="アクセス不可" description="tenant / role の認可を満たした場合のみプロジェクト一覧を表示します。">
+        <ErrorPanel title="プロジェクト一覧を開けません" message={access.message} />
+      </AppShell>
+    );
+  }
+
   const projects = await getProjects();
   const filteredProjects = filterProjects(projects, searchParams);
   const statuses = Array.from(new Set(projects.map((project) => project.status).filter(Boolean)));

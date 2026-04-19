@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { logCurrentTenantAudit } from "@/lib/api/audit";
+import { requireCurrentTenantAccess } from "@/lib/api/tenant-access";
 import { updateProject } from "@/lib/notion/projects";
 
 interface ProjectUpdateState {
@@ -44,6 +46,7 @@ export async function updateProjectAction(
   }
 
   try {
+    const access = await requireCurrentTenantAccess("write");
     await updateProject(projectId, {
       name,
       status,
@@ -55,6 +58,13 @@ export async function updateProjectAction(
       kpiActual,
       startDate,
       endDate,
+    });
+    await logCurrentTenantAudit(access, {
+      action: "project.update",
+      resourceType: "project",
+      resourceId: projectId,
+      metadata: { name, status, progress },
+      path: `/projects/${projectId}/edit`,
     });
   } catch (error) {
     return {

@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { logTenantAudit } from "@/lib/api/audit";
+import { requireTenantAccess } from "@/lib/api/tenant-access";
 import { saveWeeklyReview } from "@/lib/notion/ootsuki";
 
 interface WeeklyReviewRequestBody {
@@ -11,6 +13,9 @@ interface WeeklyReviewRequestBody {
 }
 
 export async function POST(request: Request) {
+  const access = await requireTenantAccess(request, "write");
+  if (!access.ok) return access.response;
+
   let body: WeeklyReviewRequestBody;
   try {
     body = (await request.json()) as WeeklyReviewRequestBody;
@@ -40,7 +45,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    console.log("[weekly-review] saving…", { weekStart, weekEnd });
+    console.log("[weekly-review] saving…", { tenant: access.tenant, weekStart, weekEnd });
     await saveWeeklyReview({
       weekStart,
       weekEnd,
@@ -48,6 +53,12 @@ export async function POST(request: Request) {
       summary,
       relatedNumbers,
       nextActions,
+    });
+    await logTenantAudit(request, access, {
+      action: "weekly_review.save",
+      resourceType: "weekly-review",
+      resourceId: weekStart,
+      metadata: { weekEnd, status, nextActionsCount: nextActions.length },
     });
     console.log("[weekly-review] saved OK");
 
