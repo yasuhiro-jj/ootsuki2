@@ -119,12 +119,15 @@ export default async function DashboardPage() {
   const weeklyActionPlan =
     weeklyActionPlanResult.status === "fulfilled" ? weeklyActionPlanResult.value : null;
   const dailyEntries = entries.filter((entry) => !isWeeklySummaryEntry(entry));
-  const currentDailyEntries = entries.filter(
-    (entry) =>
-      !isWeeklySummaryEntry(entry) &&
-      entry.weekStart === weekSummary.weekStart &&
-      entry.weekEnd === weekSummary.weekEnd,
-  );
+  const currentDailyEntries = entries
+    .filter(
+      (entry) =>
+        !isWeeklySummaryEntry(entry) &&
+        entry.weekStart === weekSummary.weekStart &&
+        entry.weekEnd === weekSummary.weekEnd &&
+        (entry.sales || 0) > 0,
+    )
+    .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   const agentChatEnabled = Boolean(process.env.OPENAI_API_KEY?.trim());
   const weeklyActionsConfigReady = Boolean((await getActiveTenantNotionConfig()).weeklyActionsDbId);
   const dashboardTitle = access.tenant === "demo" ? "デモダッシュボード" : "おおつき ダッシュボード";
@@ -298,7 +301,7 @@ export default async function DashboardPage() {
           title="今週の実施ログ"
           description="今週入力した日次データを確認しながら、レビュー文面をその場でまとめられます。"
         >
-          <div className="grid gap-3">
+          <div className="grid max-h-[420px] gap-3 overflow-y-auto pr-1">
             {currentDailyEntries.length === 0 ? (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
                 今週分の日次入力がまだありません。上の「今日の日次入力」から先に登録してください。
