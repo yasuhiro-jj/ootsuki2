@@ -575,7 +575,13 @@ export function DailyInputForm({ defaultDate }: DailyInputFormProps) {
         body: JSON.stringify({ rows }),
       });
 
-      let data: { ok?: boolean; message?: string; saved?: number; failed?: number };
+      let data: {
+        ok?: boolean;
+        message?: string;
+        saved?: number;
+        failed?: number;
+        results?: Array<{ date: string; ok: boolean; message?: string }>;
+      };
       try {
         data = await res.json();
       } catch {
@@ -585,8 +591,10 @@ export function DailyInputForm({ defaultDate }: DailyInputFormProps) {
       }
 
       if (!res.ok || !data.ok) {
+        const firstFailure = data.results?.find((r) => !r.ok);
+        const detail = firstFailure?.message ? `（例: ${firstFailure.date} / ${firstFailure.message}）` : "";
         setBatchStatus(data.saved && data.saved > 0 ? "success" : "error");
-        setBatchMessage(data.message || `保存に失敗しました（HTTP ${res.status}）`);
+        setBatchMessage(`${data.message || `保存に失敗しました（HTTP ${res.status}）`}${detail}`);
         if (data.saved && data.saved > 0) {
           setTimeout(() => window.location.reload(), 2000);
         }
