@@ -59,15 +59,41 @@ export default async function DashboardPage() {
     );
   }
 
-  const [project, entries, latestMemo, latestWeeklyReviews, memoEntries, lineMessage] =
-    await Promise.all([
+  const [
+    projectResult,
+    entriesResult,
+    latestMemoResult,
+    latestWeeklyReviewsResult,
+    memoEntriesResult,
+    lineMessageResult,
+  ] = await Promise.allSettled([
     getOotsukiProjectOverview(),
     getKpiEntries(),
     getLatestStrategyMemo(),
     getLatestWeeklyReviewEntries(1),
     getLatestDecisionMemoEntries(5),
     getCurrentLineMessage(),
-    ]);
+  ]);
+  const project =
+    projectResult.status === "fulfilled"
+      ? projectResult.value
+      : {
+          id: "",
+          name: "食事処おおつき",
+          status: "未設定",
+          kpiTarget: "未設定",
+          kpiActual: "未設定",
+          updatedAt: new Date(0).toISOString(),
+        };
+  const entries = entriesResult.status === "fulfilled" ? entriesResult.value : [];
+  const latestMemo = latestMemoResult.status === "fulfilled" ? latestMemoResult.value : null;
+  const latestWeeklyReviews =
+    latestWeeklyReviewsResult.status === "fulfilled" ? latestWeeklyReviewsResult.value : [];
+  const memoEntries = memoEntriesResult.status === "fulfilled" ? memoEntriesResult.value : [];
+  const lineMessage =
+    lineMessageResult.status === "fulfilled"
+      ? lineMessageResult.value
+      : { title: "LINE配信文 取得失敗", body: "LINE配信文を取得できませんでした。" };
   const now = new Date();
   const currentWeek = aggregateWeek(entries, now);
   const previousWeek = aggregateWeek(
@@ -85,10 +111,13 @@ export default async function DashboardPage() {
       : latestMemo;
   const judgmentSourceLabel =
     judgmentMaterial?.category === "振り返り" ? "最新週次レビュー" : "最新判断メモ";
-  const [currentDraft, weeklyActionPlan] = await Promise.all([
+  const [currentDraftResult, weeklyActionPlanResult] = await Promise.allSettled([
     getWeeklyReviewDraft(weekSummary.weekStart, weekSummary.weekEnd),
     getWeeklyActionPlan(weekSummary.weekStart, weekSummary.weekEnd),
   ]);
+  const currentDraft = currentDraftResult.status === "fulfilled" ? currentDraftResult.value : null;
+  const weeklyActionPlan =
+    weeklyActionPlanResult.status === "fulfilled" ? weeklyActionPlanResult.value : null;
   const dailyEntries = entries.filter((entry) => !isWeeklySummaryEntry(entry));
   const currentDailyEntries = entries.filter(
     (entry) =>

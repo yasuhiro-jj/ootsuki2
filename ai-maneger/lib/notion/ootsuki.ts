@@ -112,11 +112,11 @@ function mapMemoEntry(page: NotionPage): MemoEntry {
     id: page.id,
     title: getPropertyText(page.properties, TITLE_KEYS) || "メモ",
     date: getPropertyDate(page.properties, DATE_KEYS),
-    category: getPropertyText(page.properties, CATEGORY_KEYS),
-    status: getPropertyText(page.properties, STATUS_KEYS),
-    summary: getPropertyText(page.properties, SUMMARY_KEYS),
-    relatedNumbers: getPropertyText(page.properties, RELATED_NUMBER_KEYS),
-    nextAction: getPropertyText(page.properties, NEXT_ACTION_KEYS),
+    category: getPropertyText(page.properties, CATEGORY_KEYS) || "",
+    status: getPropertyText(page.properties, STATUS_KEYS) || "",
+    summary: getPropertyText(page.properties, SUMMARY_KEYS) || "",
+    relatedNumbers: getPropertyText(page.properties, RELATED_NUMBER_KEYS) || "",
+    nextAction: getPropertyText(page.properties, NEXT_ACTION_KEYS) || "",
     updatedAt: page.last_edited_time,
     url: page.url,
   };
@@ -240,7 +240,7 @@ export async function getWeeklyReviewDraft(weekStart: string, weekEnd: string): 
     status: matched.status || "進行中",
     summary: matched.summary || "",
     relatedNumbers: matched.relatedNumbers || "",
-    nextActions: matched.nextAction
+    nextActions: (matched.nextAction || "")
       .split(/\r?\n/)
       .map((line) => line.replace(/^[-*・]\s*/, "").trim())
       .filter(Boolean),
@@ -295,7 +295,7 @@ export async function getWeeklyActionPlan(weekStart: string, weekEnd: string): P
   });
   if (!matched) return null;
 
-  const actionsText = getPropertyText(matched.properties, ["実行項目", "Actions", "内容"]);
+  const actionsText = getPropertyText(matched.properties, ["実行項目", "Actions", "内容"]) || "";
   const actions = actionsText
     .split(/\r?\n/)
     .map((line) => line.replace(/^[-*・]\s*/, "").trim())
@@ -481,7 +481,7 @@ export async function upsertWeeklySummary(referenceDate: string) {
   const existing = kpiPages.find((page) => {
     const start = getPropertyDate(page.properties, WEEK_START_KEYS);
     const end = getPropertyDate(page.properties, WEEK_END_KEYS);
-    const title = getPropertyText(page.properties, TITLE_KEYS);
+    const title = getPropertyText(page.properties, TITLE_KEYS) || "";
     return (
       start === weekRange.weekStart &&
       end === weekRange.weekEnd &&

@@ -134,30 +134,60 @@ export function propertyToText(prop?: NotionProperty): string {
 export async function queryDatabaseAll(databaseId: string, body: Record<string, unknown> = {}) {
   if (!databaseId) return [] as NotionPage[];
 
-  const results: NotionPage[] = [];
-  let hasMore = true;
-  let startCursor: string | undefined;
+  const queryAllPages = async (path: string) => {
+    const results: NotionPage[] = [];
+    let hasMore = true;
+    let startCursor: string | undefined;
 
-  while (hasMore) {
-    const response = await notionFetch<{
-      results: NotionPage[];
-      has_more: boolean;
-      next_cursor?: string | null;
-    }>(`/databases/${databaseId}/query`, {
-      method: "POST",
-      body: JSON.stringify({
-        page_size: 100,
-        ...body,
-        ...(startCursor ? { start_cursor: startCursor } : {}),
-      }),
-    });
+    while (hasMore) {
+      const response = await notionFetch<{
+        results: NotionPage[];
+        has_more: boolean;
+        next_cursor?: string | null;
+      }>(path, {
+        method: "POST",
+        body: JSON.stringify({
+          page_size: 100,
+          ...body,
+          ...(startCursor ? { start_cursor: startCursor } : {}),
+        }),
+      });
 
-    results.push(...response.results);
-    hasMore = response.has_more;
-    startCursor = response.next_cursor ?? undefined;
+      results.push(...response.results);
+      hasMore = response.has_more;
+      startCursor = response.next_cursor ?? undefined;
+    }
+
+    return results;
+  };
+
+  try {
+    return await queryAllPages(`/databases/${databaseId}/query`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    const needsDataSourceFallback =
+      message.includes("does not contain any data sources accessible by this API bot") ||
+      message.includes("Could not find database with ID");
+
+    if (!needsDataSourceFallback) {
+      throw error;
+    }
   }
 
-  return results;
+  // New Notion workspaces can require querying a data source instead of /databases/{id}/query.
+  // 1) try using this ID as a data source ID directly.
+  try {
+    return await queryAllPages(`/data-sources/${databaseId}/query`);
+  } catch {
+    // 2) fallback to data_sources listed under the database object.
+  }
+
+  const database = await notionFetch<{ data_sources?: Array<{ id?: string }> }>(`/databases/${databaseId}`);
+  const dataSourceId = database.data_sources?.[0]?.id;
+  if (!dataSourceId) {
+    throw new Error(`Database ${databaseId} has no accessible data source.`);
+  }
+  return await queryAllPages(`/data-sources/${dataSourceId}/query`);
 }
 
 export async function getPage(pageId: string) {
