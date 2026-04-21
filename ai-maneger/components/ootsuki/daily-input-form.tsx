@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { formatDate } from "@/lib/format";
 import { normalizeProductCodeKey, normalizeProductMatchKey } from "@/lib/ootsuki";
 
@@ -412,6 +412,14 @@ export function DailyInputForm({ defaultDate }: DailyInputFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [batchStatus, setBatchStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [batchMessage, setBatchMessage] = useState("");
+  const [batchElapsedSec, setBatchElapsedSec] = useState(0);
+  const batchTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (batchTimerRef.current) clearInterval(batchTimerRef.current);
+    };
+  }, []);
   const [meoDone, setMeoDone] = useState(false);
   const [lineDone, setLineDone] = useState(false);
   const [storePopDone, setStorePopDone] = useState(false);
@@ -541,6 +549,34 @@ export function DailyInputForm({ defaultDate }: DailyInputFormProps) {
     );
   }
 
+  function stopBatchTimer() {
+    if (batchTimerRef.current) {
+      clearInterval(batchTimerRef.current);
+      batchTimerRef.current = null;
+    }
+  }
+
+  function applyProductSummaryToForm(forced: boolean) {
+    if (!productSummary) return;
+    setGrossMarginRate(productSummary.overallGrossMarginRate.toFixed(1));
+    const topInfo = productSummary.topProducts
+      .map((p) => `${p.productName}(${p.sales.toLocaleString()}円)`)
+      .join(" / ");
+    const lowInfo = productSummary.lowMarginProducts
+      .map((p) => `${p.productName}(${p.grossMarginRate.toFixed(1)}%)`)
+      .join(" / ");
+    const memoLines = [
+      `粗利率: ${productSummary.overallGrossMarginRate.toFixed(1)}%`,
+      `粗利額: ${productSummary.totalGrossProfit.toLocaleString()}円`,
+      `売上TOP: ${topInfo}`,
+      `低粗利: ${lowInfo}`,
+    ].join("\n");
+    setMemo((prev) => (prev ? `${prev}\n---\n${memoLines}` : memoLines));
+    setProductCsvStatus(
+      `${forced ? "警告を承知のうえで反映しました。" : ""}粗利率 ${productSummary.overallGrossMarginRate.toFixed(1)}% をフォームに反映し、商品分析をメモに追記しました。`.trim(),
+    );
+  }
+
   async function handleBatchSave() {
     if (selectedCsvRows.length === 0) {
       setBatchMessage("保存する行を選択してください。");
@@ -548,8 +584,34 @@ export function DailyInputForm({ defaultDate }: DailyInputFormProps) {
       return;
     }
 
+    const total = selectedCsvRows.length;
+    const estimatedSec = Math.max(10, Math.round(total * 2.5));
+
     setBatchStatus("loading");
-    setBatchMessage(`${selectedCsvRows.length}件の日次データをNotionに保存しています...`);
+    setBatchElapsedSec(0);
+    setBatchMessage(
+      `${total}件をNotionに保存しています…（1件ずつ書き込むため、目安 約${estimatedSec}秒。そのままお待ちください）`,
+    );
+
+    stopBatchTimer();
+    const startedAt = Date.now();
+    batchTimerRef.current = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+      setBatchElapsedSec(elapsed);
+      if (elapsed >= 60) {
+        setBatchMessage(
+          `${total}件を保存中…（${elapsed}秒経過 / 通常より時間がかかっています。Notion側の応答待ちです。画面はそのままお待ちください）`,
+        );
+      } else if (elapsed >= 20) {
+        setBatchMessage(
+          `${total}件を保存中…（${elapsed}秒経過 / 完了までもう少しかかります。画面を閉じずにお待ちください）`,
+        );
+      } else {
+        setBatchMessage(
+          `${total}件をNotionに保存しています…（${elapsed}秒経過 / 目安 約${estimatedSec}秒）`,
+        );
+      }
+    }, 1000);
 
     const rows = selectedCsvRows.map((row) => ({
       date: row.date,
@@ -585,12 +647,14 @@ export function DailyInputForm({ defaultDate }: DailyInputFormProps) {
       try {
         data = await res.json();
       } catch {
+        stopBatchTimer();
         setBatchStatus("error");
         setBatchMessage(`サーバーからの応答を解析できませんでした（HTTP ${res.status}）`);
         return;
       }
 
       if (!res.ok || !data.ok) {
+        stopBatchTimer();
         const firstFailure = data.results?.find((r) => !r.ok);
         const detail = firstFailure?.message ? `（例: ${firstFailure.date} / ${firstFailure.message}）` : "";
         setBatchStatus(data.saved && data.saved > 0 ? "success" : "error");
@@ -601,10 +665,15 @@ export function DailyInputForm({ defaultDate }: DailyInputFormProps) {
         return;
       }
 
+      stopBatchTimer();
+      const totalSec = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
       setBatchStatus("success");
-      setBatchMessage(`${data.saved}件の日次データをNotionに保存しました。ページを再読み込みします...`);
+      setBatchMessage(
+        `${data.saved}件の日次データをNotionに保存しました（${totalSec}秒）。ページを再読み込みします…`,
+      );
       setTimeout(() => window.location.reload(), 1200);
     } catch (err) {
+      stopBatchTimer();
       setBatchStatus("error");
       setBatchMessage(
         err instanceof Error
@@ -786,7 +855,7 @@ export function DailyInputForm({ defaultDate }: DailyInputFormProps) {
                   }`}
                 >
                   {batchStatus === "loading"
-                    ? "保存中..."
+                    ? `保存中… ${batchElapsedSec}秒`
                     : batchStatus === "success"
                       ? "保存完了"
                       : `選択行を日付ごとにNotionに保存（${selectedCsvRows.length}件）`}
@@ -925,28 +994,31 @@ export function DailyInputForm({ defaultDate }: DailyInputFormProps) {
                     type="button"
                     disabled={!canApplyProductSummary}
                     onClick={() => {
-                      setGrossMarginRate(productSummary.overallGrossMarginRate.toFixed(1));
-                      const topInfo = productSummary.topProducts
-                        .map((p) => `${p.productName}(${p.sales.toLocaleString()}円)`)
-                        .join(" / ");
-                      const lowInfo = productSummary.lowMarginProducts
-                        .map((p) => `${p.productName}(${p.grossMarginRate.toFixed(1)}%)`)
-                        .join(" / ");
-                      const memoLines = [
-                        `粗利率: ${productSummary.overallGrossMarginRate.toFixed(1)}%`,
-                        `粗利額: ${productSummary.totalGrossProfit.toLocaleString()}円`,
-                        `売上TOP: ${topInfo}`,
-                        `低粗利: ${lowInfo}`,
-                      ].join("\n");
-                      setMemo((prev) => (prev ? `${prev}\n---\n${memoLines}` : memoLines));
-                      setProductCsvStatus(
-                        `粗利率 ${productSummary.overallGrossMarginRate.toFixed(1)}% をフォームに反映し、商品分析をメモに追記しました。`,
-                      );
+                      applyProductSummaryToForm(false);
                     }}
                     className="inline-flex h-fit w-fit rounded-full border border-orange-300 bg-white px-5 py-3 text-sm font-medium text-stone-900 hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     分析結果をフォームに反映
                   </button>
+                  {!canApplyProductSummary ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            `${productAnalysisGuard?.title ?? "警告"}\n\n${
+                              productAnalysisGuard?.message ?? ""
+                            }\n\nそれでも商品分析CSVの結果をフォームへ反映しますか？`,
+                          )
+                        ) {
+                          applyProductSummaryToForm(true);
+                        }
+                      }}
+                      className="inline-flex h-fit w-fit rounded-full border border-rose-300 bg-white px-5 py-3 text-sm font-medium text-rose-700 hover:bg-rose-50"
+                    >
+                      警告を承知のうえで反映する
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
             </div>
