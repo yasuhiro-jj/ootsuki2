@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { verifyAuthSessionToken } from "@/lib/auth/session";
-import { normalizeTenantKey } from "@/lib/tenant-config/service";
+import { normalizeTenantKey, resolveTenantKey } from "@/lib/tenant-config/service";
 import { fetchTenantMembershipRecord } from "@/lib/tenant-config/repository";
 import type { TenantKey, TenantRole } from "@/lib/tenant-config/types";
 
@@ -168,7 +168,8 @@ export async function requireTenantAccess(
   request: Request,
   action: TenantAction,
 ): Promise<{ ok: true } & TenantAccessGrant | { ok: false; response: NextResponse }> {
-  const tenant = resolveTenantFromRequest(request);
+  const tenantFromRequest = resolveTenantFromRequest(request);
+  const tenant = tenantFromRequest ?? (await resolveTenantKey());
   const principalId = resolvePrincipalFromRequest(request);
   const decision = await evaluateTenantAccess(tenant, principalId, action);
   if (decision.ok) return decision;
@@ -196,9 +197,10 @@ export async function getCurrentTenantAccessResult(action: TenantAction): Promis
     const headerStore = await nextHeaders.headers();
     const cookieStore = await nextHeaders.cookies();
 
-    const tenant =
+    const tenantHint =
       normalizeTenantKey(headerStore.get(TENANT_HEADER)) ||
       normalizeTenantKey(cookieStore.get(TENANT_COOKIE)?.value);
+    const tenant = tenantHint ?? (await resolveTenantKey());
     const principalId =
       headerStore.get(AUTH_USER_HEADER)?.trim() || verifyAuthSessionToken(cookieStore.get("auth_session")?.value)?.sub || null;
 
@@ -222,9 +224,10 @@ export async function requireCurrentTenantAccess(action: TenantAction): Promise<
 
 export async function getCurrentAccessContext(request?: Request): Promise<CurrentAccessContext> {
   if (request) {
-    const tenant = resolveTenantFromRequest(request);
+    const tenantFromRequest = resolveTenantFromRequest(request);
+    const tenant = tenantFromRequest ?? (await resolveTenantKey());
     const principalId = resolvePrincipalFromRequest(request);
-    if (!tenant || !principalId) {
+    if (!principalId) {
       return { tenant, principalId, role: null };
     }
     const membership = await fetchTenantMembershipRecord(tenant, principalId);
@@ -240,14 +243,15 @@ export async function getCurrentAccessContext(request?: Request): Promise<Curren
     const headerStore = await nextHeaders.headers();
     const cookieStore = await nextHeaders.cookies();
 
-    const tenant =
+    const tenantHint =
       normalizeTenantKey(headerStore.get(TENANT_HEADER)) ||
       normalizeTenantKey(cookieStore.get(TENANT_COOKIE)?.value);
+    const tenant = tenantHint ?? (await resolveTenantKey());
     const principalId =
       headerStore.get(AUTH_USER_HEADER)?.trim() || verifyAuthSessionToken(cookieStore.get("auth_session")?.value)?.sub || null;
 
-    if (!tenant || !principalId) {
-      return { tenant: tenant ?? null, principalId: principalId ?? null, role: null };
+    if (!principalId) {
+      return { tenant, principalId: null, role: null };
     }
 
     const membership = await fetchTenantMembershipRecord(tenant, principalId);
