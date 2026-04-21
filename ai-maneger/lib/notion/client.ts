@@ -201,6 +201,60 @@ export async function createPage(payload: Record<string, unknown>) {
   });
 }
 
+function isDatabaseParentFallbackError(message: string) {
+  return (
+    message.includes("Could not find database with ID") ||
+    message.includes("does not contain any data sources accessible by this API bot")
+  );
+}
+
+export async function createPageInDatabase(
+  databaseOrDataSourceId: string,
+  properties: Record<string, unknown>,
+  extraPayload: Record<string, unknown> = {},
+) {
+  if (!databaseOrDataSourceId) {
+    throw new Error("Notion parent ID is missing.");
+  }
+
+  try {
+    return await createPage({
+      ...extraPayload,
+      parent: { database_id: databaseOrDataSourceId },
+      properties,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!isDatabaseParentFallbackError(message)) {
+      throw error;
+    }
+  }
+
+  try {
+    return await createPage({
+      ...extraPayload,
+      parent: { data_source_id: databaseOrDataSourceId },
+      properties,
+    });
+  } catch {
+    // Fall through to data source lookup from database metadata.
+  }
+
+  const database = await notionFetch<{ data_sources?: Array<{ id?: string }> }>(
+    `/databases/${databaseOrDataSourceId}`,
+  );
+  const dataSourceId = database.data_sources?.[0]?.id;
+  if (!dataSourceId) {
+    throw new Error(`Database ${databaseOrDataSourceId} has no accessible data source.`);
+  }
+
+  return await createPage({
+    ...extraPayload,
+    parent: { data_source_id: dataSourceId },
+    properties,
+  });
+}
+
 export async function updatePage(pageId: string, payload: Record<string, unknown>) {
   return notionFetch<NotionPage>(`/pages/${pageId}`, {
     method: "PATCH",

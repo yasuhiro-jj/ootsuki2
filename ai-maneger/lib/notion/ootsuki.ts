@@ -1,6 +1,6 @@
 ﻿import { resolveWeekRange } from "@/lib/ootsuki";
 import {
-  createPage,
+  createPageInDatabase,
   getPage,
   getPropertyCheckbox,
   getPropertyDate,
@@ -342,10 +342,7 @@ export async function saveWeeklyActionPlan(payload: {
     return existing.id;
   }
 
-  const created = await createPage({
-    parent: { database_id: weeklyActionsDbId },
-    properties,
-  });
+  const created = await createPageInDatabase(weeklyActionsDbId, properties);
   return created.id;
 }
 
@@ -378,10 +375,7 @@ export async function saveWeeklyReview(payload: WeeklyReviewPayload) {
     return existing.id;
   }
 
-  const created = await createPage({
-    parent: { database_id: memoDbId },
-    properties,
-  });
+  const created = await createPageInDatabase(memoDbId, properties);
   return created.id;
 }
 
@@ -430,13 +424,15 @@ export async function saveDailyInput(payload: DailyInputPayload) {
   if (existing) {
     await updatePage(existing.id, { properties });
   } else {
-    await createPage({
-      parent: { database_id: dailySalesDbId },
-      properties,
-    });
+    await createPageInDatabase(dailySalesDbId, properties);
   }
 
-  await upsertWeeklySummary(payload.date);
+  try {
+    await upsertWeeklySummary(payload.date);
+  } catch (error) {
+    // Keep daily input successful even when weekly summary sync fails.
+    console.warn("[ootsuki] weekly summary sync failed after daily save:", error);
+  }
 }
 
 export async function saveDailyInputBatch(payloads: DailyInputPayload[]) {
@@ -514,10 +510,7 @@ export async function upsertWeeklySummary(referenceDate: string) {
     return existing.id;
   }
 
-  const created = await createPage({
-    parent: { database_id: kpiDbId },
-    properties,
-  });
+  const created = await createPageInDatabase(kpiDbId, properties);
   return created.id;
 }
 
