@@ -4,9 +4,10 @@ import { useState } from "react";
 
 interface DecisionMemoFormProps {
   defaultTitle?: string;
+  canWrite: boolean;
 }
 
-export function DecisionMemoForm({ defaultTitle = "メモ" }: DecisionMemoFormProps) {
+export function DecisionMemoForm({ defaultTitle = "メモ", canWrite }: DecisionMemoFormProps) {
   const [title, setTitle] = useState(defaultTitle);
   const [status, setStatus] = useState("進行中");
   const [summary, setSummary] = useState("");
@@ -82,6 +83,11 @@ export function DecisionMemoForm({ defaultTitle = "メモ" }: DecisionMemoFormPr
       <p className="text-xs leading-6 text-stone-500">
         NotionのメモDBへ直接保存されます。保存後はこの一覧にも反映されます。
       </p>
+      {!canWrite ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+          このアカウントは書き込み権限がないため保存できません。`editor` / `admin` / `owner` でログインしてください。
+        </div>
+      ) : null}
 
       <label className="grid gap-2 text-sm text-stone-700">
         タイトル
@@ -92,7 +98,7 @@ export function DecisionMemoForm({ defaultTitle = "メモ" }: DecisionMemoFormPr
             setTitle(event.target.value);
             clearFeedback();
           }}
-          disabled={isSubmitting}
+          disabled={isSubmitting || !canWrite}
           className="rounded-2xl border border-stone-900/10 bg-stone-50 px-4 py-3 outline-none"
         />
       </label>
@@ -105,7 +111,7 @@ export function DecisionMemoForm({ defaultTitle = "メモ" }: DecisionMemoFormPr
             setStatus(event.target.value);
             clearFeedback();
           }}
-          disabled={isSubmitting}
+          disabled={isSubmitting || !canWrite}
           className="rounded-2xl border border-stone-900/10 bg-stone-50 px-4 py-3 outline-none"
         >
           <option value="進行中">進行中</option>
@@ -123,7 +129,7 @@ export function DecisionMemoForm({ defaultTitle = "メモ" }: DecisionMemoFormPr
             setSummary(event.target.value);
             clearFeedback();
           }}
-          disabled={isSubmitting}
+          disabled={isSubmitting || !canWrite}
           placeholder="今週の判断の要点を記入"
           className="rounded-[20px] border border-stone-900/10 bg-stone-50 px-4 py-3 leading-7 outline-none"
         />
@@ -138,7 +144,7 @@ export function DecisionMemoForm({ defaultTitle = "メモ" }: DecisionMemoFormPr
             setRelatedNumbers(event.target.value);
             clearFeedback();
           }}
-          disabled={isSubmitting}
+          disabled={isSubmitting || !canWrite}
           placeholder="例: 売上 前週比 +8.2%"
           className="rounded-[20px] border border-stone-900/10 bg-stone-50 px-4 py-3 leading-7 outline-none"
         />
@@ -153,7 +159,7 @@ export function DecisionMemoForm({ defaultTitle = "メモ" }: DecisionMemoFormPr
             setNextAction(event.target.value);
             clearFeedback();
           }}
-          disabled={isSubmitting}
+          disabled={isSubmitting || !canWrite}
           placeholder="次に実行する内容を記入"
           className="rounded-[20px] border border-stone-900/10 bg-stone-50 px-4 py-3 leading-7 outline-none"
         />
@@ -174,7 +180,7 @@ export function DecisionMemoForm({ defaultTitle = "メモ" }: DecisionMemoFormPr
       <div>
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || !canWrite}
           className="inline-flex rounded-full bg-stone-950 px-5 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isSubmitting ? "保存中..." : "判断メモを保存"}

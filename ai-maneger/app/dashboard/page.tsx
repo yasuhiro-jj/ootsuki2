@@ -125,6 +125,7 @@ export default async function DashboardPage() {
   const weeklyActionsConfigReady = Boolean((await getActiveTenantNotionConfig()).weeklyActionsDbId);
   const dashboardTitle = access.tenant === "demo" ? "デモダッシュボード" : "おおつき ダッシュボード";
   const projectDisplayName = access.tenant === "demo" ? "デモ店" : project.name;
+  const canWriteMemo = access.role === "editor" || access.role === "admin" || access.role === "owner";
 
   return (
     <AppShell
@@ -336,7 +337,7 @@ export default async function DashboardPage() {
           description="Notion を開かなくても直近メモを見返せるよう、必要な内容だけここに出します。下のフォームから直接追記もできます。"
         >
           <div className="grid gap-3">
-            <DecisionMemoForm defaultTitle={`${weekSummary.weekStart} 判断メモ`} />
+            <DecisionMemoForm defaultTitle={`${weekSummary.weekStart} 判断メモ`} canWrite={canWriteMemo} />
             {memoEntries.length === 0 ? (
               <div className="rounded-2xl border border-stone-900/10 bg-stone-50 px-4 py-4 text-sm text-stone-600">
                 まだ判断メモはありません。
