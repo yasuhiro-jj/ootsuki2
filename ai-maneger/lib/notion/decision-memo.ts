@@ -81,6 +81,30 @@ function setMappedStatusLikeProperty(
   setMappedProperty(target, schemaProperties, aliases, { status: { name: statusName } });
 }
 
+function setMappedCategoryLikeProperty(
+  target: Record<string, unknown>,
+  schemaProperties: Record<string, NotionProperty>,
+  aliases: string[],
+  categoryName: string,
+) {
+  const propertyName = getPropertyNameByAliases(schemaProperties, aliases);
+  const propertyType = propertyName ? schemaProperties[propertyName]?.type : undefined;
+
+  if (propertyName && propertyType === "select") {
+    target[propertyName] = { select: { name: categoryName } };
+    return;
+  }
+  if (propertyName && propertyType === "rich_text") {
+    target[propertyName] = { rich_text: richText(categoryName) };
+    return;
+  }
+  if (propertyName && propertyType === "title") {
+    target[propertyName] = { title: richText(categoryName) };
+    return;
+  }
+  setMappedProperty(target, schemaProperties, aliases, { select: { name: categoryName } });
+}
+
 export async function saveDecisionMemo(payload: {
   title?: string;
   status?: string;
@@ -115,9 +139,72 @@ export async function saveDecisionMemo(payload: {
     payload.title?.trim() || "メモ",
     "title",
   );
-  setMappedProperty(properties, schemaProperties, ["カテゴリ", "Category", "種別"], {
-    select: { name: "判断メモ" },
+  setMappedCategoryLikeProperty(properties, schemaProperties, ["カテゴリ", "Category", "種別"], "判断メモ");
+  setMappedStatusLikeProperty(
+    properties,
+    schemaProperties,
+    ["ステータス", "Status"],
+    payload.status?.trim() || "進行中",
+  );
+  setMappedProperty(properties, schemaProperties, ["日付", "Date"], { date: { start: todayInTokyo() } });
+  setMappedTextLikeProperty(
+    properties,
+    schemaProperties,
+    ["要点", "要約", "Summary"],
+    payload.summary.trim(),
+  );
+  setMappedTextLikeProperty(
+    properties,
+    schemaProperties,
+    ["関連数字", "数値", "Related Numbers"],
+    payload.relatedNumbers?.trim() || "",
+  );
+  setMappedTextLikeProperty(
+    properties,
+    schemaProperties,
+    ["次アクション", "次のアクション", "Next Action"],
+    payload.nextAction?.trim() || "",
+  );
+
+  const created = await createPageInDatabase(memoDbId, properties);
+  return created.id;
+}
+
+export async function saveProjectDirection(payload: {
+  title?: string;
+  status?: string;
+  summary: string;
+  relatedNumbers?: string;
+  nextAction?: string;
+}) {
+  const notion = await getActiveTenantNotionConfig();
+  const memoDbId = notion.memoDbId;
+  if (!memoDbId) {
+    throw new Error("NOTION_OOTSUKI_MEMO_DB_ID が未設定です");
+  }
+
+  const pages = await queryDatabaseAll(memoDbId, {
+    sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
   });
+  let schemaProperties = pages[0]?.properties ?? {};
+  if (Object.keys(schemaProperties).length === 0) {
+    schemaProperties = await getDatabaseSchemaProperties(memoDbId);
+  }
+  if (Object.keys(schemaProperties).length === 0) {
+    throw new Error(
+      "判断メモDBのプロパティ定義を取得できませんでした。Notion連携先IDとインテグレーション権限を確認してください。",
+    );
+  }
+
+  const properties: Record<string, unknown> = {};
+  setMappedTextLikeProperty(
+    properties,
+    schemaProperties,
+    ["タイトル", "件名", "名前", "Name", "title", "日付メモ", "週（メモ）"],
+    payload.title?.trim() || `${todayInTokyo()} プロジェクト方針`,
+    "title",
+  );
+  setMappedCategoryLikeProperty(properties, schemaProperties, ["カテゴリ", "Category", "種別"], "プロジェクト方針");
   setMappedStatusLikeProperty(
     properties,
     schemaProperties,

@@ -210,6 +210,17 @@ export async function getLatestDecisionMemoEntries(limit = 5) {
   return pages.map(mapMemoEntry).filter((entry) => entry.category !== "振り返り").slice(0, limit);
 }
 
+export async function getLatestProjectDirectionEntries(limit = 10) {
+  const notion = await cfg();
+  const pages = await queryDatabaseAll(notion.memoDbId, {
+    sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
+  });
+  return pages
+    .map(mapMemoEntry)
+    .filter((entry) => entry.category === "プロジェクト方針" || entry.category === "プロジェクト状況")
+    .slice(0, limit);
+}
+
 export async function getLatestStrategyMemo() {
   const entries = await getLatestDecisionMemoEntries(1);
   return entries[0] ?? null;

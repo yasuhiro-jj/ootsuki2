@@ -5,6 +5,7 @@ import { DailyInputForm } from "@/components/ootsuki/daily-input-form";
 import { AgentRequestHub } from "@/components/ootsuki/agent-request-hub";
 import { DashboardAgentChat } from "@/components/ootsuki/dashboard-agent-chat";
 import { DecisionMemoForm } from "@/components/ootsuki/decision-memo-form";
+import { ProjectDirectionForm } from "@/components/ootsuki/project-direction-form";
 import { WeeklyReviewForm } from "@/components/ootsuki/weekly-review-form";
 import { RefreshWeeklySummaryButton } from "@/components/ootsuki/refresh-weekly-summary-button";
 import { SalesOverviewPanel } from "@/components/ootsuki/sales-overview-panel";
@@ -27,6 +28,7 @@ import {
 import {
   getLatestDecisionMemoEntries,
   getKpiEntries,
+  getLatestProjectDirectionEntries,
   getLatestStrategyMemo,
   getLatestWeeklyReviewEntries,
   getOotsukiProjectOverview,
@@ -62,12 +64,14 @@ export default async function DashboardPage() {
     projectResult,
     entriesResult,
     latestMemoResult,
+    projectDirectionsResult,
     latestWeeklyReviewsResult,
     memoEntriesResult,
   ] = await Promise.allSettled([
     getOotsukiProjectOverview(),
     getKpiEntries(),
     getLatestStrategyMemo(),
+    getLatestProjectDirectionEntries(12),
     getLatestWeeklyReviewEntries(1),
     getLatestDecisionMemoEntries(5),
   ]);
@@ -84,6 +88,8 @@ export default async function DashboardPage() {
         };
   const entries = entriesResult.status === "fulfilled" ? entriesResult.value : [];
   const latestMemo = latestMemoResult.status === "fulfilled" ? latestMemoResult.value : null;
+  const projectDirections =
+    projectDirectionsResult.status === "fulfilled" ? projectDirectionsResult.value : [];
   const latestWeeklyReviews =
     latestWeeklyReviewsResult.status === "fulfilled" ? latestWeeklyReviewsResult.value : [];
   const memoEntries = memoEntriesResult.status === "fulfilled" ? memoEntriesResult.value : [];
@@ -207,6 +213,43 @@ export default async function DashboardPage() {
               <p className="mt-3 text-xs text-stone-500">
                 更新: {latestMemo ? formatDateTime(latestMemo.updatedAt) : "未設定"}
               </p>
+            </div>
+            <ProjectDirectionForm defaultTitle={`${weekSummary.weekStart} 方針`} canWrite={canWriteMemo} />
+            <div className="rounded-2xl border border-stone-900/10 bg-white px-4 py-4">
+              <p className="text-sm font-semibold text-stone-900">保存済みのプロジェクト方針履歴</p>
+              <p className="mt-1 text-xs text-stone-500">
+                過去に保存した方針をこの画面で振り返れます。新しい順に表示しています。
+              </p>
+              <div className="mt-3 grid max-h-[300px] gap-3 overflow-y-auto pr-1">
+                {projectDirections.length === 0 ? (
+                  <div className="rounded-2xl border border-stone-900/10 bg-stone-50 px-4 py-4 text-sm text-stone-600">
+                    まだ保存されたプロジェクト方針はありません。
+                  </div>
+                ) : (
+                  projectDirections.map((entry) => (
+                    <article
+                      key={entry.id}
+                      className="rounded-2xl border border-stone-900/10 bg-stone-50 px-4 py-4 text-sm"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="font-semibold text-stone-900">{entry.title || "プロジェクト方針"}</p>
+                        <p className="text-xs text-stone-500">{formatDateTime(entry.updatedAt)}</p>
+                      </div>
+                      <p className="mt-2 whitespace-pre-line leading-7 text-stone-700">{entry.summary || "（要点なし）"}</p>
+                      {entry.relatedNumbers ? (
+                        <p className="mt-2 whitespace-pre-line text-xs text-stone-600">
+                          目標/KPI: {entry.relatedNumbers}
+                        </p>
+                      ) : null}
+                      {entry.nextAction ? (
+                        <p className="mt-1 whitespace-pre-line text-xs text-stone-600">
+                          次アクション: {entry.nextAction}
+                        </p>
+                      ) : null}
+                    </article>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </SectionCard>
