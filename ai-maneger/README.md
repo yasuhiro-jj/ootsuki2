@@ -170,7 +170,7 @@ AUTH_CREDENTIALS.md には ootsuki 専用の別ユーザー名は書かれてお
 ユーザー ID
 owner
 パスワード
-4cb_GM3dDjVcBs3mL8Z4on9z
+nre03851
 ootsuki で開くときは、たとえば次のように tenant=ootsuki を付けたログイン URL を使います。
 
 

@@ -4,7 +4,6 @@ import { SectionCard } from "@/components/common/section-card";
 import { DailyInputForm } from "@/components/ootsuki/daily-input-form";
 import { AgentRequestHub } from "@/components/ootsuki/agent-request-hub";
 import { DashboardAgentChat } from "@/components/ootsuki/dashboard-agent-chat";
-import { LineCopyCard } from "@/components/ootsuki/line-copy-card";
 import { WeeklyReviewForm } from "@/components/ootsuki/weekly-review-form";
 import { RefreshWeeklySummaryButton } from "@/components/ootsuki/refresh-weekly-summary-button";
 import { SalesOverviewPanel } from "@/components/ootsuki/sales-overview-panel";
@@ -25,7 +24,6 @@ import {
   isWeeklySummaryEntry,
 } from "@/lib/ootsuki";
 import {
-  getCurrentLineMessage,
   getLatestDecisionMemoEntries,
   getKpiEntries,
   getLatestStrategyMemo,
@@ -65,14 +63,12 @@ export default async function DashboardPage() {
     latestMemoResult,
     latestWeeklyReviewsResult,
     memoEntriesResult,
-    lineMessageResult,
   ] = await Promise.allSettled([
     getOotsukiProjectOverview(),
     getKpiEntries(),
     getLatestStrategyMemo(),
     getLatestWeeklyReviewEntries(1),
     getLatestDecisionMemoEntries(5),
-    getCurrentLineMessage(),
   ]);
   const project =
     projectResult.status === "fulfilled"
@@ -90,10 +86,6 @@ export default async function DashboardPage() {
   const latestWeeklyReviews =
     latestWeeklyReviewsResult.status === "fulfilled" ? latestWeeklyReviewsResult.value : [];
   const memoEntries = memoEntriesResult.status === "fulfilled" ? memoEntriesResult.value : [];
-  const lineMessage =
-    lineMessageResult.status === "fulfilled"
-      ? lineMessageResult.value
-      : { title: "LINE配信文 取得失敗", body: "LINE配信文を取得できませんでした。" };
   const now = new Date();
   const currentWeek = aggregateWeek(entries, now);
   const previousWeek = aggregateWeek(
@@ -194,7 +186,7 @@ export default async function DashboardPage() {
 
         <SectionCard
           title="プロジェクト状況"
-          description="対象案件のKPI目標と直近メモを見ながら、今週の意思決定を揃えます。"
+          description="この内容は Notion のプロジェクトページ/DB とメモDBの最新内容から表示されます。対象案件のKPI目標と直近メモを見ながら、今週の意思決定を揃えます。"
         >
           <div className="grid gap-4">
             <div className="rounded-2xl bg-stone-50 px-4 py-4">
@@ -216,10 +208,6 @@ export default async function DashboardPage() {
             </div>
           </div>
         </SectionCard>
-      </section>
-
-      <section className="mt-6">
-        <LineCopyCard title={lineMessage.title} body={lineMessage.body} enabled={agentChatEnabled} />
       </section>
 
       <section className="mt-6 grid gap-6 xl:grid-cols-[1.05fr_1fr_1.05fr]">
