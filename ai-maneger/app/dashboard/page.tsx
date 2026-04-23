@@ -4,6 +4,7 @@ import { SectionCard } from "@/components/common/section-card";
 import { DailyInputForm } from "@/components/ootsuki/daily-input-form";
 import { AgentRequestHub } from "@/components/ootsuki/agent-request-hub";
 import { DashboardAgentChat } from "@/components/ootsuki/dashboard-agent-chat";
+import { DecisionMemoForm } from "@/components/ootsuki/decision-memo-form";
 import { WeeklyReviewForm } from "@/components/ootsuki/weekly-review-form";
 import { RefreshWeeklySummaryButton } from "@/components/ootsuki/refresh-weekly-summary-button";
 import { SalesOverviewPanel } from "@/components/ootsuki/sales-overview-panel";
@@ -332,9 +333,10 @@ export default async function DashboardPage() {
 
         <SectionCard
           title="直近の判断メモ"
-          description="Notion を開かなくても直近メモを見返せるよう、必要な内容だけここに出します。"
+          description="Notion を開かなくても直近メモを見返せるよう、必要な内容だけここに出します。下のフォームから直接追記もできます。"
         >
           <div className="grid gap-3">
+            <DecisionMemoForm defaultTitle={`${weekSummary.weekStart} 判断メモ`} />
             {memoEntries.length === 0 ? (
               <div className="rounded-2xl border border-stone-900/10 bg-stone-50 px-4 py-4 text-sm text-stone-600">
                 まだ判断メモはありません。
