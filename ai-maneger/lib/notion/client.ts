@@ -42,6 +42,28 @@ async function notionFetch<T>(path: string, init?: RequestInit) {
   return json as T;
 }
 
+export async function getDatabaseSchemaProperties(databaseOrDataSourceId: string) {
+  if (!databaseOrDataSourceId) return {} as Record<string, NotionProperty>;
+
+  try {
+    const database = await notionFetch<{ properties?: Record<string, NotionProperty> }>(
+      `/databases/${databaseOrDataSourceId}`,
+    );
+    return database.properties ?? {};
+  } catch {
+    // Fall through to data source lookup.
+  }
+
+  try {
+    const dataSource = await notionFetch<{ properties?: Record<string, NotionProperty> }>(
+      `/data-sources/${databaseOrDataSourceId}`,
+    );
+    return dataSource.properties ?? {};
+  } catch {
+    return {} as Record<string, NotionProperty>;
+  }
+}
+
 export function toText(items?: Array<{ plain_text?: string }>) {
   return (items ?? []).map((item) => item.plain_text ?? "").join("").trim();
 }

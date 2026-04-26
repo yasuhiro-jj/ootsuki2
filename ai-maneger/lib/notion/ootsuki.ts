@@ -1,6 +1,7 @@
 ﻿import { resolveWeekRange } from "@/lib/ootsuki";
 import {
   createPageInDatabase,
+  getDatabaseSchemaProperties,
   getPage,
   getPropertyCheckbox,
   getPropertyDate,
@@ -84,6 +85,53 @@ function setMappedProperty(
   if (Object.keys(schemaProperties).length === 0) {
     target[aliases[0]] = value;
   }
+}
+
+function setMappedTextLikeProperty(
+  target: Record<string, unknown>,
+  schemaProperties: Record<string, NotionProperty>,
+  aliases: string[],
+  text: string,
+  fallbackType: "title" | "rich_text" = "rich_text",
+) {
+  const propertyName = getPropertyNameByAliases(schemaProperties, aliases);
+  const propertyType = propertyName ? schemaProperties[propertyName]?.type : undefined;
+
+  if (propertyName && propertyType === "title") {
+    target[propertyName] = { title: richText(text) };
+    return;
+  }
+  if (propertyName && propertyType === "rich_text") {
+    target[propertyName] = { rich_text: richText(text) };
+    return;
+  }
+
+  if (fallbackType === "title") {
+    setMappedProperty(target, schemaProperties, aliases, { title: richText(text) });
+    return;
+  }
+  setMappedProperty(target, schemaProperties, aliases, { rich_text: richText(text) });
+}
+
+function setMappedStatusLikeProperty(
+  target: Record<string, unknown>,
+  schemaProperties: Record<string, NotionProperty>,
+  aliases: string[],
+  statusName: string,
+) {
+  const propertyName = getPropertyNameByAliases(schemaProperties, aliases);
+  const propertyType = propertyName ? schemaProperties[propertyName]?.type : undefined;
+
+  if (propertyName && propertyType === "select") {
+    target[propertyName] = { select: { name: statusName } };
+    return;
+  }
+  if (propertyName && propertyType === "status") {
+    target[propertyName] = { status: { name: statusName } };
+    return;
+  }
+
+  setMappedProperty(target, schemaProperties, aliases, { status: { name: statusName } });
 }
 
 function asParagraphText(block: NotionBlock) {
@@ -338,22 +386,93 @@ export async function saveWeeklyActionPlan(payload: {
     throw new Error("NOTION_OOTSUKI_WEEKLY_ACTIONS_DB_ID が未設定です");
   }
 
-  const existing = await getWeeklyActionPlan(payload.weekStart, payload.weekEnd);
-  const properties = {
-    タイトル: { title: richText(`${payload.weekStart} 実行項目`) },
-    週開始: { date: { start: payload.weekStart } },
-    週終了: { date: { start: payload.weekEnd } },
-    実行項目: { rich_text: richText(payload.actions.join("\n")) },
-    ステータス: { status: { name: payload.status || "提案済み" } },
-    ソース: { rich_text: richText(payload.source || "ダッシュボードAI提案") },
-  };
+  const pages = await queryDatabaseAll(weeklyActionsDbId);
+  const existingPage = pages.find((page) => {
+    const start = getPropertyDate(page.properties, WEEK_START_KEYS);
+    const end = getPropertyDate(page.properties, WEEK_END_KEYS);
+    return start === payload.weekStart && end === payload.weekEnd;
+  });
+  let schemaProperties = existingPage?.properties ?? pages[0]?.properties ?? {};
+  if (Object.keys(schemaProperties).length === 0) {
+    schemaProperties = await getDatabaseSchemaProperties(weeklyActionsDbId);
+  }
+  if (Object.keys(schemaProperties).length === 0) {
+    throw new Error(
+      "今週の実行項目DBのプロパティ定義を取得できませんでした。Notion連携先IDとインテグレーション権限を確認してください。",
+    );
+  }
+  const properties: Record<string, unknown> = {};
 
-  if (existing?.id) {
-    await updatePage(existing.id, { properties });
-    return existing.id;
+  setMappedTextLikeProperty(
+    properties,
+    schemaProperties,
+    TITLE_KEYS,
+    `${payload.weekStart} 実行項目`,
+    "title",
+  );
+  setMappedProperty(properties, schemaProperties, WEEK_START_KEYS, { date: { start: payload.weekStart } });
+  setMappedProperty(properties, schemaProperties, WEEK_END_KEYS, { date: { start: payload.weekEnd } });
+  setMappedTextLikeProperty(properties, schemaProperties, ["実行項目", "Actions", "内容"], payload.actions.join("\n"));
+  setMappedStatusLikeProperty(properties, schemaProperties, STATUS_KEYS, payload.status || "提案済み");
+  setMappedTextLikeProperty(
+    properties,
+    schemaProperties,
+    SOURCE_KEYS,
+    payload.source || "ダッシュボードAI提案",
+  );
+
+  if (existingPage?.id) {
+    await updatePage(existingPage.id, { properties });
+    return existingPage.id;
   }
 
   const created = await createPageInDatabase(weeklyActionsDbId, properties);
+  return created.id;
+}
+
+function todayInTokyo() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+export async function saveDecisionMemo(payload: {
+  title?: string;
+  status?: string;
+  summary: string;
+  relatedNumbers?: string;
+  nextAction?: string;
+}) {
+  const notion = await cfg();
+  const memoDbId = notion.memoDbId;
+  const pages = await queryDatabaseAll(memoDbId, {
+    sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
+  });
+  let schemaProperties = pages[0]?.properties ?? {};
+  if (Object.keys(schemaProperties).length === 0) {
+    schemaProperties = await getDatabaseSchemaProperties(memoDbId);
+  }
+  if (Object.keys(schemaProperties).length === 0) {
+    throw new Error(
+      "判断メモDBのプロパティ定義を取得できませんでした。Notion連携先IDとインテグレーション権限を確認してください。",
+    );
+  }
+
+  const properties: Record<string, unknown> = {};
+  setMappedTextLikeProperty(properties, schemaProperties, TITLE_KEYS, payload.title?.trim() || "メモ", "title");
+  setMappedProperty(properties, schemaProperties, CATEGORY_KEYS, {
+    select: { name: "判断メモ" },
+  });
+  setMappedStatusLikeProperty(properties, schemaProperties, STATUS_KEYS, payload.status?.trim() || "進行中");
+  setMappedProperty(properties, schemaProperties, DATE_KEYS, { date: { start: todayInTokyo() } });
+  setMappedTextLikeProperty(properties, schemaProperties, SUMMARY_KEYS, payload.summary.trim());
+  setMappedTextLikeProperty(properties, schemaProperties, RELATED_NUMBER_KEYS, payload.relatedNumbers?.trim() || "");
+  setMappedTextLikeProperty(properties, schemaProperties, NEXT_ACTION_KEYS, payload.nextAction?.trim() || "");
+
+  const created = await createPageInDatabase(memoDbId, properties);
   return created.id;
 }
 
