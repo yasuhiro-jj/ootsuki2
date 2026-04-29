@@ -47,11 +47,24 @@ const GROSS_MARGIN_KEYS = ["粗利率(%)", "粗利率", "Gross Margin Rate"];
 const GROSS_PROFIT_KEYS = ["粗利", "粗利額", "Gross Profit"];
 const LINE_REGISTRATION_KEYS = ["LINE登録数", "LINE友だち追加数"];
 const LINE_VISIT_KEYS = ["LINE経由来店数", "LINE来店数"];
-const SALES_YOY_KEYS = ["売上昨対比", "売上前年差異", "Sales YoY", "売上前年比(%)"];
-const CUSTOMERS_YOY_KEYS = ["客数昨対比", "客数前年差", "Customers YoY", "客数前年比(%)"];
+const SALES_YOY_KEYS = [
+  "売上昨対比",
+  "売上前年差異",
+  "差前年差異",
+  "Sales YoY",
+  "売上前年比(%)",
+];
+const CUSTOMERS_YOY_KEYS = [
+  "客数昨対比",
+  "客数前年差",
+  "差前年差客",
+  "Customers YoY",
+  "客数前年比(%)",
+];
 const AVERAGE_SPEND_YOY_KEYS = [
   "客単価昨対比",
   "客単価前年差",
+  "前差客単",
   "Average Spend YoY",
   "客単価前年比(%)",
 ];

@@ -15,6 +15,14 @@ interface CsvImportedRow {
   sales: string;
   customers: string;
   averageSpend: string;
+  grossMarginRate: string;
+  grossProfit: string;
+  lineRegistrations: string;
+  lineVisits: string;
+  returnsAmount: string;
+  discountAmount: string;
+  paymentMemo: string;
+  memo: string;
   salesYoY: string;
   customersYoY: string;
   averageSpendYoY: string;
@@ -73,9 +81,22 @@ interface CsvAggregate {
   previousAverageSpend: string;
 }
 
+function yearTokyo(): number {
+  const parts = new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    calendar: "gregory",
+  }).formatToParts(new Date());
+  const y = parts.find((p) => p.type === "year")?.value;
+  const n = y ? Number(y) : NaN;
+  return Number.isFinite(n) ? n : new Date().getFullYear();
+}
+
 function normalizeDate(value: string) {
-  const trimmed = value.trim();
+  let trimmed = value.trim();
   if (!trimmed) return "";
+
+  trimmed = trimmed.replace(/\s*[\(\uff08][^\)\uff09]*[\)\uff09]\s*/g, "").trim();
 
   const digitsOnly = trimmed.replace(/\D/g, "");
   if (digitsOnly.length === 8) {
@@ -87,11 +108,22 @@ function normalizeDate(value: string) {
     }
   }
 
-  const replaced = trimmed.replace(/[./年月]/g, "-").replace(/日/g, "");
-  const parts = replaced
+  let replaced = trimmed.replace(/[./年月]/g, "-").replace(/日/g, "");
+  let parts = replaced
     .split("-")
     .map((item) => item.trim())
     .filter(Boolean);
+
+  if (parts.length === 2) {
+    const month = Number(parts[0]);
+    const day = Number(parts[1]);
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const yyyy = yearTokyo();
+      const normalized = `${yyyy}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      return normalized;
+    }
+    return "";
+  }
 
   if (parts.length !== 3) return "";
 
@@ -111,17 +143,57 @@ function parseNumberText(value: string) {
   return Number.isFinite(parsed) ? String(parsed) : "";
 }
 
+/** CSV列名の揺れ（レジ出力の「当年○○」と統一スキーマの「売上」等）を吸収 */
+function csvFirstNonEmpty(record: Record<string, string>, keys: readonly string[]): string {
+  for (const key of keys) {
+    const v = record[key];
+    if (v !== undefined && String(v).trim() !== "") return v;
+  }
+  return "";
+}
+
+function csvFirstNormalizedDate(record: Record<string, string>, keys: readonly string[]): string {
+  for (const key of keys) {
+    const d = normalizeDate(record[key] ?? "");
+    if (d) return d;
+  }
+  return "";
+}
+
+function stripBomUnicode(s: string): string {
+  if (s.length > 0 && s.charCodeAt(0) === 0xfeff) return s.slice(1);
+  return s;
+}
+
+function normalizeCsvRawText(raw: string): string {
+  return stripBomUnicode(raw).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
+function detectCsvDelimiter(headerLine: string): string {
+  const tabs = (headerLine.match(/\t/g) ?? []).length;
+  const commas = (headerLine.match(/,/g) ?? []).length;
+  const semis = (headerLine.match(/;/g) ?? []).length;
+  const max = Math.max(tabs, commas, semis);
+  if (max === 0) return ",";
+  if (tabs === max) return "\t";
+  if (semis === max) return ";";
+  return ",";
+}
+
 function parseCsv(text: string) {
-  const headerPreview = text.split(/\r?\n/, 1)[0] ?? "";
-  const delimiter = headerPreview.includes("\t") ? "\t" : ",";
+  const normalized = normalizeCsvRawText(text);
+  const firstNl = normalized.indexOf("\n");
+  const headerLine = firstNl === -1 ? normalized : normalized.slice(0, firstNl);
+  const delimiter = detectCsvDelimiter(headerLine);
+
   const rows: string[][] = [];
   let currentCell = "";
   let currentRow: string[] = [];
   let inQuotes = false;
 
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index];
-    const nextChar = text[index + 1];
+  for (let index = 0; index < normalized.length; index += 1) {
+    const char = normalized[index];
+    const nextChar = normalized[index + 1];
 
     if (char === '"') {
       if (inQuotes && nextChar === '"') {
@@ -139,10 +211,7 @@ function parseCsv(text: string) {
       continue;
     }
 
-    if ((char === "\n" || char === "\r") && !inQuotes) {
-      if (char === "\r" && nextChar === "\n") {
-        index += 1;
-      }
+    if (char === "\n" && !inQuotes) {
       currentRow.push(currentCell);
       if (currentRow.some((cell) => cell.trim() !== "")) {
         rows.push(currentRow);
@@ -165,25 +234,42 @@ function parseCsv(text: string) {
 
 function mapCsvRows(text: string): CsvImportedRow[] {
   const table = parseCsv(text);
-  const headers = table[0]?.map((header) => header.trim()) ?? [];
+  const headers = table[0]?.map((header) => stripBomUnicode(header.trim())) ?? [];
   const body = table.slice(1);
 
   return body
     .map((row, index) => {
       const record = Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ""]));
-      const date = normalizeDate(record["当年日付"] ?? "");
+      const date = csvFirstNormalizedDate(record, ["当年日付", "日付", "日付メモ"]);
       if (!date) return null;
+
+      const salesText = csvFirstNonEmpty(record, ["当年実績", "売上", "売上(税抜)"]);
+      const customersText = csvFirstNonEmpty(record, ["当年客数", "客数"]);
 
       return {
         id: `${date}-${index}`,
         date,
-        label: `${date} / 売上 ${record["当年実績"] || "0"} / 客数 ${record["当年客数"] || "0"}`,
-        sales: parseNumberText(record["当年実績"] ?? ""),
-        customers: parseNumberText(record["当年客数"] ?? ""),
-        averageSpend: parseNumberText(record["当年客単"] ?? ""),
-        salesYoY: parseNumberText(record["差前年差異"] ?? ""),
-        customersYoY: parseNumberText(record["差前年差客"] ?? ""),
-        averageSpendYoY: parseNumberText(record["前差客単"] ?? ""),
+        label: `${date} / 売上 ${salesText || "0"} / 客数 ${customersText || "0"}`,
+        sales: parseNumberText(salesText),
+        customers: parseNumberText(customersText),
+        averageSpend: parseNumberText(csvFirstNonEmpty(record, ["当年客単", "客単価", "客単価(自動)"])),
+        grossMarginRate: parseNumberText(csvFirstNonEmpty(record, ["粗利率(%)", "粗利率"])),
+        grossProfit: parseNumberText(csvFirstNonEmpty(record, ["粗利", "粗利額"])),
+        lineRegistrations: parseNumberText(csvFirstNonEmpty(record, ["LINE登録数", "LINE友だち追加数"])),
+        lineVisits: parseNumberText(csvFirstNonEmpty(record, ["LINE経由来店数", "LINE来店数"])),
+        returnsAmount: parseNumberText(csvFirstNonEmpty(record, ["取消返品", "取消/返品金額", "返品金額"])),
+        discountAmount: parseNumberText(csvFirstNonEmpty(record, ["値引き", "値引き金額"])),
+        paymentMemo: csvFirstNonEmpty(record, ["決済内訳メモ", "決済メモ", "決済内訳（メモ）"]),
+        memo: csvFirstNonEmpty(record, ["メモ", "所感/メモ", "備考"]),
+        salesYoY: parseNumberText(
+          csvFirstNonEmpty(record, ["差前年差異", "売上昨対比", "売上前年比(%)"]),
+        ),
+        customersYoY: parseNumberText(
+          csvFirstNonEmpty(record, ["差前年差客", "客数昨対比", "客数前年比(%)"]),
+        ),
+        averageSpendYoY: parseNumberText(
+          csvFirstNonEmpty(record, ["前差客単", "客単価昨対比", "客単価前年比(%)"]),
+        ),
         budget: parseNumberText(record["当年予算"] ?? ""),
         achievementRate: parseNumberText(record["当年達成率"] ?? ""),
         previousDate: normalizeDate(record["前年日付"] ?? ""),
@@ -193,6 +279,54 @@ function mapCsvRows(text: string): CsvImportedRow[] {
       };
     })
     .filter((row): row is CsvImportedRow => Boolean(row));
+}
+
+/** レジ・Notion出力のエンコード揺れ（UTF-8 / Shift_JIS / Excel UTF-16 等）に対応して最も行が取れた文字列を採用 */
+function decodeDailyCsvBest(buffer: ArrayBuffer): string {
+  const u = new Uint8Array(buffer.slice(0, Math.min(buffer.byteLength, 4)));
+  const candidates: string[] = [];
+
+  if (buffer.byteLength >= 2) {
+    const b0 = u[0];
+    const b1 = u[1] ?? 0;
+    if (b0 === 0xff && b1 === 0xfe) {
+      candidates.push(new TextDecoder("utf-16le", { fatal: false }).decode(buffer));
+    }
+    if (b0 === 0xfe && b1 === 0xff) {
+      candidates.push(new TextDecoder("utf-16be", { fatal: false }).decode(buffer));
+    }
+  }
+
+  const encodings = ["utf-8", "shift-jis", "sjis", "windows-31j"] as const;
+  for (const enc of encodings) {
+    try {
+      candidates.push(new TextDecoder(enc, { fatal: false }).decode(buffer));
+    } catch {
+      /* skip unsupported label */
+    }
+  }
+
+  if (candidates.length === 0) {
+    try {
+      return new TextDecoder("utf-8", { fatal: false }).decode(buffer);
+    } catch {
+      return "";
+    }
+  }
+
+  let bestText = candidates[0]!;
+  let bestScore = mapCsvRows(bestText).length;
+
+  for (let i = 1; i < candidates.length; i += 1) {
+    const t = candidates[i]!;
+    const score = mapCsvRows(t).length;
+    if (score > bestScore) {
+      bestScore = score;
+      bestText = t;
+    }
+  }
+
+  return bestText;
 }
 
 function parseProductAnalysisRows(text: string): ProductAnalysisRow[] {
@@ -447,17 +581,16 @@ export function DailyInputForm({ defaultDate }: DailyInputFormProps) {
 
   async function handleCsvUpload(file: File) {
     const buffer = await file.arrayBuffer();
-    const utf8Text = new TextDecoder("utf-8").decode(buffer);
-    const shiftJisText = new TextDecoder("shift_jis").decode(buffer);
-    const parsedUtf8 = mapCsvRows(utf8Text);
-    const parsedShiftJis = mapCsvRows(shiftJisText);
-    const parsedRows = parsedUtf8.length >= parsedShiftJis.length ? parsedUtf8 : parsedShiftJis;
+    const text = decodeDailyCsvBest(buffer);
+    const parsedRows = mapCsvRows(text);
 
     if (parsedRows.length === 0) {
       setCsvRows([]);
       setSelectedCsvRowIds([]);
       setAppliedCsvRowIds([]);
-      setCsvStatus("CSVから対象行を読み取れませんでした。列名と文字コードを確認してください。");
+      setCsvStatus(
+        "CSVから対象行を読み取れませんでした。日付列（当年日付・日付・日付メモ）と売上・客数列があるか、Excelの「CSV UTF-16」なら保存し直すかメモ帳でUTF-8にして再試行してください。",
+      );
       return;
     }
 
@@ -618,6 +751,14 @@ export function DailyInputForm({ defaultDate }: DailyInputFormProps) {
       sales: Number(row.sales) || 0,
       customers: Number(row.customers) || 0,
       averageSpend: Number(row.averageSpend) || undefined,
+      grossMarginRate: row.grossMarginRate ? Number(row.grossMarginRate) : undefined,
+      grossProfit: row.grossProfit ? Number(row.grossProfit) : undefined,
+      lineRegistrations: row.lineRegistrations ? Number(row.lineRegistrations) : undefined,
+      lineVisits: row.lineVisits ? Number(row.lineVisits) : undefined,
+      returnsAmount: row.returnsAmount ? Number(row.returnsAmount) : undefined,
+      discountAmount: row.discountAmount ? Number(row.discountAmount) : undefined,
+      paymentMemo: row.paymentMemo || "",
+      memo: row.memo || "",
       salesYoY: row.salesYoY ? Number(row.salesYoY) : undefined,
       customersYoY: row.customersYoY ? Number(row.customersYoY) : undefined,
       averageSpendYoY: row.averageSpendYoY ? Number(row.averageSpendYoY) : undefined,
@@ -761,7 +902,7 @@ export function DailyInputForm({ defaultDate }: DailyInputFormProps) {
         </summary>
         <div className="mt-4 grid gap-3">
           <p className="text-sm leading-6 text-stone-600">
-            `当年日付 / 当年実績 / 当年客数 / 当年客単` を自動反映します。前年比較と予算対比も補助情報として保持します。
+            レジCSV・Shift_JIS・Excelの「CSV UTF-16」・Notion／スプレッドシートの UTF-8 に対応します。日付列（当年日付／日付／日付メモ）と売上・客数が読めれば取り込めます。取り込めない場合はファイルをメモ帳で「UTF-8で保存」するか、Excelで「CSV UTF-8」形式で保存し直してください。
           </p>
           <input
             type="file"
