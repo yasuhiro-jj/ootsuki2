@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   calculateAverageSpend,
   formatCount,
@@ -87,6 +87,13 @@ export function SalesOverviewPanel({ entries }: SalesOverviewPanelProps) {
   );
 
   const [selectedMonth, setSelectedMonth] = useState(monthOptions[0]?.value ?? "");
+
+  useEffect(() => {
+    if (monthOptions.length === 0) return;
+    if (!selectedMonth || !monthOptions.some((option) => option.value === selectedMonth)) {
+      setSelectedMonth(monthOptions[0].value);
+    }
+  }, [monthOptions, selectedMonth]);
 
   const monthEntries = useMemo(
     () => dailyEntries.filter((entry) => entry.date.startsWith(selectedMonth)),

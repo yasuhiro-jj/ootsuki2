@@ -256,10 +256,21 @@ export async function getOotsukiProjectOverview() {
 
 export async function getKpiEntries() {
   const notion = await cfg();
-  const [dailyPages, summaryPages] = await Promise.all([
+  const [dailyResult, summaryResult] = await Promise.allSettled([
     queryDatabaseAll(notion.dailySalesDbId),
     queryDatabaseAll(notion.kpiDbId),
   ]);
+
+  const dailyPages = dailyResult.status === "fulfilled" ? dailyResult.value : [];
+  const summaryPages = summaryResult.status === "fulfilled" ? summaryResult.value : [];
+
+  if (dailyResult.status === "rejected") {
+    console.warn("[ootsuki] failed to load daily sales pages:", dailyResult.reason);
+  }
+  if (summaryResult.status === "rejected") {
+    console.warn("[ootsuki] failed to load KPI summary pages:", summaryResult.reason);
+  }
+
   return [...dailyPages, ...summaryPages].map(mapKpiEntry);
 }
 
