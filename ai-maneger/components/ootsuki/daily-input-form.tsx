@@ -41,11 +41,16 @@ interface ProductAnalysisRow {
   productName: string;
   category1: string;
   category2: string;
+  averageUnitPrice: number;
+  quantity: number;
   sales: number;
   compositionRatio: number;
+  rank: string;
   estimatedCost: number;
   grossProfit: number;
   grossMarginRate: number;
+  period: string;
+  source: string;
   isExcluded: boolean;
 }
 
@@ -331,35 +336,95 @@ function decodeDailyCsvBest(buffer: ArrayBuffer): string {
 
 function parseProductAnalysisRows(text: string): ProductAnalysisRow[] {
   const table = parseCsv(text);
-  const headers = table[0]?.map((header) => header.trim()) ?? [];
+  const headers = table[0]?.map((header) => stripBomUnicode(header.trim())) ?? [];
   const body = table.slice(1);
 
   return body
     .map((row, index) => {
       const record = Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ""]));
-      const productName = (record["商品名"] ?? "").trim();
-      const sales = Number(parseNumberText(record["売上金額"] ?? ""));
+      const productName = csvFirstNonEmpty(record, ["商品名", "品名", "メニュー名"]).trim();
+      const sales = Number(parseNumberText(csvFirstNonEmpty(record, ["売上金額", "売上", "売上(税抜)"])));
 
       if (!productName || !Number.isFinite(sales)) {
         return null;
       }
 
+      const grossProfit = Number(parseNumberText(csvFirstNonEmpty(record, ["粗利", "粗利額"]))) || 0;
+      const estimatedCostFromCsv = Number(parseNumberText(csvFirstNonEmpty(record, ["想定原価", "原価"]))) || 0;
+      const estimatedCost = estimatedCostFromCsv || (grossProfit > 0 ? Math.max(sales - grossProfit, 0) : 0);
+      const grossMarginRate =
+        Number(parseNumberText(csvFirstNonEmpty(record, ["粗利率", "粗利率(%)"]))) ||
+        (sales > 0 && grossProfit > 0 ? (grossProfit / sales) * 100 : 0);
+
       return {
         id: `${productName}-${index}`,
         label: `${productName} / 売上 ${sales.toLocaleString()}円`,
-        productCode: normalizeProductCodeKey(record["商品コード"] ?? ""),
+        productCode: normalizeProductCodeKey(csvFirstNonEmpty(record, ["商品コード", "コード"])),
         productName,
-        category1: (record["カテゴリ1"] ?? "").trim(),
-        category2: (record["カテゴリ2"] ?? "").trim(),
+        category1: csvFirstNonEmpty(record, ["カテゴリ1", "カテゴリー1", "大分類"]).trim(),
+        category2: csvFirstNonEmpty(record, ["カテゴリ2", "カテゴリー2", "中分類"]).trim(),
+        averageUnitPrice: Number(parseNumberText(csvFirstNonEmpty(record, ["平均単価", "単価"]))) || 0,
+        quantity: Number(parseNumberText(csvFirstNonEmpty(record, ["売上数量", "数量"]))) || 0,
         sales,
-        compositionRatio: Number(parseNumberText(record["構成比"] ?? "")) || 0,
-        estimatedCost: Number(parseNumberText(record["想定原価"] ?? "")) || 0,
-        grossProfit: Number(parseNumberText(record["粗利"] ?? "")) || 0,
-        grossMarginRate: Number(parseNumberText(record["粗利率"] ?? "")) || 0,
+        compositionRatio: Number(parseNumberText(csvFirstNonEmpty(record, ["構成比", "構成比(%)"]))) || 0,
+        rank: csvFirstNonEmpty(record, ["ランク", "順位"]).trim(),
+        estimatedCost,
+        grossProfit,
+        grossMarginRate,
+        period: csvFirstNonEmpty(record, ["対象期間", "期間"]).trim(),
+        source: csvFirstNonEmpty(record, ["ソース", "ソース（CSV名等）"]).trim(),
         isExcluded: false,
       };
     })
     .filter((row): row is ProductAnalysisRow => Boolean(row));
+}
+
+/** 商品分析CSVもUTF-8/Shift_JIS/Excel UTF-16を自動判定する */
+function decodeProductAnalysisCsvBest(buffer: ArrayBuffer): string {
+  const u = new Uint8Array(buffer.slice(0, Math.min(buffer.byteLength, 4)));
+  const candidates: string[] = [];
+
+  if (buffer.byteLength >= 2) {
+    const b0 = u[0];
+    const b1 = u[1] ?? 0;
+    if (b0 === 0xff && b1 === 0xfe) {
+      candidates.push(new TextDecoder("utf-16le", { fatal: false }).decode(buffer));
+    }
+    if (b0 === 0xfe && b1 === 0xff) {
+      candidates.push(new TextDecoder("utf-16be", { fatal: false }).decode(buffer));
+    }
+  }
+
+  const encodings = ["utf-8", "shift-jis", "sjis", "windows-31j"] as const;
+  for (const enc of encodings) {
+    try {
+      candidates.push(new TextDecoder(enc, { fatal: false }).decode(buffer));
+    } catch {
+      /* skip unsupported label */
+    }
+  }
+
+  if (candidates.length === 0) {
+    try {
+      return new TextDecoder("utf-8", { fatal: false }).decode(buffer);
+    } catch {
+      return "";
+    }
+  }
+
+  let bestText = candidates[0]!;
+  let bestScore = parseProductAnalysisRows(bestText).length;
+
+  for (let i = 1; i < candidates.length; i += 1) {
+    const t = candidates[i]!;
+    const score = parseProductAnalysisRows(t).length;
+    if (score > bestScore) {
+      bestScore = score;
+      bestText = t;
+    }
+  }
+
+  return bestText;
 }
 
 function buildProductAnalysisSummary(rows: ProductAnalysisRow[]): ProductAnalysisSummary | null {
@@ -619,16 +684,15 @@ export function DailyInputForm({ defaultDate }: DailyInputFormProps) {
 
   async function handleProductCsvUpload(file: File) {
     const buffer = await file.arrayBuffer();
-    const utf8Text = new TextDecoder("utf-8").decode(buffer);
-    const shiftJisText = new TextDecoder("shift_jis").decode(buffer);
-    const parsedUtf8 = parseProductAnalysisRows(utf8Text);
-    const parsedShiftJis = parseProductAnalysisRows(shiftJisText);
-    const parsedRows = parsedUtf8.length >= parsedShiftJis.length ? parsedUtf8 : parsedShiftJis;
+    const text = decodeProductAnalysisCsvBest(buffer);
+    const parsedRows = parseProductAnalysisRows(text);
 
     if (parsedRows.length === 0) {
       setProductRows([]);
       setSelectedProductRowIds([]);
-      setProductCsvStatus("商品分析CSVから対象行を読み取れませんでした。列名と文字コードを確認してください。");
+      setProductCsvStatus(
+        "商品分析CSVから対象行を読み取れませんでした。商品名・売上金額・粗利・粗利率(%) などの列名と、文字コード（UTF-8 / Shift_JIS / Excel UTF-16）を確認してください。",
+      );
       return;
     }
 
@@ -1063,7 +1127,8 @@ export function DailyInputForm({ defaultDate }: DailyInputFormProps) {
             </div>
           </div>
           <p className="text-sm leading-6 text-stone-600">
-            `商品名 / 売上金額 / 想定原価 / 粗利 / 粗利率` を使って分析・粗利率をフォームに反映します。
+            `商品名 / 商品コード / カテゴリ1 / カテゴリ2 / 平均単価 / 売上数量 / 売上金額 / 構成比(%) / 粗利 / 粗利率(%)`
+            を読み込みます。UTF-8、Shift_JIS、Excelの「CSV UTF-16」に対応します。
           </p>
           <input
             type="file"
