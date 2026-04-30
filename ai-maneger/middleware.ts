@@ -109,7 +109,7 @@ function nextWithTenant(request: NextRequest) {
 
 export function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
-  const isPublicPage = pathname === "/login";
+  const isPublicPage = pathname === "/login" || pathname === "/lp";
   const isAuthCookiePresent = Boolean(request.cookies.get(AUTH_SESSION_COOKIE)?.value);
 
   if (!isAuthCookiePresent && !isPublicPage) {
