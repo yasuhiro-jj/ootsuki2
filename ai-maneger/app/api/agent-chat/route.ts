@@ -17,6 +17,7 @@ import {
   getOotsukiProjectOverview,
   getWeeklyActionPlan,
 } from "@/lib/notion/ootsuki";
+import type { KpiSnapshotEntry } from "@/types/ootsuki";
 import {
   aggregateWeek,
   attachWeekOverWeek,
@@ -72,7 +73,7 @@ async function buildDashboardContext() {
   const weeklyActionPlan = await getWeeklyActionPlan(summary.weekStart, summary.weekEnd);
   const currentDailyEntries = entries
     .filter(
-      (entry) =>
+      (entry: KpiSnapshotEntry) =>
         !isWeeklySummaryEntry(entry) &&
         entry.weekStart === summary.weekStart &&
         entry.weekEnd === summary.weekEnd,
