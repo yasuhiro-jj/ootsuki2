@@ -39,6 +39,7 @@ export async function generateReply(params: {
   userMessage: string;
   dashboardContext: string;
   agentInstruction?: string;
+  jsonInstruction?: string;
   conversationHistory?: ChatMessage[];
 }) {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
@@ -53,6 +54,13 @@ export async function generateReply(params: {
     messages.push({
       role: "system",
       content: `【担当専門家の方針】\n${params.agentInstruction}`,
+    });
+  }
+
+  if (params.jsonInstruction) {
+    messages.push({
+      role: "system",
+      content: `【出力形式（必ず従うこと）】\n${params.jsonInstruction}`,
     });
   }
 

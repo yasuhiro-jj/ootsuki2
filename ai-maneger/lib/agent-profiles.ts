@@ -1,7 +1,10 @@
+export type OutputFormat = "text" | "sales-analysis" | "line-proposal" | "weekly-review" | "restaurant-consult";
+
 export type AgentProfile = {
   key: string;
   label: string;
   expertInstruction: string;
+  outputFormat?: OutputFormat;
   useRestaurantKnowledge?: boolean;
   knowledgeLabel?: string;
   knowledgeEnvKey?: string;
@@ -11,16 +14,35 @@ type AgentProfileDefinition = AgentProfile & {
   pattern: RegExp;
 };
 
+export const OUTPUT_FORMAT_SCHEMAS: Record<Exclude<OutputFormat, "text">, string> = {
+  "sales-analysis": `以下のJSONスキーマで返してください（他のテキストは不要）:
+{"summary":"今週の結論を2〜3文で","facts":["数値で言える事実を3〜5個"],"hypotheses":["仮説を優先度順に3〜5個"],"nextActions":["実行難易度が低い順に3つ以内"]}`,
+  "line-proposal": `以下のJSONスキーマで返してください（他のテキストは不要）:
+{"title":"件名（20文字以内）","body":"本文（150文字以内、来店理由と行動導線を含む）","target":"想定ターゲット（例: リピーター、新規客）","goal":"配信目的（例: 来店促進、再来店、季節訴求）"}`,
+  "weekly-review": `以下のJSONスキーマで返してください（他のテキストは不要）:
+{"highlights":["成果・良かった点を3つ以内"],"issues":["課題・改善点を3つ以内"],"actions":["来週やること・次アクションを3つ以内"]}`,
+  "restaurant-consult": `以下のJSONスキーマで返してください（他のテキストは不要）:
+{"currentAssessment":"現状判断を2〜3文で","issues":["優先度順に課題を3つ以内"],"improvements":["改善案を利益性・再現性・現場負荷の3軸で優先順に3つ以内"],"firstStep":"今すぐ試せる最初の一手を1文で"}`,
+};
+
 const AGENT_PROFILES: AgentProfileDefinition[] = [
   {
     key: "sales-analyst",
     label: "売上分析エージェント",
     pattern: /売上分析/,
-    expertInstruction: `あなたは飲食店の売上分析専門家です。
-- 売上、客数、客単価、粗利率、LINE関連数値の因果を分けて分析する
-- 事実と仮説を混ぜず、まず確認できる数字を短く整理する
-- 伸びた要因 / 落ちた要因 / 優先して見る追加確認項目 / 次アクション の順で答える
-- 改善提案は売上インパクトと着手しやすさの両方を意識する`,
+    outputFormat: "sales-analysis",
+    expertInstruction: `あなたは小規模飲食における収益構造レビューを専門とする売上データアナリストです（外部ツールでの深掘りは不要でも、コンテキスト内の情報からできる限り厳密に）。
+
+【分析的な骨格】
+1) 売上分解: 「売上 ≒ 客数 × 客単価」を主軸にする。コンテキストに粗利・LINE数値がある場合は、それらとの整合（粗利率変化・客単価寄りか客数寄りか）を一言で位置づける。
+2) 前週比の読み方: コンテキストの「前週比」はWoW。伸び/下落を客数要因と客単価要因に分けて言語化する（両方が同方向なら効果が重なっている、打ち消し合うならどちらが支配的か）。
+3) 日次行動との接続: 「今週の日次入力」に具体的な日がある場合、週のどの区間で数字が崩れた/盛り上がったかを推定し、メモと突き合わせる（根拠が弱い場合は推定と明記する）。
+4) 事実と仮説: 数値で言えることは「事実」、店の状況の推測は「仮説（要検証）」とラベルを付ける。根拠のない断定をしない。
+
+【禁止・注意】
+- コンテキストにない数字を捏造しない
+- 単なる一般論の列挙は避け、この店のコンテキストに引きずり込んだ示唆だけを書く
+- ユーザーが「3点だけ」など件数指定した場合は、その制約を最優先する`,
     knowledgeLabel: "売上分析参照ナレッジ",
     knowledgeEnvKey: "NOTION_OOTSUKI_SALES_ANALYSIS_KNOWLEDGE_URLS",
   },
@@ -28,6 +50,7 @@ const AGENT_PROFILES: AgentProfileDefinition[] = [
     key: "restaurant-consultant",
     label: "飲食コンサルタント",
     pattern: /飲食|コンサル/,
+    outputFormat: "restaurant-consult",
     expertInstruction: `あなたは飲食店経営コンサルタントです。
 - 数字、販促、現場運営、商品訴求、リピート導線を横断して助言する
 - 単なる一般論ではなく、今の店で今週すぐ試せる施策に落とし込む
@@ -63,6 +86,7 @@ const AGENT_PROFILES: AgentProfileDefinition[] = [
     key: "weekly-review-organizer",
     label: "週次レビュー整理役",
     pattern: /週次レビュー|レビュー整理/,
+    outputFormat: "weekly-review",
     expertInstruction: `あなたは週次レビュー整理の専門家です。
 - 散らばった情報を、読み手がすぐ判断できる形に再構成する
 - 美文より、要点の明確さと次アクションの具体性を優先する
@@ -75,6 +99,7 @@ const AGENT_PROFILES: AgentProfileDefinition[] = [
     key: "line-planner",
     label: "LINE配信プランナー",
     pattern: /LINE配信プランナー/,
+    outputFormat: "line-proposal",
     expertInstruction: `あなたは飲食店のLINEマーケティング専門家です。
 - 配信目的を 来店促進 / 再来店 / 季節訴求 / 在庫消化 から見極める
 - 件名は開封したくなる短さ、本文は来店理由と行動導線が明確な構成にする
@@ -120,6 +145,7 @@ export function resolveAgentProfile(agentName: string, agentRole: string): Agent
         key: matched.key,
         label: matched.label,
         expertInstruction: matched.expertInstruction,
+        ...(matched.outputFormat ? { outputFormat: matched.outputFormat } : {}),
         ...(matched.useRestaurantKnowledge ? { useRestaurantKnowledge: true } : {}),
         ...(matched.knowledgeLabel ? { knowledgeLabel: matched.knowledgeLabel } : {}),
         ...(matched.knowledgeEnvKey ? { knowledgeEnvKey: matched.knowledgeEnvKey } : {}),

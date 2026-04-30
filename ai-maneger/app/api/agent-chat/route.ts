@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireTenantAccess } from "@/lib/api/tenant-access";
-import { resolveAgentProfile } from "@/lib/agent-profiles";
+import { resolveAgentProfile, OUTPUT_FORMAT_SCHEMAS } from "@/lib/agent-profiles";
 import { generateReply, type ChatMessage } from "@/lib/agent-chat";
 import {
   getAgentHubKnowledgeContext,
@@ -13,6 +13,7 @@ import {
   getKpiEntries,
   getLatestDecisionMemoEntries,
   getLatestWeeklyReviewEntries,
+  getNotionInstructionsDocument,
   getOotsukiProjectOverview,
   getWeeklyActionPlan,
 } from "@/lib/notion/ootsuki";
@@ -25,7 +26,12 @@ import {
   formatYen,
   isWeeklySummaryEntry,
 } from "@/lib/ootsuki";
-import type { AgentChatErrorResponse, AgentChatRequestBody } from "@/types/chat";
+import type {
+  AgentChatErrorResponse,
+  AgentChatRequestBody,
+  StructuredAgentResult,
+  RestaurantConsultResult,
+} from "@/types/chat";
 
 export const runtime = "nodejs";
 
@@ -49,12 +55,13 @@ function getOrCreateSession(tenant: string, id?: string) {
 }
 
 async function buildDashboardContext() {
-  const [project, entries, memoEntries, reviewEntries, lineMessage] = await Promise.all([
+  const [project, entries, memoEntries, reviewEntries, lineMessage, instructionsDoc] = await Promise.all([
     getOotsukiProjectOverview(),
     getKpiEntries(),
     getLatestDecisionMemoEntries(5),
     getLatestWeeklyReviewEntries(3),
     getCurrentLineMessage(),
+    getNotionInstructionsDocument(),
   ]);
   const currentWeek = aggregateWeek(entries, new Date());
   const previousWeek = aggregateWeek(
@@ -108,7 +115,71 @@ async function buildDashboardContext() {
     ),
     "",
     `【LINE配信文】\n${lineMessage.title}\n${lineMessage.body}`,
+    "",
+    "【運用指示書】",
+    instructionsDoc.configured
+      ? `${instructionsDoc.title}\n${instructionsDoc.body}`
+      : instructionsDoc.body,
   ].join("\n");
+}
+
+function tryParseStructured(reply: string, outputFormat: string): StructuredAgentResult | null {
+  try {
+    const jsonMatch = reply.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+
+    if (outputFormat === "sales-analysis") {
+      return {
+        type: "sales-analysis",
+        data: {
+          summary: typeof parsed.summary === "string" ? parsed.summary : "",
+          facts: Array.isArray(parsed.facts) ? (parsed.facts as string[]) : [],
+          hypotheses: Array.isArray(parsed.hypotheses) ? (parsed.hypotheses as string[]) : [],
+          nextActions: Array.isArray(parsed.nextActions) ? (parsed.nextActions as string[]) : [],
+        },
+      };
+    }
+
+    if (outputFormat === "line-proposal") {
+      return {
+        type: "line-proposal",
+        data: {
+          title: typeof parsed.title === "string" ? parsed.title : "",
+          body: typeof parsed.body === "string" ? parsed.body : "",
+          target: typeof parsed.target === "string" ? parsed.target : "",
+          goal: typeof parsed.goal === "string" ? parsed.goal : "",
+        },
+      };
+    }
+
+    if (outputFormat === "weekly-review") {
+      return {
+        type: "weekly-review",
+        data: {
+          highlights: Array.isArray(parsed.highlights) ? (parsed.highlights as string[]) : [],
+          issues: Array.isArray(parsed.issues) ? (parsed.issues as string[]) : [],
+          actions: Array.isArray(parsed.actions) ? (parsed.actions as string[]) : [],
+        },
+      };
+    }
+
+    if (outputFormat === "restaurant-consult") {
+      return {
+        type: "restaurant-consult",
+        data: {
+          currentAssessment: typeof parsed.currentAssessment === "string" ? parsed.currentAssessment : "",
+          issues: Array.isArray(parsed.issues) ? (parsed.issues as string[]) : [],
+          improvements: Array.isArray(parsed.improvements) ? (parsed.improvements as string[]) : [],
+          firstStep: typeof parsed.firstStep === "string" ? parsed.firstStep : "",
+        } satisfies RestaurantConsultResult,
+      };
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export async function POST(request: Request) {
@@ -164,6 +235,12 @@ export async function POST(request: Request) {
 
   try {
     const agentProfile = resolveAgentProfile(agentName, agentRole);
+    const outputFormat = agentProfile.outputFormat;
+    const jsonInstruction =
+      outputFormat && outputFormat !== "text"
+        ? OUTPUT_FORMAT_SCHEMAS[outputFormat]
+        : undefined;
+
     const dashboardContext = await buildDashboardContext();
     const agentHubKnowledgeContext = await getAgentHubKnowledgeContext();
     const agentSpecificKnowledgeContext =
@@ -192,11 +269,17 @@ export async function POST(request: Request) {
       userMessage: agentScopedMessage,
       dashboardContext: fullContext,
       agentInstruction: agentProfile.expertInstruction,
+      jsonInstruction,
       conversationHistory: history.slice(-20),
     });
 
     history.push({ role: "user", content: agentScopedMessage });
     history.push({ role: "assistant", content: reply });
+
+    const structured =
+      outputFormat && outputFormat !== "text"
+        ? tryParseStructured(reply, outputFormat) ?? undefined
+        : undefined;
 
     return NextResponse.json({
       ok: true,
@@ -204,6 +287,7 @@ export async function POST(request: Request) {
       sessionId,
       source: `${access.tenant}-dashboard-agent`,
       fallbackUsed: false,
+      ...(structured ? { structured } : {}),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "不明なエラー";
