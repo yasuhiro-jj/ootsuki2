@@ -17,7 +17,7 @@ import {
   getOotsukiProjectOverview,
   getWeeklyActionPlan,
 } from "@/lib/notion/ootsuki";
-import type { KpiSnapshotEntry } from "@/types/ootsuki";
+import type { KpiSnapshotEntry, MemoEntry } from "@/types/ootsuki";
 import {
   aggregateWeek,
   attachWeekOverWeek,
@@ -99,19 +99,19 @@ async function buildDashboardContext() {
     "",
     "【今週の日次入力】",
     ...currentDailyEntries.map(
-      (entry) =>
+      (entry: KpiSnapshotEntry) =>
         `${entry.title}: 売上 ${formatYen(entry.sales)}, 客数 ${formatCount(entry.customers)}, 客単価 ${formatYen(entry.averageSpend)}, 粗利率 ${formatPercentValue(entry.grossMarginRate)}, LINE登録数 ${formatCount(entry.lineRegistrations)}, LINE経由来店数 ${formatCount(entry.lineVisits)}, メモ ${entry.notes || "なし"}`,
     ),
     "",
     "【最新判断メモ】",
     ...memoEntries.map(
-      (entry) =>
+      (entry: MemoEntry) =>
         `${entry.title} (${entry.updatedAt}): 要点 ${entry.summary || "なし"} / 関連数字 ${entry.relatedNumbers || "なし"} / 次アクション ${entry.nextAction || "なし"}`,
     ),
     "",
     "【最新週次レビュー】",
     ...reviewEntries.map(
-      (entry) =>
+      (entry: MemoEntry) =>
         `${entry.title} (${entry.updatedAt}): 振り返り ${entry.summary || "なし"} / 関連数字 ${entry.relatedNumbers || "なし"} / 次アクション ${entry.nextAction || "なし"}`,
     ),
     "",
