@@ -17,6 +17,7 @@ import type {
   DailyInputPayload,
   KpiSnapshotEntry,
   MemoEntry,
+  NotionInstructionsDocument,
   OotsukiProjectOverview,
   WeeklyActionPlan,
   WeeklyReviewDraft,
@@ -153,8 +154,43 @@ function asParagraphText(block: NotionBlock) {
     toText(block.heading_1?.rich_text) ||
     toText(block.heading_2?.rich_text) ||
     toText(block.heading_3?.rich_text) ||
-    toText(block.bulleted_list_item?.rich_text)
+    toText(block.bulleted_list_item?.rich_text) ||
+    toText(block.numbered_list_item?.rich_text) ||
+    toText(block.quote?.rich_text) ||
+    toText(block.callout?.rich_text) ||
+    toText(block.toggle?.rich_text) ||
+    toText(block.to_do?.rich_text)
   );
+}
+
+async function notionBlocksToPlainLines(notionToken: string, rootBlockId: string) {
+  const version = process.env.NOTION_API_VERSION?.trim() || "2022-06-28";
+  const headers = {
+    Authorization: `Bearer ${notionToken}`,
+    "Notion-Version": version,
+    "Content-Type": "application/json",
+  };
+  const lines: string[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < 20; page += 1) {
+    const qs =
+      cursor !== undefined
+        ? `?page_size=100&start_cursor=${encodeURIComponent(cursor)}`
+        : "?page_size=100";
+    const response = await fetch(`https://api.notion.com/v1/blocks/${rootBlockId}/children${qs}`, {
+      headers,
+      cache: "no-store",
+    });
+    if (!response.ok) return { ok: false as const, lines: [] as string[] };
+    const data = (await response.json()) as { results?: NotionBlock[]; next_cursor?: string | null };
+    for (const block of data.results ?? []) {
+      const text = asParagraphText(block).trim();
+      if (text) lines.push(text);
+    }
+    cursor = data.next_cursor || undefined;
+    if (!cursor) return { ok: true as const, lines };
+  }
+  return { ok: true as const, lines };
 }
 
 function mapProjectOverview(page: NotionPage): OotsukiProjectOverview {
@@ -342,25 +378,55 @@ export async function getCurrentLineMessage() {
     };
   }
 
-  const response = await fetch(`https://api.notion.com/v1/blocks/${lineReportPageId}/children?page_size=100`, {
-    headers: {
-      Authorization: `Bearer ${notion.notionToken}`,
-      "Notion-Version": process.env.NOTION_API_VERSION?.trim() || "2022-06-28",
-      "Content-Type": "application/json",
-    },
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
+  const { ok, lines } = await notionBlocksToPlainLines(notion.notionToken, lineReportPageId);
+  if (!ok) {
     return { title: "LINE配信文 取得失敗", body: "LINE配信文ページを取得できませんでした。" };
   }
 
-  const data = (await response.json()) as { results?: NotionBlock[] };
-  const lines = (data.results ?? []).map(asParagraphText).filter(Boolean);
   return {
     title: lines[0] || "LINE配信文",
     body: lines.slice(1).join("\n") || "本文未設定",
   };
+}
+
+export async function getNotionInstructionsDocument(): Promise<NotionInstructionsDocument> {
+  const notion = await cfg();
+  const pageId = notion.instructionsPageId.trim();
+  const envHint =
+    notion.tenant === "demo" ? "NOTION_DEMO_OOTSUKI_INSTRUCTIONS_PAGE_ID" : "NOTION_OOTSUKI_INSTRUCTIONS_PAGE_ID";
+  if (!pageId) {
+    return {
+      configured: false,
+      title: "運用指示書",
+      body: `環境変数 ${envHint} にページ ID を設定し、そのページへインテグレーションを接続してください。（設定ストア利用時は instructions_page_id 列）`,
+      pageId: "",
+    };
+  }
+
+  try {
+    const { ok, lines } = await notionBlocksToPlainLines(notion.notionToken, pageId);
+    if (!ok) {
+      return {
+        configured: true,
+        title: "運用指示書",
+        body: "指示書ページのブロックを取得できませんでした。ページ ID・共有（Connections）・トークン権限を確認してください。",
+        pageId,
+      };
+    }
+    return {
+      configured: true,
+      title: lines[0] || "運用指示書",
+      body: lines.slice(1).join("\n") || "（本文がありません。Notion ページに段落や見出しを追加してください。）",
+      pageId,
+    };
+  } catch {
+    return {
+      configured: true,
+      title: "運用指示書",
+      body: "指示書の取得中にエラーが発生しました。",
+      pageId,
+    };
+  }
 }
 
 export async function getWeeklyActionPlan(weekStart: string, weekEnd: string): Promise<WeeklyActionPlan | null> {
