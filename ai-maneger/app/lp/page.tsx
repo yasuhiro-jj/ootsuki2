@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 };
 
 const DEMO_URL = "/login?tenant=demo";
-const CONTACT_EMAIL = "contact@example.com"; // ← メールアドレスをここに入力してください
+const CONTACT_EMAIL = "yasuhiro.watanabe1@gmail.com";
 
 const features = [
   {
