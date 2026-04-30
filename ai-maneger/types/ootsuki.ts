@@ -131,3 +131,11 @@ export interface WeeklyActionPlan {
   updatedAt?: string;
   url?: string;
 }
+
+/** Notion の運用指示書ページ（本文ブロックを表示） */
+export interface NotionInstructionsDocument {
+  configured: boolean;
+  title: string;
+  body: string;
+  pageId: string;
+}

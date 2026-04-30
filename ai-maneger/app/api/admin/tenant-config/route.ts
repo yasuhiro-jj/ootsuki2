@@ -20,6 +20,7 @@ type UpsertRequestBody = {
   lineReportPageId?: string;
   productCostDbId?: string;
   weeklyActionsDbId?: string;
+  instructionsPageId?: string;
   isActive?: boolean;
 };
 
@@ -61,6 +62,7 @@ export async function GET(request: Request) {
       lineReportPageId: record.lineReportPageId,
       productCostDbId: record.productCostDbId,
       weeklyActionsDbId: record.weeklyActionsDbId,
+      instructionsPageId: record.instructionsPageId,
       notionToken: record.notionTokenEnc ? "***masked***" : "",
     })),
   });
@@ -118,6 +120,7 @@ export async function POST(request: Request) {
     lineReportPageId: body.lineReportPageId!.trim(),
     productCostDbId: body.productCostDbId!.trim(),
     weeklyActionsDbId: body.weeklyActionsDbId!.trim(),
+    instructionsPageId: (body.instructionsPageId ?? "").trim(),
     isActive: body.isActive ?? true,
   });
   await logTenantAudit(request, access, {

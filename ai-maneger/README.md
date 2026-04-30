@@ -7,7 +7,7 @@ Notion のプロジェクトDBを正本として使う、`ootsuki2` 配下の管
 運用の単一入口は `/dashboard` です（日次入力・週次レビュー・CSV 取込・AI 関連はここに集約）。
 
 - `/` → `/dashboard` にリダイレクト
-- `/dashboard` ダッシュボード（日次入力、週次レビュー、CSV、AI運用アシスタント、エージェントハブ）
+- `/dashboard` ダッシュボード（運用指示書、日次入力、週次レビュー、CSV、AI運用アシスタント、エージェントハブ）
 - `/daily-input` `/reviews` → `/dashboard` にリダイレクト（旧URL互換）
 - `/projects` プロジェクト一覧
 - `/projects/[id]` プロジェクト詳細
@@ -26,6 +26,7 @@ Notion のプロジェクトDBを正本として使う、`ootsuki2` 配下の管
 - `NOTION_OOTSUKI_LINE_REPORT_PAGE_ID`
 - `NOTION_OOTSUKI_PRODUCT_COST_DB_ID`
 - `NOTION_OOTSUKI_WEEKLY_ACTIONS_DB_ID`
+- `NOTION_OOTSUKI_INSTRUCTIONS_PAGE_ID`（任意・未設定でも可／ダッシュボード「運用指示書」で Notion ページ本文を表示）
 - `NEXT_PUBLIC_APP_NAME`
 - `APP_AUTH_SESSION_SECRET`
 - `APP_AUTH_USERS_JSON`
@@ -517,7 +518,7 @@ npm run dev
   - Build Command: `npm run build`（既定）
   - Output: Next.js 既定（変更不要）
 4. **Environment Variables** に、ローカルの `.env.local` と同じキーを登録する（本番・プレビューどちらに入れるかは用途に合わせて選択）。
-  - 必須（Notion）: `NOTION_API_KEY`、`NOTION_PROJECT_DB_ID`、`NOTION_OOTSUKI_PROJECT_PAGE_ID`、`NOTION_OOTSUKI_DAILY_SALES_DB_ID`、`NOTION_OOTSUKI_KPI_DB_ID`、`NOTION_OOTSUKI_MEMO_DB_ID`、`NOTION_OOTSUKI_LINE_REPORT_PAGE_ID`、`NOTION_OOTSUKI_PRODUCT_COST_DB_ID`、`NOTION_OOTSUKI_WEEKLY_ACTIONS_DB_ID`
+  - 必須（Notion）: `NOTION_API_KEY`、`NOTION_PROJECT_DB_ID`、`NOTION_OOTSUKI_PROJECT_PAGE_ID`、`NOTION_OOTSUKI_DAILY_SALES_DB_ID`、`NOTION_OOTSUKI_KPI_DB_ID`、`NOTION_OOTSUKI_MEMO_DB_ID`、`NOTION_OOTSUKI_LINE_REPORT_PAGE_ID`、`NOTION_OOTSUKI_PRODUCT_COST_DB_ID`、`NOTION_OOTSUKI_WEEKLY_ACTIONS_DB_ID`（任意で `NOTION_OOTSUKI_INSTRUCTIONS_PAGE_ID`＝ダッシュボードの運用指示書）
   - 必須（個別認証）: `APP_AUTH_SESSION_SECRET`、`APP_AUTH_USERS_JSON`
   - 推奨: `NEXT_PUBLIC_APP_NAME`
   - 任意: `NOTION_API_TOKEN`（`NOTION_API_KEY` の代わり／併用のフォールバック）
@@ -567,6 +568,41 @@ npx vercel --prod # 本番
 
 
 プロパティ名が完全一致しない運用に耐えるなら、**テナント別のプロパティマッピング**（表示名 → 内部キー）を設ける選択肢がある。
+
+### クライアントごとに CSV 列名が違う場合の方針
+
+Notion DB はできるだけ **標準スキーマに統一**し、CSV 側の列名差分は **マッピングで吸収**する。
+
+#### 基本方針
+
+- **Notion DB 側**: `日付` / `売上` / `客数` / `商品名` / `売上金額` / `粗利率(%)` など、アプリが要求する標準プロパティ名・型に揃える。
+- **CSV 側**: クライアントや POS により列名が違う前提で、`売上` / `売上(税抜)` / `当年実績` のような別名を内部キーへ変換する。
+- **小規模運用**: まずはコード側のエイリアス配列に列名を追加する。
+- **テナントが増える運用**: Supabase などの設定ストアに、テナント別 CSV マッピングを保存する。
+
+#### 将来の設定テーブル案
+
+例: `tenant_csv_mappings`
+
+
+| tenant_key | csv_type         | internal_key    | csv_column_names |
+| ---------- | ---------------- | --------------- | ---------------- |
+| demo       | daily_sales      | sales           | `売上,売上(税抜),当年実績` |
+| demo       | daily_sales      | customers       | `客数,当年客数`        |
+| client_a   | daily_sales      | sales           | `税抜売上,売上高`       |
+| client_b   | product_analysis | productName     | `商品名,メニュー名,品名`   |
+| client_b   | product_analysis | grossMarginRate | `粗利率(%),粗利率,利益率` |
+
+
+この形にすると、クライアント追加時にコードを毎回修正せず、管理画面や seed で「この列は売上」「この列は客数」と登録できる。
+
+#### 実務上の判断
+
+- **短期**: CSV のヘッダを見て、足りない別名を `daily-input-form.tsx` の CSV エイリアスへ追加する。
+- **中期**: 標準CSVテンプレートを用意し、できるクライアントにはテンプレートへ寄せてもらう。
+- **長期**: `tenant_configs` と同じ考え方で、CSV列名マッピングも DB 保存に寄せる。
+
+結論: **Notion DB は標準化、CSV はクライアント別マッピングで吸収**するのが安全。
 
 ### Notion AI について
 

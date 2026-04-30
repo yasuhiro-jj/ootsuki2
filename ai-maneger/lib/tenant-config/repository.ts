@@ -79,6 +79,7 @@ function rowToRecord(row: Record<string, unknown>): TenantConfigRecord {
     lineReportPageId: String(row.line_report_page_id || ""),
     productCostDbId: String(row.product_cost_db_id || ""),
     weeklyActionsDbId: String(row.weekly_actions_db_id || ""),
+    instructionsPageId: String(row.instructions_page_id || ""),
     isActive: Boolean(row.is_active),
     updatedAt: String(row.updated_at || ""),
   };
@@ -118,7 +119,8 @@ export async function fetchTenantConfigRecord(tenantKey: TenantKey): Promise<Ten
   const result = await client.query(
     `SELECT tenant_key, notion_token_enc, project_db_id, ootsuki_project_page_id,
             daily_sales_db_id, kpi_db_id, memo_db_id, line_report_page_id,
-            product_cost_db_id, weekly_actions_db_id, is_active, updated_at
+            product_cost_db_id, weekly_actions_db_id, instructions_page_id,
+            is_active, updated_at
        FROM tenant_configs
       WHERE tenant_key = $1 AND is_active = TRUE
       LIMIT 1`,
@@ -133,7 +135,8 @@ export async function listTenantConfigRecords(): Promise<TenantConfigRecord[]> {
   const result = await client.query(
     `SELECT tenant_key, notion_token_enc, project_db_id, ootsuki_project_page_id,
             daily_sales_db_id, kpi_db_id, memo_db_id, line_report_page_id,
-            product_cost_db_id, weekly_actions_db_id, is_active, updated_at
+            product_cost_db_id, weekly_actions_db_id, instructions_page_id,
+            is_active, updated_at
        FROM tenant_configs
       ORDER BY tenant_key ASC`,
   );
@@ -150,9 +153,10 @@ export async function upsertTenantConfigRecord(record: Omit<TenantConfigRecord, 
     `INSERT INTO tenant_configs (
       tenant_key, notion_token_enc, project_db_id, ootsuki_project_page_id,
       daily_sales_db_id, kpi_db_id, memo_db_id, line_report_page_id,
-      product_cost_db_id, weekly_actions_db_id, is_active, updated_at
+      product_cost_db_id, weekly_actions_db_id, instructions_page_id,
+      is_active, updated_at
     ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW()
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW()
     )
     ON CONFLICT (tenant_key) DO UPDATE SET
       notion_token_enc = EXCLUDED.notion_token_enc,
@@ -164,6 +168,7 @@ export async function upsertTenantConfigRecord(record: Omit<TenantConfigRecord, 
       line_report_page_id = EXCLUDED.line_report_page_id,
       product_cost_db_id = EXCLUDED.product_cost_db_id,
       weekly_actions_db_id = EXCLUDED.weekly_actions_db_id,
+      instructions_page_id = EXCLUDED.instructions_page_id,
       is_active = EXCLUDED.is_active,
       updated_at = NOW()`,
     [
@@ -177,6 +182,7 @@ export async function upsertTenantConfigRecord(record: Omit<TenantConfigRecord, 
       record.lineReportPageId,
       record.productCostDbId,
       record.weeklyActionsDbId,
+      record.instructionsPageId,
       record.isActive,
     ],
   );

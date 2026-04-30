@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS tenant_configs (
   line_report_page_id TEXT NOT NULL,
   product_cost_db_id TEXT NOT NULL,
   weekly_actions_db_id TEXT NOT NULL,
+  instructions_page_id TEXT NOT NULL DEFAULT '',
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

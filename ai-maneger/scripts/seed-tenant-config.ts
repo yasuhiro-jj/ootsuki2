@@ -26,6 +26,7 @@ async function seedTenant(tenant: TenantKey) {
     lineReportPageId: config.lineReportPageId,
     productCostDbId: config.productCostDbId,
     weeklyActionsDbId: config.weeklyActionsDbId,
+    instructionsPageId: config.instructionsPageId,
     isActive: true,
   });
 }

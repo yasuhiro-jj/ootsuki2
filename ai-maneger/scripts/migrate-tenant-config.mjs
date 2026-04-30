@@ -49,6 +49,9 @@ const client = new Client({ connectionString });
 try {
   await client.connect();
   await client.query(sql);
+  await client.query(
+    "ALTER TABLE tenant_configs ADD COLUMN IF NOT EXISTS instructions_page_id TEXT NOT NULL DEFAULT ''",
+  );
   console.log("tenant_configs schema migrated.");
 } catch (error) {
   console.error("migration failed:", error);

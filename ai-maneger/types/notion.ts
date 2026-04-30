@@ -50,6 +50,11 @@ export interface NotionBlock {
   heading_2?: { rich_text?: NotionRichTextItem[] };
   heading_3?: { rich_text?: NotionRichTextItem[] };
   bulleted_list_item?: { rich_text?: NotionRichTextItem[] };
+  numbered_list_item?: { rich_text?: NotionRichTextItem[] };
+  to_do?: { rich_text?: NotionRichTextItem[] };
+  toggle?: { rich_text?: NotionRichTextItem[] };
+  quote?: { rich_text?: NotionRichTextItem[] };
+  callout?: { rich_text?: NotionRichTextItem[] };
 }
 
 export interface MinimalPageBlock {

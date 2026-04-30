@@ -9,6 +9,7 @@ loadEnvConfig(process.cwd());
 type Target = {
   key: keyof TenantNotionConfig;
   type: "database" | "page";
+  optional?: boolean;
 };
 
 const targets: Target[] = [
@@ -20,6 +21,7 @@ const targets: Target[] = [
   { key: "lineReportPageId", type: "page" },
   { key: "productCostDbId", type: "database" },
   { key: "weeklyActionsDbId", type: "database" },
+  { key: "instructionsPageId", type: "page", optional: true },
 ];
 
 function toNotionId(raw: string): string {
@@ -62,6 +64,10 @@ async function main() {
   for (const target of targets) {
     const rawId = tenantConfig[target.key];
     if (!rawId) {
+      if (target.optional) {
+        console.log(`⚪ ${target.key} : (任意・未設定)`);
+        continue;
+      }
       console.error(`❌ ${target.key} : NOT SET`);
       ng += 1;
       continue;

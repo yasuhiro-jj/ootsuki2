@@ -12,6 +12,7 @@ import { SalesOverviewPanel } from "@/components/ootsuki/sales-overview-panel";
 import { UpdatedBanner } from "@/components/ootsuki/updated-banner";
 import { WeeklyActionsPanel } from "@/components/ootsuki/weekly-actions-panel";
 import { WeeklyJudgmentPanel } from "@/components/ootsuki/weekly-judgment-panel";
+import { NotionInstructionsPanel } from "@/components/ootsuki/notion-instructions-panel";
 import { recommendedAgents } from "@/lib/agents";
 import { getCurrentTenantAccessResult } from "@/lib/api/tenant-access";
 import { formatDateTime } from "@/lib/format";
@@ -31,6 +32,7 @@ import {
   getLatestProjectDirectionEntries,
   getLatestStrategyMemo,
   getLatestWeeklyReviewEntries,
+  getNotionInstructionsDocument,
   getOotsukiProjectOverview,
   getWeeklyActionPlan,
   getWeeklyReviewDraft,
@@ -67,6 +69,7 @@ export default async function DashboardPage() {
     projectDirectionsResult,
     latestWeeklyReviewsResult,
     memoEntriesResult,
+    instructionsResult,
   ] = await Promise.allSettled([
     getOotsukiProjectOverview(),
     getKpiEntries(),
@@ -74,6 +77,7 @@ export default async function DashboardPage() {
     getLatestProjectDirectionEntries(12),
     getLatestWeeklyReviewEntries(1),
     getLatestDecisionMemoEntries(5),
+    getNotionInstructionsDocument(),
   ]);
   const project =
     projectResult.status === "fulfilled"
@@ -93,6 +97,15 @@ export default async function DashboardPage() {
   const latestWeeklyReviews =
     latestWeeklyReviewsResult.status === "fulfilled" ? latestWeeklyReviewsResult.value : [];
   const memoEntries = memoEntriesResult.status === "fulfilled" ? memoEntriesResult.value : [];
+  const instructionsDoc =
+    instructionsResult.status === "fulfilled"
+      ? instructionsResult.value
+      : {
+          configured: false,
+          title: "運用指示書",
+          body: "指示書の取得に失敗しました。しばらくしてから再読み込みしてください。",
+          pageId: "",
+        };
   const now = new Date();
   const currentWeek = aggregateWeek(entries, now);
   const previousWeek = aggregateWeek(
@@ -139,6 +152,15 @@ export default async function DashboardPage() {
       description="日次入力、今週の数字確認、週次レビュー、LINE配信文の確認までを一画面で回せる運用画面です。通常作業はこの画面を起点に進めます。"
     >
       <UpdatedBanner />
+
+      <section className="mt-4">
+        <SectionCard
+          title="運用指示書"
+          description="Notion の専用ページに書いた内容を表示します（1行目を見出し、2行目以降を本文として表示。LINE配信ページと同様にページ本文のブロックを読みます）。"
+        >
+          <NotionInstructionsPanel document={instructionsDoc} />
+        </SectionCard>
+      </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <SectionCard>

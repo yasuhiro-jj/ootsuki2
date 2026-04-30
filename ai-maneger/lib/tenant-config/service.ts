@@ -103,6 +103,7 @@ function buildOotsukiEnvConfig(): TenantNotionConfig {
     lineReportPageId: read(process.env.NOTION_OOTSUKI_LINE_REPORT_PAGE_ID),
     productCostDbId: read(process.env.NOTION_OOTSUKI_PRODUCT_COST_DB_ID),
     weeklyActionsDbId: read(process.env.NOTION_OOTSUKI_WEEKLY_ACTIONS_DB_ID),
+    instructionsPageId: read(process.env.NOTION_OOTSUKI_INSTRUCTIONS_PAGE_ID),
   };
 }
 
@@ -118,6 +119,7 @@ function buildDemoEnvConfig(): TenantNotionConfig {
     lineReportPageId: read(process.env.NOTION_DEMO_OOTSUKI_LINE_REPORT_PAGE_ID),
     productCostDbId: read(process.env.NOTION_DEMO_OOTSUKI_PRODUCT_COST_DB_ID),
     weeklyActionsDbId: read(process.env.NOTION_DEMO_OOTSUKI_WEEKLY_ACTIONS_DB_ID),
+    instructionsPageId: read(process.env.NOTION_DEMO_OOTSUKI_INSTRUCTIONS_PAGE_ID),
   };
 }
 
@@ -138,6 +140,7 @@ function mergeWithFallback(recordConfig: TenantNotionConfig, fallback: TenantNot
     lineReportPageId: recordConfig.lineReportPageId || fallback.lineReportPageId,
     productCostDbId: recordConfig.productCostDbId || fallback.productCostDbId,
     weeklyActionsDbId: recordConfig.weeklyActionsDbId || fallback.weeklyActionsDbId,
+    instructionsPageId: recordConfig.instructionsPageId || fallback.instructionsPageId,
   };
 }
 
@@ -167,6 +170,7 @@ export async function getTenantNotionConfig(tenant: TenantKey): Promise<TenantNo
       lineReportPageId: record.lineReportPageId,
       productCostDbId: record.productCostDbId,
       weeklyActionsDbId: record.weeklyActionsDbId,
+      instructionsPageId: record.instructionsPageId,
     },
     fallback,
   );

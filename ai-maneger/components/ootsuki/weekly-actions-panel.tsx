@@ -107,7 +107,11 @@ export function WeeklyActionsPanel({
       if (data.plan) {
         setDraftText(toEditableText(data.plan.actions));
       }
-      setStatus("今週の実行項目を Notion に保存しました。");
+      setStatus(
+        data.plan
+          ? "今週の実行項目を Notion に保存しました。"
+          : "Notion への保存リクエストは成功しましたが、読み返しで該当週が見つかりませんでした。週次アクション DB の「週開始」「週終了」が date 型で存在し名前が一致しているか、環境変数・tenant_configs の weekly_actions が開いている DB と同一か確認してください。",
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "保存に失敗しました。");
     } finally {

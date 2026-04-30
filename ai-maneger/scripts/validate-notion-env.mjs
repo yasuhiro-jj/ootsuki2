@@ -18,6 +18,8 @@ const OPTIONAL_KEYS = [
   "OPENAI_API_KEY",
   "OPENAI_MODEL",
   "OPENAI_TEMPERATURE",
+  "NOTION_OOTSUKI_INSTRUCTIONS_PAGE_ID",
+  "NOTION_DEMO_OOTSUKI_INSTRUCTIONS_PAGE_ID",
 ];
 
 function parseEnvFile(envPath) {
@@ -97,6 +99,14 @@ function main() {
       warnings.push(`${key} が ${seen.get(normalized)} と同一 ID です（意図した設定か確認してください）。`);
     } else {
       seen.set(normalized, key);
+    }
+  }
+
+  for (const key of OPTIONAL_KEYS) {
+    const value = env[key]?.trim();
+    if (!value) continue;
+    if (key.endsWith("_INSTRUCTIONS_PAGE_ID") && !isNotionIdLike(value)) {
+      warnings.push(`${key} は Notion ID 形式（32桁hex、ハイフン可）ではない可能性があります。`);
     }
   }
 

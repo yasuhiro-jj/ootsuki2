@@ -12,6 +12,7 @@ export type TenantNotionConfig = {
   lineReportPageId: string;
   productCostDbId: string;
   weeklyActionsDbId: string;
+  instructionsPageId: string;
 };
 
 export type TenantConfigRecord = {
@@ -25,6 +26,7 @@ export type TenantConfigRecord = {
   lineReportPageId: string;
   productCostDbId: string;
   weeklyActionsDbId: string;
+  instructionsPageId: string;
   isActive: boolean;
   updatedAt: string;
 };
