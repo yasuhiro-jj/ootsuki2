@@ -21,7 +21,23 @@ export default async function EditProjectPage({ params }: EditProjectPageProps) 
     );
   }
 
-  const project = await getProjectById(params.id);
+  const projectResult = await Promise.allSettled([getProjectById(params.id)]);
+  if (projectResult[0].status === "rejected") {
+    return (
+      <AppShell title="Edit project" description="Notion data could not be loaded.">
+        <ErrorPanel
+          title="Notion data load failed"
+          message={
+            projectResult[0].reason instanceof Error
+              ? projectResult[0].reason.message
+              : "Unknown Notion error"
+          }
+        />
+      </AppShell>
+    );
+  }
+
+  const project = projectResult[0].value;
   const action = updateProjectAction.bind(null, params.id);
 
   return (

@@ -32,10 +32,27 @@ export default async function ProjectDetailPage({ params }: ProjectDetailPagePro
     );
   }
 
-  const [project, pageBlocks] = await Promise.all([
+  const [projectResult, pageBlocksResult] = await Promise.allSettled([
     getProjectById(params.id),
     getPageExcerpt(params.id),
   ]);
+  if (projectResult.status === "rejected") {
+    return (
+      <AppShell title="Project detail" description="Notion data could not be loaded.">
+        <ErrorPanel
+          title="Notion data load failed"
+          message={
+            projectResult.reason instanceof Error
+              ? projectResult.reason.message
+              : "Unknown Notion error"
+          }
+        />
+      </AppShell>
+    );
+  }
+
+  const project = projectResult.value;
+  const pageBlocks = pageBlocksResult.status === "fulfilled" ? pageBlocksResult.value : [];
 
   if (!project.id) {
     notFound();

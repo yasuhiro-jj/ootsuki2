@@ -141,7 +141,11 @@ export default async function DashboardPage() {
     )
     .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   const agentChatEnabled = Boolean(process.env.OPENAI_API_KEY?.trim());
-  const weeklyActionsConfigReady = Boolean((await getActiveTenantNotionConfig()).weeklyActionsDbId);
+  const activeTenantConfigResult = await Promise.allSettled([getActiveTenantNotionConfig()]);
+  const weeklyActionsConfigReady =
+    activeTenantConfigResult[0].status === "fulfilled"
+      ? Boolean(activeTenantConfigResult[0].value.weeklyActionsDbId)
+      : false;
   const dashboardTitle = access.tenant === "demo" ? "デモダッシュボード" : "おおつき ダッシュボード";
   const projectDisplayName = access.tenant === "demo" ? "デモ店" : project.name;
   const canWriteMemo = access.role === "editor" || access.role === "admin" || access.role === "owner";

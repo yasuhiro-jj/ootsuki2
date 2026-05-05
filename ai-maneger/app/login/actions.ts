@@ -47,8 +47,11 @@ export async function logoutAction() {
 }
 
 export async function getCurrentLoginPrincipal() {
-  const cookieStore = await cookies();
-  const session = verifyAuthSessionToken(cookieStore.get(AUTH_SESSION_COOKIE)?.value);
-  return session?.sub || null;
+  try {
+    const cookieStore = await cookies();
+    const session = verifyAuthSessionToken(cookieStore.get(AUTH_SESSION_COOKIE)?.value);
+    return session?.sub || null;
+  } catch {
+    return null;
+  }
 }
-

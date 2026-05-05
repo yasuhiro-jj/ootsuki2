@@ -58,7 +58,26 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
     );
   }
 
-  const projects = await getProjects();
+  const projectsResult = await Promise.allSettled([getProjects()]);
+  if (projectsResult[0].status === "rejected") {
+    return (
+      <AppShell
+        title="Projects"
+        description="Notion data could not be loaded."
+      >
+        <ErrorPanel
+          title="Notion data load failed"
+          message={
+            projectsResult[0].reason instanceof Error
+              ? projectsResult[0].reason.message
+              : "Unknown Notion error"
+          }
+        />
+      </AppShell>
+    );
+  }
+
+  const projects = projectsResult[0].value;
   const filteredProjects = filterProjects(projects, searchParams);
   const statuses = Array.from(new Set(projects.map((project) => project.status).filter(Boolean)));
   const businessTypes = Array.from(
