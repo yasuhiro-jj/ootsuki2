@@ -23,6 +23,11 @@ export interface KpiSnapshotEntry {
   salesYoY?: number;
   customersYoY?: number;
   averageSpendYoY?: number;
+  budget?: number;
+  achievementRate?: number;
+  previousSales?: number;
+  previousCustomers?: number;
+  previousAverageSpend?: number;
   returnsAmount: number;
   discountAmount: number;
   notes: string;
@@ -76,6 +81,9 @@ export interface WeeklyAggregate {
   grossMarginRateWoW?: number;
   lineRegistrationsWoW?: number;
   lineVisitsWoW?: number;
+  salesYoY?: number;
+  customersYoY?: number;
+  averageSpendYoY?: number;
   notes: string[];
   actions: string[];
   totalDays: number;

@@ -19,6 +19,7 @@ import { formatDateTime } from "@/lib/format";
 import {
   aggregateWeek,
   attachWeekOverWeek,
+  attachYearOverYear,
   buildMetricAlerts,
   formatCount,
   formatPercentDelta,
@@ -112,7 +113,9 @@ export default async function DashboardPage() {
     entries,
     new Date(new Date(`${currentWeek.weekStart}T00:00:00.000Z`).getTime() - 86400000),
   );
-  const weekSummary = attachWeekOverWeek(currentWeek, previousWeek);
+  const lastYearDate = new Date(Date.UTC(now.getUTCFullYear() - 1, now.getUTCMonth(), now.getUTCDate()));
+  const sameWeekLastYear = aggregateWeek(entries, lastYearDate);
+  const weekSummary = attachYearOverYear(attachWeekOverWeek(currentWeek, previousWeek), sameWeekLastYear);
   const metricAlerts = buildMetricAlerts(weekSummary);
   const latestWeeklyReview = latestWeeklyReviews[0];
   const judgmentMaterial =
@@ -142,10 +145,10 @@ export default async function DashboardPage() {
     .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   const agentChatEnabled = Boolean(process.env.OPENAI_API_KEY?.trim());
   const activeTenantConfigResult = await Promise.allSettled([getActiveTenantNotionConfig()]);
-  const weeklyActionsConfigReady =
-    activeTenantConfigResult[0].status === "fulfilled"
-      ? Boolean(activeTenantConfigResult[0].value.weeklyActionsDbId)
-      : false;
+  const activeTenantConfig =
+    activeTenantConfigResult[0].status === "fulfilled" ? activeTenantConfigResult[0].value : null;
+  const weeklyActionsConfigReady = Boolean(activeTenantConfig?.weeklyActionsDbId);
+  const salesOverviewConfigReady = Boolean(activeTenantConfig?.dailySalesDbId && activeTenantConfig?.kpiDbId);
   const dashboardTitle = access.tenant === "demo" ? "デモダッシュボード" : "おおつき ダッシュボード";
   const projectDisplayName = access.tenant === "demo" ? "デモ店" : project.name;
   const canWriteMemo = access.role === "editor" || access.role === "admin" || access.role === "owner";
@@ -171,21 +174,21 @@ export default async function DashboardPage() {
           <p className="text-sm text-stone-500">今週売上</p>
           <p className="mt-3 text-4xl font-bold">{formatYen(weekSummary.sales)}</p>
           <p className="mt-2 text-sm text-stone-500">
-            前週比 {formatPercentDelta(weekSummary.salesWoW)}
+            昨対比 {formatPercentDelta(weekSummary.salesYoY)}
           </p>
         </SectionCard>
         <SectionCard>
           <p className="text-sm text-stone-500">今週客数</p>
           <p className="mt-3 text-4xl font-bold">{formatCount(weekSummary.customers)}</p>
           <p className="mt-2 text-sm text-stone-500">
-            前週比 {formatPercentDelta(weekSummary.customersWoW)}
+            昨対比 {formatPercentDelta(weekSummary.customersYoY)}
           </p>
         </SectionCard>
         <SectionCard>
           <p className="text-sm text-stone-500">今週客単価</p>
           <p className="mt-3 text-4xl font-bold">{formatYen(weekSummary.averageSpend)}</p>
           <p className="mt-2 text-sm text-stone-500">
-            前週比 {formatPercentDelta(weekSummary.averageSpendWoW)}
+            昨対比 {formatPercentDelta(weekSummary.averageSpendYoY)}
           </p>
         </SectionCard>
         <SectionCard>
@@ -333,7 +336,11 @@ export default async function DashboardPage() {
           title="売上早見表"
           description="Notion を開かなくても、選択月の日次売上と週次売上、昨対比をまとめて確認できます。"
         >
-          <SalesOverviewPanel entries={entries} />
+          <SalesOverviewPanel
+            entries={entries}
+            configReady={salesOverviewConfigReady}
+            tenant={access.tenant}
+          />
         </SectionCard>
       </section>
 
