@@ -146,6 +146,19 @@ export function attachWeekOverWeek(
   };
 }
 
+export function attachYearOverYear(
+  current: WeeklyAggregate,
+  lastYear?: WeeklyAggregate | null,
+): WeeklyAggregate {
+  if (!lastYear) return current;
+  return {
+    ...current,
+    salesYoY: percentDelta(current.sales, lastYear.sales),
+    customersYoY: percentDelta(current.customers, lastYear.customers),
+    averageSpendYoY: percentDelta(current.averageSpend, lastYear.averageSpend),
+  };
+}
+
 export function buildMetricAlerts(summary: WeeklyAggregate): DashboardMetricAlert[] {
   return [
     {
