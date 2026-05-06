@@ -248,7 +248,7 @@ function mapCsvRows(text: string): CsvImportedRow[] {
       const date = csvFirstNormalizedDate(record, ["当年日付", "日付", "日付メモ"]);
       if (!date) return null;
 
-      const salesText = csvFirstNonEmpty(record, ["当年実績", "売上", "売上(税抜)"]);
+      const salesText = csvFirstNonEmpty(record, ["当年実績", "当年売上", "売上", "売上(税抜)"]);
       const customersText = csvFirstNonEmpty(record, ["当年客数", "客数"]);
 
       return {
@@ -267,18 +267,18 @@ function mapCsvRows(text: string): CsvImportedRow[] {
         paymentMemo: csvFirstNonEmpty(record, ["決済内訳メモ", "決済メモ", "決済内訳（メモ）"]),
         memo: csvFirstNonEmpty(record, ["メモ", "所感/メモ", "備考"]),
         salesYoY: parseNumberText(
-          csvFirstNonEmpty(record, ["差前年差異", "売上昨対比", "売上前年比(%)"]),
+          csvFirstNonEmpty(record, ["前年売上比", "前年比", "差前年差異", "売上昨対比", "売上前年比(%)"]),
         ),
         customersYoY: parseNumberText(
-          csvFirstNonEmpty(record, ["差前年差客", "客数昨対比", "客数前年比(%)"]),
+          csvFirstNonEmpty(record, ["前年客数比", "差前年差客", "客数昨対比", "客数前年比(%)"]),
         ),
         averageSpendYoY: parseNumberText(
-          csvFirstNonEmpty(record, ["前差客単", "客単価昨対比", "客単価前年比(%)"]),
+          csvFirstNonEmpty(record, ["前年客単比", "前差客単", "客単価昨対比", "客単価前年比(%)"]),
         ),
         budget: parseNumberText(record["当年予算"] ?? ""),
         achievementRate: parseNumberText(record["当年達成率"] ?? ""),
         previousDate: normalizeDate(record["前年日付"] ?? ""),
-        previousSales: parseNumberText(record["前年実績"] ?? ""),
+        previousSales: parseNumberText(csvFirstNonEmpty(record, ["前年売上", "前年実績"])),
         previousCustomers: parseNumberText(record["前年客数"] ?? ""),
         previousAverageSpend: parseNumberText(record["前年客単"] ?? ""),
       };

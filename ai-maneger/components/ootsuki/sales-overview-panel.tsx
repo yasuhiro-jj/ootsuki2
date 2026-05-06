@@ -8,10 +8,13 @@ import {
   formatYen,
   isWeeklySummaryEntry,
 } from "@/lib/ootsuki";
+import type { TenantKey } from "@/lib/tenant-config/types";
 import type { KpiSnapshotEntry } from "@/types/ootsuki";
 
 interface SalesOverviewPanelProps {
   entries: KpiSnapshotEntry[];
+  configReady: boolean;
+  tenant: TenantKey;
 }
 
 type DailyEntry = KpiSnapshotEntry & { date: string };
@@ -47,7 +50,7 @@ function formatShortRange(start: string, end: string) {
   return `${start.slice(5).replace("-", "/")} - ${end.slice(5).replace("-", "/")}`;
 }
 
-export function SalesOverviewPanel({ entries }: SalesOverviewPanelProps) {
+export function SalesOverviewPanel({ entries, configReady, tenant }: SalesOverviewPanelProps) {
   const dailyEntries = useMemo(
     () =>
       entries
@@ -167,6 +170,14 @@ export function SalesOverviewPanel({ entries }: SalesOverviewPanelProps) {
 
   return (
     <div className="grid gap-4">
+      {!configReady ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+          {tenant === "demo"
+            ? "`NOTION_DEMO_OOTSUKI_DAILY_SALES_DB_ID` と `NOTION_DEMO_OOTSUKI_KPI_DB_ID` が未設定のため、売上早見表を表示できません。"
+            : "`NOTION_OOTSUKI_DAILY_SALES_DB_ID` と `NOTION_OOTSUKI_KPI_DB_ID` が未設定のため、売上早見表を表示できません。"}
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-stone-500">表示月</p>

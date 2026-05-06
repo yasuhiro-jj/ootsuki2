@@ -1,7 +1,8 @@
 "use server";
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { shouldUseSecureCookie } from "@/lib/auth/cookie-options";
 import { AUTH_SESSION_COOKIE, createAuthSessionToken, verifyAuthSessionToken } from "@/lib/auth/session";
 import { findAuthUser, verifyPassword } from "@/lib/auth/users";
 
@@ -29,11 +30,15 @@ export async function loginAction(_state: LoginState, formData: FormData): Promi
   }
 
   const cookieStore = await cookies();
+  const headerStore = await headers();
   cookieStore.set(AUTH_SESSION_COOKIE, createAuthSessionToken(user.id), {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
-    secure: process.env.NODE_ENV === "production",
+    secure: shouldUseSecureCookie({
+      host: headerStore.get("x-forwarded-host") || headerStore.get("host"),
+      protocol: headerStore.get("x-forwarded-proto"),
+    }),
     maxAge: 60 * 60 * 12,
   });
 

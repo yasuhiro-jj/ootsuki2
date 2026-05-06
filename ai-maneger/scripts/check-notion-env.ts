@@ -45,18 +45,29 @@ function readTitleFromPageProperties(properties: unknown): string {
   return "(no title)";
 }
 
-async function main() {
+type CheckResult = {
+  tenant: TenantKey;
+  ok: number;
+  ng: number;
+};
+
+function parseTenantArg(): "active" | "all" | TenantKey {
   const tenantArg = process.argv.find((arg) => arg.startsWith("--tenant="))?.split("=")[1];
-  const explicitTenant = tenantArg === "demo" || tenantArg === "ootsuki" ? (tenantArg as TenantKey) : null;
-  const tenantConfig = explicitTenant ? await getTenantNotionConfig(explicitTenant) : await getActiveTenantNotionConfig();
+  if (!tenantArg) return "active";
+  if (tenantArg === "all") return "all";
+  if (tenantArg === "demo" || tenantArg === "ootsuki") return tenantArg;
+  throw new Error("`--tenant` は demo / ootsuki / all のいずれかを指定してください。");
+}
+
+async function checkTenant(tenantConfig: TenantNotionConfig): Promise<CheckResult> {
   if (!tenantConfig.notionToken) {
     console.error(`❌ ${tenantConfig.tenant} tenant の notionToken が未設定です。`);
-    process.exit(1);
+    return { tenant: tenantConfig.tenant, ok: 0, ng: 1 };
   }
 
   const notion = new Client({ auth: tenantConfig.notionToken });
   const label = process.env.NOTION_ENV_LABEL ?? "(unset)";
-  console.log(`[check:notion-env] LABEL=${label} TENANT=${tenantConfig.tenant}`);
+  console.log(`\n[check:notion-env] LABEL=${label} TENANT=${tenantConfig.tenant}`);
 
   let ok = 0;
   let ng = 0;
@@ -95,7 +106,34 @@ async function main() {
   }
 
   console.log(`\nResult: ${ok} OK / ${ng} NG`);
-  process.exit(ng === 0 ? 0 : 1);
+  return { tenant: tenantConfig.tenant, ok, ng };
+}
+
+async function main() {
+  const tenantMode = parseTenantArg();
+  if (tenantMode === "active") {
+    const result = await checkTenant(await getActiveTenantNotionConfig());
+    process.exit(result.ng === 0 ? 0 : 1);
+  }
+
+  const tenants: TenantKey[] = tenantMode === "all" ? ["demo", "ootsuki"] : [tenantMode];
+  const results: CheckResult[] = [];
+  for (const tenant of tenants) {
+    results.push(await checkTenant(await getTenantNotionConfig(tenant)));
+  }
+
+  if (results.length > 1) {
+    const totalOk = results.reduce((sum, result) => sum + result.ok, 0);
+    const totalNg = results.reduce((sum, result) => sum + result.ng, 0);
+    console.log("\n=== Summary ===");
+    for (const result of results) {
+      console.log(`${result.tenant}: ${result.ok} OK / ${result.ng} NG`);
+    }
+    console.log(`TOTAL: ${totalOk} OK / ${totalNg} NG`);
+  }
+
+  const hasNg = results.some((result) => result.ng > 0);
+  process.exit(hasNg ? 1 : 0);
 }
 
 main();

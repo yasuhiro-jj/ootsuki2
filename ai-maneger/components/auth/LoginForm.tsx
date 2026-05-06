@@ -40,4 +40,3 @@ export function LoginForm({ nextPath }: { nextPath: string }) {
     </form>
   );
 }
-

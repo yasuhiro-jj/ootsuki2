@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { shouldUseSecureCookie } from "@/lib/auth/cookie-options";
 
 const TENANT_HEADER = "x-tenant-key";
 const TENANT_COOKIE = "tenant_key";
@@ -99,7 +100,10 @@ function nextWithTenant(request: NextRequest) {
       httpOnly: false,
       sameSite: "lax",
       path: "/",
-      secure: process.env.NODE_ENV === "production",
+      secure: shouldUseSecureCookie({
+        host: request.headers.get("x-forwarded-host") || request.headers.get("host"),
+        protocol: request.headers.get("x-forwarded-proto") || request.nextUrl.protocol,
+      }),
       maxAge: 60 * 60 * 24 * 30,
     });
   }

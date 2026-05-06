@@ -9,6 +9,7 @@
     "start": "next start --port 3002",
     "lint": "next lint",
     "check:notion-env": "tsx scripts/check-notion-env.ts",
+    "check:notion-env:all": "tsx scripts/check-notion-env.ts --tenant=all",
     "hash:password": "tsx scripts/hash-password.ts",
     "migrate:tenant-config": "node scripts/migrate-tenant-config.mjs",
     "seed:tenant-config": "tsx scripts/seed-tenant-config.ts"

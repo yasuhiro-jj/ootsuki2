@@ -2,15 +2,24 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "AI Maneger｜飲食店の数字と判断を、1画面で回す運用アシスタント",
+  title: "AI Maneger｜伴走型導入支援＋サポートサブスク｜飲食店の数字とAI運用",
   description:
-    "日次データを入れるだけで、AIが売上を分解し、課題・仮説・次の一手まで出てきます。Notion × AI × 飲食運用。",
+    "NotionとDBの合わせ込みは一緒に。初期の接続検証から運用定着まで伴走し、サブスクで継続サポート。飲食店向けAIダッシュボード。",
 };
 
 const DEMO_URL = "/login?tenant=demo";
 const CONTACT_EMAIL = "yasuhiro.watanabe1@gmail.com";
 
 const features = [
+  {
+    number: "00",
+    icon: "🤝",
+    title: "伴走型・導入支援",
+    description: "NotionのDB設計・ID取得・接続確認まで一緒に進めます。新規クライアントでも「設定で止まる」時間を減らし、運用に集中できる状態へ。",
+    bg: "bg-amber-50",
+    border: "border-amber-200",
+    numColor: "text-amber-600",
+  },
   {
     number: "01",
     icon: "📊",
@@ -69,55 +78,52 @@ const features = [
 
 const plans = [
   {
-    name: "スタンダード",
-    price: "¥9,800",
-    unit: "/ 月",
-    description: "1店舗の日常運用に最適",
+    name: "伴走ライト",
+    price: "要相談",
+    unit: "",
+    description: "小規模1店舗・はじめての方",
     features: [
-      "ダッシュボード（1テナント）",
-      "日次入力・週次集計",
-      "AI 分析エージェント全種",
-      "CSV 取込",
-      "Notion 連携",
-      "メールサポート",
+      "初期：Kickoff〜接続検証まで伴走",
+      "Notion DBのすり合わせ・テンプレ複製支援",
+      "サブスク：チャット中心の運用フォロー（枠は契約により）",
+      "ダッシュボード・AIエージェント利用",
+      "軽微な設定見直しの相談",
     ],
-    cta: "デモを見る",
+    cta: "無料相談",
     highlight: false,
     accentBg: "bg-violet-50",
     accentText: "text-violet-700",
     accentBorder: "border-violet-200",
   },
   {
-    name: "プロ",
-    price: "¥29,800",
-    unit: "/ 月",
-    description: "複数店舗・コンサルタント向け",
+    name: "伴走スタンダード",
+    price: "要相談",
+    unit: "",
+    description: "本格運用・定例フォロー付き",
     features: [
-      "ダッシュボード（最大5テナント）",
-      "スタンダードの全機能",
-      "マルチテナント権限管理",
-      "監査ログ（検索・CSV出力）",
-      "デモ環境（商談用）",
-      "優先メールサポート",
+      "伴走ライトの内容一式",
+      "月次ミーティング枠（回数は契約により）",
+      "CSV列・権限・トラブル切り分けを厚めに",
+      "マルチテナント・権限設計の整理（範囲内）",
+      "リリース時の影響説明と設定フォロー",
     ],
-    cta: "デモを見る",
+    cta: "無料相談",
     highlight: true,
     accentBg: "",
     accentText: "",
     accentBorder: "",
   },
   {
-    name: "エンタープライズ",
+    name: "コンサル・複数店",
     price: "要相談",
     unit: "",
-    description: "FC・複数拠点・カスタム要件",
+    description: "支援事業者・複数店舗・カスタム",
     features: [
-      "テナント数無制限",
-      "プロの全機能",
-      "専用 Notion スキーマ設計",
-      "POS 連携カスタマイズ",
-      "導入サポート込み",
-      "専任担当者",
+      "クライアントごとの初期セットアップ伴走",
+      "デモ→本番移行の再現パッケージ",
+      "監査ログ・テナント設計を含む整理",
+      "POS/CSV要件の個別調整（範囲により）",
+      "専任窓口・ SLA は要相談",
     ],
     cta: "お問い合わせ",
     highlight: false,
@@ -129,85 +135,107 @@ const plans = [
 
 const faqs = [
   {
-    q: "Notionを使ったことがないのですが大丈夫ですか？",
-    a: "無料プランで使えます。必要なDBのテンプレートをご提供しますので、コピーして接続するだけです。",
+    q: "自分でNotionのDBを全部合わせる必要がありますか？",
+    a: "必須ではありません。伴走プランではテンプレ複製や既存DBとのすり合わせを一緒に進めます。メンテに必要な知識だけ、簡潔にお渡しします。",
+  },
+  {
+    q: "SaaSだけ契約して自走はできますか？",
+    a: "技術的には可能ですが、新規では設定負荷が高くなりやすいため、当サービスは「導入支援＋サブスク」を推奨する設計です。個別ご相談ください。",
   },
   {
     q: "POSのデータはそのまま取り込めますか？",
-    a: "CSVエクスポートができるPOSであれば対応しています。列名が違っても設定で吸収できます。",
+    a: "CSVエクスポートができれば対応余地があります。列名・文字コードの差は、伴走時に確認して吸収方針を決めます。",
   },
   {
     q: "複数店舗で使えますか？",
-    a: "プロプラン以上で対応しています。店舗ごとにデータを完全に分離して管理できます。",
+    a: "可能です。テナント設計・権限は規模に応じて一緒に整理します（コンサル・複数店プランが向きます）。",
   },
   {
     q: "セキュリティは大丈夫ですか？",
-    a: "ユーザー認証・ロール別認可・操作の監査ログを実装しています。店舗ごとにデータが混ざる構造ではありません。",
+    a: "ユーザー認証・ロール別認可・監査ログを備えています。契約時に範囲を説明します。",
   },
   {
     q: "AIの回答はどこから来ていますか？",
-    a: "OpenAI（GPT-4o-mini）を使用しています。あなたのNotionのデータだけを参照します。他の店舗のデータは一切参照しません。",
+    a: "OpenAI（GPT-4o-mini）等を利用し、あなたの店のコンテキストに沿って回答します。他店データを混ぜる設計にはしていません。",
   },
   {
     q: "まずデモだけ見ることはできますか？",
-    a: "できます。架空データで動くデモ環境を用意しています。申し込み前に操作感を確認してください。",
+    a: "できます。デモは操作感の確認用です。本番のDB合わせ込みは伴走で別途進めます。",
   },
 ];
 
 export default function LpPage() {
   return (
-    <div className="min-h-screen bg-white font-sans text-stone-900">
+    <div className="min-h-screen overflow-x-hidden bg-white font-sans text-stone-900 [-webkit-tap-highlight-color:transparent]">
 
       {/* ナビゲーション */}
-      <nav className="sticky top-0 z-50 border-b border-white/20 bg-white/80 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-          <span className="bg-gradient-to-r from-violet-600 to-emerald-500 bg-clip-text text-lg font-bold tracking-tight text-transparent">
+      <nav className="sticky top-0 z-50 border-b border-stone-100 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4">
+          <span className="bg-gradient-to-r from-violet-600 to-emerald-500 bg-clip-text text-base font-bold tracking-tight text-transparent sm:text-lg">
             AI Maneger
           </span>
-          <div className="flex items-center gap-4">
-            <a href={`mailto:${CONTACT_EMAIL}`} className="hidden text-sm text-stone-500 hover:text-stone-800 sm:block">
-              お問い合わせ
+          <div className="flex shrink-0 items-center gap-2 sm:gap-4">
+            <a
+              href={`mailto:${CONTACT_EMAIL}`}
+              className="touch-manipulation rounded-full border border-stone-200 px-3 py-2.5 text-xs font-medium text-stone-600 hover:bg-stone-50 sm:hidden"
+            >
+              相談
+            </a>
+            <a
+              href={`mailto:${CONTACT_EMAIL}`}
+              className="hidden text-sm text-stone-500 hover:text-stone-800 sm:inline"
+            >
+              無料相談・お問い合わせ
             </a>
             <Link
               href={DEMO_URL}
-              className="rounded-full bg-gradient-to-r from-violet-600 to-emerald-500 px-5 py-2 text-sm font-semibold text-white shadow hover:opacity-90"
+              className="touch-manipulation inline-flex min-h-11 items-center justify-center rounded-full bg-gradient-to-r from-violet-600 to-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow hover:opacity-90 active:opacity-90 sm:min-h-0 sm:px-5 sm:py-2"
             >
-              デモを見る
+              デモ
             </Link>
           </div>
         </div>
       </nav>
 
       {/* ヒーロー */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-violet-600 via-indigo-500 to-emerald-500 py-28 text-center text-white">
+      <section className="relative overflow-hidden bg-gradient-to-br from-violet-600 via-indigo-500 to-emerald-500 pb-24 pt-16 text-center text-white sm:pb-28 sm:pt-24 md:pt-28">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.15),transparent_60%)]" />
-        <div className="relative mx-auto max-w-4xl px-6">
-          <p className="inline-block rounded-full border border-white/30 bg-white/20 px-4 py-1 text-xs font-semibold backdrop-blur">
-            Notion × AI × 飲食運用
+        <div className="relative mx-auto max-w-4xl px-4 text-balance sm:px-6">
+          <p className="inline-block rounded-full border border-white/30 bg-white/20 px-3 py-1 text-[11px] font-semibold backdrop-blur sm:text-xs">
+            伴走型導入支援 ＋ サポートサブスク
           </p>
-          <h1 className="mt-6 text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
-            今週の売上、<br className="sm:hidden" />なぜ下がったか<br />
-            すぐ分かりますか？
+          <h1 className="mt-5 text-[1.65rem] font-bold leading-snug tracking-tight sm:text-5xl sm:leading-tight">
+            DBの準備で止まらない、
+            <br className="sm:hidden" />
+            <span className="sm:inline"> </span>
+            <span className="text-yellow-300">伴走型</span>の飲食AI運用
           </h1>
-          <p className="mx-auto mt-6 max-w-xl text-lg leading-8 text-white/80">
-            日次データを入れるだけで、AIが売上を分解し、<br />
-            課題・仮説・次の一手まで、その日のうちに出てきます。
+          <p className="mx-auto mt-5 max-w-xl text-[15px] leading-relaxed text-white/85 sm:text-lg sm:leading-8">
+            NotionやDB・接続設定は、ひとりで抱え込まない。
+            <span className="hidden sm:inline">
+              <br />
+            </span>
+            <span className="sm:hidden"> </span>
+            初期から<strong className="text-white">一緒に合わせ込み</strong>し、運用フェーズも
+            <strong className="text-white">サブスクでフォロー</strong>します。
           </p>
-          <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
-            <Link
-              href={DEMO_URL}
-              className="w-full rounded-full bg-white px-8 py-4 text-base font-bold text-violet-700 shadow-lg hover:shadow-xl sm:w-auto"
-            >
-              無料デモを体験する →
-            </Link>
+          <div className="mx-auto mt-8 flex max-w-md flex-col gap-3 sm:mt-10 sm:max-w-none sm:flex-row sm:justify-center sm:gap-4">
             <a
               href={`mailto:${CONTACT_EMAIL}`}
-              className="w-full rounded-full border border-white/40 px-8 py-4 text-base font-semibold text-white backdrop-blur hover:bg-white/10 sm:w-auto"
+              className="touch-manipulation flex min-h-12 items-center justify-center rounded-full bg-white px-6 py-3.5 text-base font-bold text-violet-700 shadow-lg active:opacity-90 sm:inline-flex sm:min-h-0 sm:w-auto sm:px-8 sm:py-4"
             >
-              お問い合わせ
+              無料相談（15〜30分）→
             </a>
+            <Link
+              href={DEMO_URL}
+              className="touch-manipulation flex min-h-12 items-center justify-center rounded-full border border-white/40 px-6 py-3.5 text-base font-semibold text-white backdrop-blur active:bg-white/15 sm:inline-flex sm:min-h-0 sm:w-auto sm:px-8 sm:py-4"
+            >
+              操作デモを見る
+            </Link>
           </div>
-          <p className="mt-4 text-xs text-white/60">クレジットカード不要・申し込みなしでデモを確認できます</p>
+          <p className="mt-4 px-1 text-[11px] leading-relaxed text-white/65 sm:text-xs">
+            デモは操作感の確認用です。本番のDB合わせ込みは伴走プランで対応します
+          </p>
         </div>
 
         {/* 波形区切り */}
@@ -219,18 +247,18 @@ export default function LpPage() {
       </section>
 
       {/* 数字バナー */}
-      <section className="py-14">
-        <div className="mx-auto max-w-5xl px-6">
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <section className="py-10 sm:py-14">
+        <div className="mx-auto max-w-5xl px-4 sm:px-6">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
             {[
-              { num: "6", label: "AI エージェント", color: "text-violet-600" },
+              { num: "6+", label: "AI エージェント", color: "text-violet-600" },
               { num: "1", label: "画面で完結", color: "text-emerald-600" },
-              { num: "15", label: "分で導入完了", color: "text-orange-500" },
-              { num: "毎週", label: "AIが分析・提案", color: "text-sky-500" },
+              { num: "伴走", label: "接続まで支援", color: "text-orange-500" },
+              { num: "継続", label: "サブスクフォロー", color: "text-sky-500" },
             ].map((item) => (
-              <div key={item.label} className="rounded-2xl bg-stone-50 px-6 py-6 text-center">
-                <p className={`text-4xl font-extrabold ${item.color}`}>{item.num}</p>
-                <p className="mt-1 text-sm text-stone-500">{item.label}</p>
+              <div key={item.label} className="rounded-2xl bg-stone-50 px-3 py-4 text-center sm:px-6 sm:py-6">
+                <p className={`text-2xl font-extrabold sm:text-4xl ${item.color}`}>{item.num}</p>
+                <p className="mt-1 text-xs text-stone-500 sm:text-sm">{item.label}</p>
               </div>
             ))}
           </div>
@@ -238,58 +266,71 @@ export default function LpPage() {
       </section>
 
       {/* 課題提起 */}
-      <section className="bg-gradient-to-b from-stone-50 to-white py-20">
-        <div className="mx-auto max-w-5xl px-6">
-          <h2 className="text-center text-2xl font-bold text-stone-900 sm:text-3xl">
+      <section className="bg-gradient-to-b from-stone-50 to-white py-14 sm:py-20">
+        <div className="mx-auto max-w-5xl px-4 sm:px-6">
+          <h2 className="text-balance text-center text-xl font-bold text-stone-900 sm:text-3xl">
             こんなことで、時間を使っていませんか？
           </h2>
-          <div className="mt-10 grid gap-4 sm:grid-cols-2">
+          <div className="mt-8 grid gap-3 sm:mt-10 sm:grid-cols-2 sm:gap-4 md:grid-cols-3">
             {[
-              { text: "売上はExcel、メモはLINE、レビューはメール…データがバラバラで追えない", color: "border-l-rose-400" },
-              { text: "月に1回まとめて振り返るが、「あのとき何があったか」が思い出せない", color: "border-l-orange-400" },
-              { text: "AIツールを使いたいが、自分の店のデータで動いてくれるものがない", color: "border-l-amber-400" },
-              { text: "コンサルタントに相談したいが、毎回ゼロから説明するのが手間", color: "border-l-red-400" },
+              { text: "売上はExcel、メモはLINE…データがバラバラで、どこから揃えるか分からない", color: "border-l-rose-400" },
+              { text: "Notionは触れたが、アプリ側とDB名・型・IDを自分で一致させるのが不安", color: "border-l-orange-400" },
+              { text: "ツールだけ買っても環境構築に時間が溶け、「まだ運用できていない」", color: "border-l-amber-400" },
+              { text: "AIで分析したいが、入力とDBが整わないままになりがちと分かっている", color: "border-l-red-400" },
+              {
+                text: "飲食コンサルタントに色々聞きたいが、コンサルを雇う余裕がない。またなんとなく気が引ける",
+                color: "border-l-violet-400",
+              },
             ].map((item) => (
               <div
                 key={item.text}
                 className={`rounded-2xl border border-stone-100 bg-white px-5 py-5 shadow-sm border-l-4 ${item.color}`}
               >
-                <p className="text-sm leading-7 text-stone-700">{item.text}</p>
+                <p className="text-sm leading-relaxed text-stone-700 sm:leading-7">{item.text}</p>
               </div>
             ))}
           </div>
-          <div className="mt-10 rounded-2xl bg-gradient-to-r from-violet-600 to-emerald-500 px-8 py-6 text-center text-white">
-            <p className="text-lg font-bold">数字は毎日積み上がっているのに、活かせていない。</p>
-            <p className="mt-1 text-sm text-white/80">その問題を、AI Maneger は解決します。</p>
+          <div className="mt-8 rounded-2xl bg-gradient-to-r from-violet-600 to-emerald-500 px-5 py-5 text-center text-white sm:mt-10 sm:px-8 sm:py-6">
+            <p className="text-base font-bold leading-snug sm:text-lg">「契約した」のに、設定で止まっていませんか。</p>
+            <p className="mt-1 text-sm text-white/80">導入から定着まで、AI Maneger は伴走で支えます。</p>
           </div>
         </div>
       </section>
 
       {/* 解決策 */}
-      <section className="py-20">
-        <div className="mx-auto max-w-5xl px-6 text-center">
-          <h2 className="text-2xl font-bold text-stone-900 sm:text-3xl">
-            飲食店の「数字 × AI × 行動」を<br />1画面に集めた運用アプリ
+      <section className="py-14 sm:py-20">
+        <div className="mx-auto max-w-5xl px-4 text-center sm:px-6">
+          <h2 className="text-balance text-xl font-bold text-stone-900 sm:text-3xl">
+            アプリ ＋ <span className="text-violet-600">伴走で「合わせ込み」</span>
+            <br />
+            ＋ サブスクで運用フォロー
           </h2>
-          <p className="mx-auto mt-4 max-w-2xl text-base leading-8 text-stone-500">
-            あなたが使い慣れている <strong className="text-stone-800">Notion</strong> をデータの置き場にしながら、
-            日次売上の入力から週次レビュー、AIによる分析・提案まで、すべてを1画面から操作できます。
+          <p className="mx-auto mt-4 max-w-2xl text-left text-[15px] leading-relaxed text-stone-500 sm:text-center sm:text-base sm:leading-8">
+            <strong className="text-stone-800">Notion</strong>を正本にしつつ、DB・権限・接続のすり合わせは<strong className="text-stone-800">一緒に検証</strong>。
+            日次入力・週次集計・AI分析は1画面。難しいところは<strong className="text-stone-800">導入支援と継続サポート</strong>でカバーします。
           </p>
-          <div className="mt-12 grid gap-3 sm:grid-cols-3">
+          <div className="mx-auto mt-10 grid max-w-md gap-2 sm:max-w-none sm:grid-cols-3 sm:gap-3">
             {[
               { label: "入力", desc: "日次売上・CSV取込", from: "from-violet-500", to: "to-violet-600" },
               { label: "蓄積", desc: "Notionに自動保存", from: "from-indigo-500", to: "to-indigo-600" },
               { label: "AI分析", desc: "週次レポート・提案", from: "from-emerald-500", to: "to-emerald-600" },
             ].map((item, i) => (
-              <div key={item.label} className="relative">
-                <div className={`rounded-2xl bg-gradient-to-br ${item.from} ${item.to} px-6 py-8 text-white shadow`}>
-                  <p className="text-2xl font-bold">{item.label}</p>
-                  <p className="mt-1 text-sm text-white/70">{item.desc}</p>
+              <div key={item.label}>
+                <div className="relative">
+                  <div className={`rounded-2xl bg-gradient-to-br ${item.from} ${item.to} px-5 py-6 text-white shadow sm:px-6 sm:py-8`}>
+                    <p className="text-xl font-bold sm:text-2xl">{item.label}</p>
+                    <p className="mt-1 text-xs text-white/75 sm:text-sm">{item.desc}</p>
+                  </div>
+                  {i < 2 && (
+                    <span className="absolute right-0 top-1/2 hidden -translate-y-1/2 translate-x-4 text-xl text-stone-300 sm:block">
+                      →
+                    </span>
+                  )}
                 </div>
                 {i < 2 && (
-                  <span className="absolute right-0 top-1/2 hidden -translate-y-1/2 translate-x-4 text-xl text-stone-300 sm:block">
-                    →
-                  </span>
+                  <div className="flex justify-center py-1 text-lg text-stone-300 sm:hidden" aria-hidden>
+                    ↓
+                  </div>
                 )}
               </div>
             ))}
@@ -298,22 +339,24 @@ export default function LpPage() {
       </section>
 
       {/* 機能 */}
-      <section className="bg-gradient-to-b from-stone-50 to-white py-20">
-        <div className="mx-auto max-w-5xl px-6">
-          <h2 className="text-center text-2xl font-bold text-stone-900 sm:text-3xl">機能</h2>
-          <p className="mt-2 text-center text-sm text-stone-500">6つのエージェントと機能が、運用を前に進めます</p>
-          <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <section className="bg-gradient-to-b from-stone-50 to-white py-14 sm:py-20">
+        <div className="mx-auto max-w-5xl px-4 sm:px-6">
+          <h2 className="text-balance text-center text-xl font-bold text-stone-900 sm:text-3xl">機能</h2>
+          <p className="mt-2 px-1 text-center text-xs text-stone-500 sm:text-sm">
+            伴走で土台を整えたうえで、7つの柱が運用を前に進めます
+          </p>
+          <div className="mt-8 grid gap-3 sm:mt-12 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
             {features.map((feature) => (
               <div
                 key={feature.number}
-                className={`rounded-2xl border ${feature.bg} ${feature.border} px-6 py-6 shadow-sm`}
+                className={`rounded-2xl border ${feature.bg} ${feature.border} px-5 py-5 shadow-sm sm:px-6 sm:py-6`}
               >
                 <div className="flex items-center justify-between">
                   <span className="text-2xl">{feature.icon}</span>
                   <p className={`text-xs font-bold tracking-widest ${feature.numColor}`}>{feature.number}</p>
                 </div>
                 <p className="mt-3 text-base font-semibold text-stone-900">{feature.title}</p>
-                <p className="mt-2 text-sm leading-7 text-stone-600">{feature.description}</p>
+                <p className="mt-2 text-sm leading-relaxed text-stone-600 sm:leading-7">{feature.description}</p>
               </div>
             ))}
           </div>
@@ -321,17 +364,19 @@ export default function LpPage() {
       </section>
 
       {/* ターゲット */}
-      <section className="py-20">
-        <div className="mx-auto max-w-5xl px-6">
-          <h2 className="text-center text-2xl font-bold text-stone-900 sm:text-3xl">こんな方に向いています</h2>
-          <div className="mt-12 grid gap-6 sm:grid-cols-2">
-            <div className="rounded-2xl border border-violet-200 bg-violet-50 px-8 py-8">
-              <p className="text-xl font-bold text-violet-800">🏪 店舗オーナーの方</p>
+      <section className="py-14 sm:py-20">
+        <div className="mx-auto max-w-5xl px-4 sm:px-6">
+          <h2 className="text-balance text-center text-xl font-bold text-stone-900 sm:text-3xl">
+            こんな方に向いています
+          </h2>
+          <div className="mt-8 grid gap-4 sm:mt-12 sm:grid-cols-2 sm:gap-6">
+            <div className="rounded-2xl border border-violet-200 bg-violet-50 px-5 py-6 sm:px-8 sm:py-8">
+              <p className="text-lg font-bold text-violet-800 sm:text-xl">🏪 店舗オーナーの方</p>
               <ul className="mt-4 grid gap-3">
                 {[
-                  "毎日の売上を入力して、週に1回AIのレポートを確認したい",
-                  "LINE施策の効果を数字で追いたい",
-                  "経営判断の根拠を、感覚ではなくデータで持ちたい",
+                  "NotionやDB準備を、手取り足取り一緒に進めてほしい",
+                  "導入後も「おかしいときに聞ける」サブスクが欲しい",
+                  "LINE施策の効果や週次の数字を、感覚ではなくデータで持ちたい",
                 ].map((text) => (
                   <li key={text} className="flex items-start gap-2 text-sm leading-7 text-violet-900">
                     <span className="mt-1 text-violet-500">✓</span>
@@ -340,14 +385,14 @@ export default function LpPage() {
                 ))}
               </ul>
             </div>
-            <div className="rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 px-8 py-8 text-white shadow-lg">
-              <p className="text-xl font-bold">🍴 飲食コンサルタントの方</p>
+            <div className="rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 px-5 py-6 text-white shadow-lg sm:px-8 sm:py-8">
+              <p className="text-lg font-bold sm:text-xl">🍴 飲食コンサルタントの方</p>
               <ul className="mt-4 grid gap-3">
                 {[
-                  "複数店舗のクライアントを、1つのシステムで管理したい",
-                  "訪問前に数字を確認して、会議の質を上げたい",
-                  "AIの提案を叩き台に、自分の提案を効率化したい",
-                  "デモ画面をすぐ見せられる状態で持っておきたい",
+                  "クライアントごとの初期セットアップを伴走で進めたい",
+                  "デモ→本番移行まで、再現できる形で持ち込みたい",
+                  "AI提案を叩き台に会議の質を上げたい",
+                  "テナント・権限の整理まで含めて相談したい",
                 ].map((text) => (
                   <li key={text} className="flex items-start gap-2 text-sm leading-7 text-white/90">
                     <span className="mt-1 text-emerald-200">✓</span>
@@ -361,24 +406,85 @@ export default function LpPage() {
       </section>
 
       {/* 導入の流れ */}
-      <section className="bg-gradient-to-b from-stone-50 to-white py-20">
-        <div className="mx-auto max-w-5xl px-6">
-          <h2 className="text-center text-2xl font-bold text-stone-900 sm:text-3xl">導入の流れ</h2>
-          <p className="mt-2 text-center text-sm text-stone-500">最短15分で使い始められます</p>
-          <div className="mt-12 grid gap-6 sm:grid-cols-3">
+      <section className="bg-gradient-to-b from-stone-50 to-white py-14 sm:py-20">
+        <div className="mx-auto max-w-5xl px-4 sm:px-6">
+          <h2 className="text-balance text-center text-xl font-bold text-stone-900 sm:text-3xl">
+            導入の流れ（伴走型）
+          </h2>
+          <p className="mt-2 text-center text-xs text-stone-500 sm:text-sm">無料相談から、接続検証まで一緒に進めます</p>
+          <div
+            className="mx-auto mt-6 max-w-2xl rounded-2xl border border-violet-200 bg-violet-50/90 px-4 py-4 text-left text-sm leading-relaxed text-stone-700 shadow-sm sm:mt-8 sm:px-6 sm:py-5 sm:text-[15px] sm:leading-7"
+            role="note"
+          >
+            <p className="font-semibold text-violet-950">初期設定について</p>
+            <p className="mt-2">
+              ご自身で進められるよう、セットアップ手順は
+              <Link
+                href="/lp/setup-guide"
+                className="touch-manipulation font-semibold text-violet-700 underline-offset-2 hover:underline"
+              >
+                設定ガイド
+              </Link>
+              でお渡しします。一方で、
+              <strong className="text-stone-800">APIキーやデータベースIDの入力ミス・権限の見落とし</strong>
+              など、設定がわずかにでもズレると<strong className="text-stone-800">画面上にうまく反映されない／同期が途切れる</strong>
+              ことがあります。
+            </p>
+            <p className="mt-3 text-stone-800">
+              初回から確実に揃えたい方には、一緒に接続確認まで進める<strong>初期設定導入サポートプラン</strong>
+              をおすすめします。まずは無料相談で、自分で進めるか／伴走するかをご相談ください。
+            </p>
+          </div>
+          <div className="mt-8 grid gap-4 sm:mt-12 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
             {[
-              { step: "Step 1", emoji: "📋", title: "Notionを用意する", desc: "既存のNotionワークスペースにDBを作成。テンプレートをコピーするだけです。", color: "from-violet-500 to-violet-600" },
-              { step: "Step 2", emoji: "⚙️", title: "接続設定をする", desc: "NotionのAPIキーと各DBのIDを設定。ガイドに沿って進めれば10〜15分で完了します。", color: "from-indigo-500 to-indigo-600" },
-              { step: "Step 3", emoji: "🚀", title: "今日から使い始める", desc: "ダッシュボードを開いて今日の売上を入力。翌週から、AIの分析レポートが出始めます。", color: "from-emerald-500 to-emerald-600" },
+              {
+                step: "Step 0",
+                emoji: "💬",
+                title: "無料すり合わせ",
+                desc: "現状・データの所在・サポートの厚みをオンラインで確認（15〜30分目安）。",
+                color: "from-violet-500 to-violet-600",
+              },
+              {
+                step: "Step 1",
+                emoji: "📋",
+                title: "Kickoff／権限確認",
+                desc: "ワークスペース・売上データの所在を整理。インテグレーション共有まで伴走します。",
+                color: "from-indigo-500 to-indigo-600",
+              },
+              {
+                step: "Step 2",
+                emoji: "🔗",
+                title: "DB合わせ込み／検証",
+                desc: "テンプレ複製または既存DBマッピング。Notion のAPIキーと各DB・ページのIDを設定し、動作確認まで。",
+                color: "from-sky-500 to-sky-600",
+                guideLink: { href: "/lp/setup-guide", label: "接続設定のテキストガイドへ" },
+              },
+              {
+                step: "Step 3",
+                emoji: "🚀",
+                title: "運用開始＋サブスク",
+                desc: "日次・週次の型を確認後、契約サブスク枠でトラブル切り分けや軽微な調整をフォロー。",
+                color: "from-emerald-500 to-emerald-600",
+              },
             ].map((item) => (
               <div key={item.step} className="overflow-hidden rounded-2xl bg-white shadow-sm">
-                <div className={`bg-gradient-to-r ${item.color} px-6 py-4`}>
+                <div className={`bg-gradient-to-r ${item.color} px-5 py-3 sm:px-6 sm:py-4`}>
                   <p className="text-xs font-bold text-white/70">{item.step}</p>
-                  <p className="mt-1 text-2xl">{item.emoji}</p>
+                  <p className="mt-1 text-xl sm:text-2xl">{item.emoji}</p>
                 </div>
-                <div className="px-6 py-5">
-                  <p className="text-base font-semibold text-stone-900">{item.title}</p>
-                  <p className="mt-2 text-sm leading-7 text-stone-600">{item.desc}</p>
+                <div className="px-5 py-4 sm:px-6 sm:py-5">
+                  <p className="text-[15px] font-semibold text-stone-900 sm:text-base">{item.title}</p>
+                  <p className="mt-2 text-sm leading-relaxed text-stone-600 sm:leading-7">{item.desc}</p>
+                  {"guideLink" in item && item.guideLink ? (
+                    <p className="mt-3">
+                      <Link
+                        href={item.guideLink.href}
+                        className="touch-manipulation font-medium text-violet-600 underline-offset-2 hover:underline"
+                      >
+                        {item.guideLink.label}
+                      </Link>
+                    </p>
+                  ) : null}
                 </div>
               </div>
             ))}
@@ -387,17 +493,21 @@ export default function LpPage() {
       </section>
 
       {/* 料金 */}
-      <section className="py-20">
-        <div className="mx-auto max-w-5xl px-6">
-          <h2 className="text-center text-2xl font-bold text-stone-900 sm:text-3xl">料金プラン</h2>
-          <p className="mt-2 text-center text-sm text-stone-500">すべてのプランにデモ環境が含まれます</p>
-          <div className="mt-12 grid gap-6 sm:grid-cols-3">
+      <section className="py-14 sm:py-20">
+        <div className="mx-auto max-w-5xl px-4 sm:px-6">
+          <h2 className="text-balance text-center text-xl font-bold text-stone-900 sm:text-3xl">
+            料金の考え方（一例）
+          </h2>
+          <p className="mt-2 px-1 text-center text-xs leading-relaxed text-stone-500 sm:text-sm sm:leading-normal">
+            初期の導入支援と、継続のサポートサブスクを組み合わせます。金額・枠はヒアリング後にお見積りします。
+          </p>
+          <div className="mt-8 grid gap-5 sm:mt-12 sm:grid-cols-3 sm:gap-6">
             {plans.map((plan) => (
               <div
                 key={plan.name}
-                className={`rounded-2xl px-7 py-8 ${
+                className={`rounded-2xl px-5 py-6 sm:px-7 sm:py-8 ${
                   plan.highlight
-                    ? "bg-gradient-to-br from-violet-600 to-indigo-600 text-white shadow-xl scale-105"
+                    ? "relative z-[1] bg-gradient-to-br from-violet-600 to-indigo-600 text-white shadow-xl sm:z-0 sm:scale-105"
                     : "border border-stone-200 bg-white shadow-sm"
                 }`}
               >
@@ -427,8 +537,12 @@ export default function LpPage() {
                   ))}
                 </ul>
                 <a
-                  href={plan.cta === "お問い合わせ" ? `mailto:${CONTACT_EMAIL}` : DEMO_URL}
-                  className={`mt-8 block rounded-full py-3 text-center text-sm font-bold transition ${
+                  href={
+                    plan.cta === "お問い合わせ" || plan.cta === "無料相談"
+                      ? `mailto:${CONTACT_EMAIL}`
+                      : DEMO_URL
+                  }
+                  className={`touch-manipulation mt-8 flex min-h-12 items-center justify-center rounded-full py-3 text-center text-sm font-bold transition sm:min-h-0 sm:block sm:py-3 ${
                     plan.highlight
                       ? "bg-white text-violet-700 hover:bg-violet-50 shadow"
                       : "bg-gradient-to-r from-violet-600 to-emerald-500 text-white hover:opacity-90"
@@ -443,31 +557,36 @@ export default function LpPage() {
       </section>
 
       {/* デモ */}
-      <section className="bg-gradient-to-br from-indigo-50 to-emerald-50 py-20">
-        <div className="mx-auto max-w-3xl px-6 text-center">
-          <p className="text-4xl">🎮</p>
-          <h2 className="mt-4 text-2xl font-bold text-stone-900 sm:text-3xl">まずデモを体験してください</h2>
-          <p className="mt-4 text-base leading-8 text-stone-600">
-            架空データで動くデモ環境を用意しています。<br />
-            実際の画面・AI分析・操作感を、申し込みなしで今すぐ確認できます。
+      <section className="bg-gradient-to-br from-indigo-50 to-emerald-50 py-14 sm:py-20">
+        <div className="mx-auto max-w-3xl px-4 text-center sm:px-6">
+          <p className="text-3xl sm:text-4xl">🎮</p>
+          <h2 className="mt-4 text-balance text-xl font-bold text-stone-900 sm:text-3xl">操作デモで雰囲気を掴む</h2>
+          <p className="mt-4 text-left text-[15px] leading-relaxed text-stone-600 sm:text-center sm:text-base sm:leading-8">
+            架空データのデモで、画面とAIの操作感を確認できます。
+            <span className="hidden sm:inline">
+              <br />
+            </span>
+            <span className="sm:hidden"> </span>
+            <strong className="text-stone-800">本番のNotion／DB合わせ込みは伴走プランで別途</strong>
+            進めます。
           </p>
-          <div className="mt-8 inline-block rounded-2xl border border-indigo-200 bg-white px-8 py-6 text-left text-sm shadow-sm">
+          <div className="mx-auto mt-8 max-w-md rounded-2xl border border-indigo-200 bg-white px-5 py-5 text-left text-[13px] shadow-sm sm:inline-block sm:max-w-none sm:px-8 sm:py-6 sm:text-sm">
             <p className="font-semibold text-stone-900">デモアクセス情報</p>
             <div className="mt-3 grid gap-1 text-stone-600">
               <p>ユーザーID: <span className="font-mono font-bold text-violet-700">demo-viewer</span></p>
               <p>パスワード: <span className="text-stone-400">お問い合わせください（1営業日以内にご返信）</span></p>
             </div>
           </div>
-          <div className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
+          <div className="mt-8 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-center sm:gap-4">
             <Link
               href={DEMO_URL}
-              className="w-full rounded-full bg-gradient-to-r from-violet-600 to-emerald-500 px-8 py-4 text-base font-bold text-white shadow-lg hover:opacity-90 sm:w-auto"
+              className="touch-manipulation flex min-h-12 w-full items-center justify-center rounded-full bg-gradient-to-r from-violet-600 to-emerald-500 px-6 py-3.5 text-base font-bold text-white shadow-lg hover:opacity-90 active:opacity-90 sm:w-auto sm:min-h-0 sm:px-8 sm:py-4"
             >
               デモ画面を開く →
             </Link>
             <a
               href={`mailto:${CONTACT_EMAIL}`}
-              className="w-full rounded-full border border-stone-300 bg-white px-8 py-4 text-base font-semibold text-stone-700 hover:bg-stone-50 sm:w-auto"
+              className="touch-manipulation flex min-h-12 w-full items-center justify-center rounded-full border border-stone-300 bg-white px-6 py-3.5 text-base font-semibold text-stone-700 hover:bg-stone-50 active:bg-stone-100 sm:w-auto sm:min-h-0 sm:px-8 sm:py-4"
             >
               パスワードを受け取る
             </a>
@@ -476,12 +595,12 @@ export default function LpPage() {
       </section>
 
       {/* FAQ */}
-      <section className="py-20">
-        <div className="mx-auto max-w-3xl px-6">
-          <h2 className="text-center text-2xl font-bold text-stone-900 sm:text-3xl">よくある質問</h2>
-          <div className="mt-10 grid gap-4">
+      <section className="py-14 sm:py-20">
+        <div className="mx-auto max-w-3xl px-4 sm:px-6">
+          <h2 className="text-balance text-center text-xl font-bold text-stone-900 sm:text-3xl">よくある質問</h2>
+          <div className="mt-8 grid gap-3 sm:mt-10 sm:gap-4">
             {faqs.map((faq, i) => (
-              <div key={faq.q} className="rounded-2xl border border-stone-100 bg-stone-50 px-6 py-5">
+              <div key={faq.q} className="rounded-2xl border border-stone-100 bg-stone-50 px-4 py-4 sm:px-6 sm:py-5">
                 <div className="flex items-start gap-3">
                   <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-100 text-xs font-bold text-violet-600">
                     Q
@@ -492,7 +611,7 @@ export default function LpPage() {
                   <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-600">
                     A
                   </span>
-                  <p className="text-sm leading-7 text-stone-600">{faq.a}</p>
+                  <p className="text-sm leading-relaxed text-stone-600 sm:leading-7">{faq.a}</p>
                 </div>
               </div>
             ))}
@@ -501,39 +620,45 @@ export default function LpPage() {
       </section>
 
       {/* クロージング CTA */}
-      <section className="bg-gradient-to-br from-violet-600 via-indigo-600 to-emerald-500 py-28">
-        <div className="relative mx-auto max-w-3xl px-6 text-center">
-          <h2 className="text-3xl font-bold text-white sm:text-4xl">
-            毎週の数字を、<br />毎週の行動に変える。
+      <section className="bg-gradient-to-br from-violet-600 via-indigo-600 to-emerald-500 py-16 pb-[max(4rem,env(safe-area-inset-bottom))] pt-14 sm:py-28 sm:pb-[max(7rem,env(safe-area-inset-bottom))]">
+        <div className="relative mx-auto max-w-3xl px-4 text-center sm:px-6">
+          <h2 className="text-balance text-2xl font-bold leading-snug text-white sm:text-4xl sm:leading-tight">
+            契約で終わらせない、
+            <br />
+            回るところまで伴走する。
           </h2>
-          <p className="mt-4 text-base leading-8 text-white/70">
-            売上が上がった理由も、下がった理由も、今週中に分かる。<br />
-            次に何をすべきか、AIが整理してくれる。
+          <p className="mx-auto mt-4 max-w-md text-[15px] leading-relaxed text-white/75 sm:max-w-none sm:text-base sm:leading-8">
+            DBの準備から週次でAIが読めるデータになるところまで。
+            <span className="hidden sm:inline">
+              <br />
+            </span>
+            <span className="sm:hidden"> </span>
+            まずは無料相談で、現状とご希望をお聞かせください。
           </p>
-          <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
-            <Link
-              href={DEMO_URL}
-              className="w-full rounded-full bg-white px-8 py-4 text-base font-bold text-violet-700 shadow-xl hover:shadow-2xl sm:w-auto"
-            >
-              無料デモを体験する →
-            </Link>
+          <div className="mt-8 flex flex-col items-stretch gap-3 sm:mt-10 sm:flex-row sm:items-center sm:justify-center sm:gap-4">
             <a
               href={`mailto:${CONTACT_EMAIL}`}
-              className="w-full rounded-full border border-white/40 px-8 py-4 text-base font-semibold text-white hover:bg-white/10 sm:w-auto"
+              className="touch-manipulation flex min-h-12 w-full items-center justify-center rounded-full bg-white px-6 py-3.5 text-base font-bold text-violet-700 shadow-xl hover:shadow-2xl active:opacity-95 sm:w-auto sm:min-h-0 sm:px-8 sm:py-4"
             >
-              お問い合わせ
+              無料相談する →
             </a>
+            <Link
+              href={DEMO_URL}
+              className="touch-manipulation flex min-h-12 w-full items-center justify-center rounded-full border border-white/40 px-6 py-3.5 text-base font-semibold text-white hover:bg-white/10 active:bg-white/15 sm:w-auto sm:min-h-0 sm:px-8 sm:py-4"
+            >
+              操作デモを開く
+            </Link>
           </div>
         </div>
       </section>
 
       {/* フッター */}
-      <footer className="border-t border-stone-100 bg-white py-10">
-        <div className="mx-auto max-w-5xl px-6 text-center text-xs text-stone-400">
+      <footer className="border-t border-stone-100 bg-white py-8 pb-[max(2rem,env(safe-area-inset-bottom))] sm:py-10">
+        <div className="mx-auto max-w-5xl px-4 text-center text-xs text-stone-400 sm:px-6">
           <p className="bg-gradient-to-r from-violet-600 to-emerald-500 bg-clip-text text-sm font-bold text-transparent">
             AI Maneger
           </p>
-          <p className="mt-1">Notion × AI × 飲食運用</p>
+          <p className="mt-1">Notion × AI × 飲食運用（伴走型導入）</p>
           <p className="mt-3">
             <a href={`mailto:${CONTACT_EMAIL}`} className="hover:text-stone-700">
               {CONTACT_EMAIL}
