@@ -50,6 +50,18 @@ function formatShortRange(start: string, end: string) {
   return `${start.slice(5).replace("-", "/")} - ${end.slice(5).replace("-", "/")}`;
 }
 
+function resolveYoY(
+  current: number,
+  previous: number | undefined,
+  stored: number | undefined,
+): number | undefined {
+  if (typeof stored === "number" && Number.isFinite(stored)) return stored;
+  if (typeof previous === "number" && previous > 0) {
+    return ((current - previous) / previous) * 100;
+  }
+  return undefined;
+}
+
 export function SalesOverviewPanel({ entries, configReady, tenant }: SalesOverviewPanelProps) {
   const dailyEntries = useMemo(
     () =>
@@ -162,7 +174,9 @@ export function SalesOverviewPanel({ entries, configReady, tenant }: SalesOvervi
           customers,
           averageSpend,
           yoy:
-            compareSales > 0 ? ((entry.sales - compareSales) / compareSales) * 100 : entry.salesYoY,
+            compareSales > 0
+              ? ((entry.sales - compareSales) / compareSales) * 100
+              : resolveYoY(entry.sales, entry.previousSales, entry.salesYoY),
         };
       })
       .sort((left, right) => left.weekStart.localeCompare(right.weekStart));
@@ -241,7 +255,9 @@ export function SalesOverviewPanel({ entries, configReady, tenant }: SalesOvervi
                           )}
                         </td>
                         <td className="px-4 py-3 text-right text-stone-600">
-                          {formatPercentDelta(entry.salesYoY)}
+                          {formatPercentDelta(
+                            resolveYoY(entry.sales, entry.previousSales, entry.salesYoY),
+                          )}
                         </td>
                       </tr>
                     ))}
