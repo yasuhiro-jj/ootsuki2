@@ -50,6 +50,7 @@ const LINE_REGISTRATION_KEYS = ["LINE登録数", "LINE友だち追加数"];
 const LINE_VISIT_KEYS = ["LINE経由来店数", "LINE来店数"];
 const SALES_YOY_KEYS = [
   "売上昨対比",
+  "前年差異",
   "売上前年差異",
   "差前年差異",
   "Sales YoY",
@@ -57,6 +58,7 @@ const SALES_YOY_KEYS = [
 ];
 const CUSTOMERS_YOY_KEYS = [
   "客数昨対比",
+  "前年差客",
   "客数前年差",
   "差前年差客",
   "Customers YoY",
