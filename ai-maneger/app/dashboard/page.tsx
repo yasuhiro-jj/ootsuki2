@@ -21,6 +21,7 @@ import {
   attachWeekOverWeek,
   attachYearOverYear,
   buildMetricAlerts,
+  calculateAverageSpend,
   formatCount,
   formatPercentDelta,
   formatPercentValue,
@@ -114,7 +115,31 @@ export default async function DashboardPage() {
     new Date(new Date(`${currentWeek.weekStart}T00:00:00.000Z`).getTime() - 86400000),
   );
   const lastYearDate = new Date(Date.UTC(now.getUTCFullYear() - 1, now.getUTCMonth(), now.getUTCDate()));
-  const sameWeekLastYear = aggregateWeek(entries, lastYearDate);
+  let sameWeekLastYear = aggregateWeek(entries, lastYearDate);
+  const currentWeekDailyEntries = entries.filter(
+    (entry) =>
+      entry.date && entry.weekStart === currentWeek.weekStart && entry.weekEnd === currentWeek.weekEnd,
+  );
+  const lastYearFromPrevious = currentWeekDailyEntries.reduce(
+    (acc, entry) => ({
+      sales: acc.sales + (entry.previousSales ?? 0),
+      customers: acc.customers + (entry.previousCustomers ?? 0),
+    }),
+    { sales: 0, customers: 0 },
+  );
+  if (
+    (sameWeekLastYear.sales === 0 && lastYearFromPrevious.sales > 0) ||
+    (sameWeekLastYear.customers === 0 && lastYearFromPrevious.customers > 0)
+  ) {
+    const mergedSales = sameWeekLastYear.sales || lastYearFromPrevious.sales;
+    const mergedCustomers = sameWeekLastYear.customers || lastYearFromPrevious.customers;
+    sameWeekLastYear = {
+      ...sameWeekLastYear,
+      sales: mergedSales,
+      customers: mergedCustomers,
+      averageSpend: calculateAverageSpend(mergedSales, mergedCustomers),
+    };
+  }
   const weekSummary = attachYearOverYear(attachWeekOverWeek(currentWeek, previousWeek), sameWeekLastYear);
   const metricAlerts = buildMetricAlerts(weekSummary);
   const latestWeeklyReview = latestWeeklyReviews[0];

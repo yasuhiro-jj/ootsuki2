@@ -164,7 +164,14 @@ export function SalesOverviewPanel({ entries, configReady, tenant }: SalesOvervi
         const compareRow = weeklySummaryEntries.find(
           (item) => item.weekStart === compareStart && item.weekEnd === compareEnd,
         );
-        const compareSales = compareRow?.sales ?? 0;
+        const dailyInWeek = dailyEntries.filter(
+          (daily) => daily.weekStart === entry.weekStart && daily.weekEnd === entry.weekEnd,
+        );
+        const previousSalesFromDaily = dailyInWeek.reduce(
+          (sum, daily) => sum + (daily.previousSales ?? 0),
+          0,
+        );
+        const compareSales = compareRow?.sales || previousSalesFromDaily;
         const customers = entry.customers;
         const averageSpend = entry.averageSpend || calculateAverageSpend(entry.sales, customers);
         return {
@@ -180,7 +187,7 @@ export function SalesOverviewPanel({ entries, configReady, tenant }: SalesOvervi
         };
       })
       .sort((left, right) => left.weekStart.localeCompare(right.weekStart));
-  }, [selectedMonth, weeklySummaryEntries]);
+  }, [dailyEntries, selectedMonth, weeklySummaryEntries]);
 
   return (
     <div className="grid gap-4">
