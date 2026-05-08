@@ -4,6 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { formatDate } from "@/lib/format";
 import { normalizeProductCodeKey, normalizeProductMatchKey } from "@/lib/ootsuki";
 
+/** 一時非表示: `true` にすると「商品分析CSV取込」セクションを再度表示する */
+const SHOW_PRODUCT_ANALYSIS_CSV = false;
+
 interface DailyInputFormProps {
   defaultDate: string;
 }
@@ -1120,6 +1123,7 @@ export function DailyInputForm({ defaultDate }: DailyInputFormProps) {
         </div>
       </details>
 
+      {SHOW_PRODUCT_ANALYSIS_CSV ? (
       <details className="rounded-[24px] border border-dashed border-orange-300 bg-orange-50/70 px-5 py-5">
         <summary className="cursor-pointer list-none text-sm font-medium text-stone-900">
           商品分析CSV取込を開く
@@ -1319,6 +1323,7 @@ export function DailyInputForm({ defaultDate }: DailyInputFormProps) {
           ) : null}
         </div>
       </details>
+      ) : null}
 
       <div className="rounded-[24px] border border-stone-900/10 bg-stone-50 px-5 py-4 text-sm text-stone-600">
         入力日: {formatDate(defaultDate)}。送信すると週次集計も自動更新します。
