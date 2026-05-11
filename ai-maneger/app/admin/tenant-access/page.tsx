@@ -1,7 +1,9 @@
 import { AppShell } from "@/components/common/app-shell";
 import { ErrorPanel } from "@/components/common/error-panel";
 import { SectionCard } from "@/components/common/section-card";
+import { MemoryDigestPanel } from "@/components/admin/memory-digest-panel";
 import { TenantMembershipManager } from "@/components/admin/tenant-membership-manager";
+import { getPreviousCompletedWeekUtcRange } from "@/lib/datetime/utc-week";
 import { getCurrentTenantAccessResult } from "@/lib/api/tenant-access";
 import {
   isTenantConfigStoreEnabled,
@@ -132,6 +134,7 @@ export default async function TenantAccessPage({
   }
 
   const currentTenant = access.tenant as TenantKey;
+  const digestWeekDefaults = getPreviousCompletedWeekUtcRange();
   const auditExportHref = buildAuditExportHref({
     currentTenant,
     tenant: tenantFilter,
@@ -170,6 +173,19 @@ export default async function TenantAccessPage({
           ))}
         </div>
       </SectionCard>
+
+      <section className="mt-6">
+        <SectionCard
+          title="記憶ダイジェストの生成"
+          description="会話ログを GPT で要約し tenant_memory_digests に保存します（同一 tenant・期間・タイプは上書き）。"
+        >
+          <MemoryDigestPanel
+            currentTenantLabel={currentTenant}
+            defaultPeriodStart={digestWeekDefaults.periodStart}
+            defaultPeriodEnd={digestWeekDefaults.periodEnd}
+          />
+        </SectionCard>
+      </section>
 
       <section className="mt-6">
         <SectionCard
