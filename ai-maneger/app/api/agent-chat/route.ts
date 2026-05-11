@@ -1,6 +1,14 @@
 import { NextResponse } from "next/server";
 import { requireTenantAccess } from "@/lib/api/tenant-access";
 import { resolveAgentProfile, OUTPUT_FORMAT_SCHEMAS } from "@/lib/agent-profiles";
+import {
+  insertConversationLog,
+  isTenantConfigStoreEnabled,
+  searchSimilarConversations,
+  searchSimilarDigests,
+  updateConversationEmbedding,
+} from "@/lib/tenant-config/repository";
+import { generateEmbedding } from "@/lib/db/embeddings";
 import { generateReply, type ChatMessage } from "@/lib/agent-chat";
 import {
   getAgentHubKnowledgeContext,
@@ -242,6 +250,53 @@ export async function POST(request: Request) {
         ? OUTPUT_FORMAT_SCHEMAS[outputFormat]
         : undefined;
 
+    // 過去の類似会話・記憶ダイジェストをベクトル検索で取得してコンテキストに注入
+    let pastConversationContext = "";
+    let digestContext = "";
+    if (isTenantConfigStoreEnabled()) {
+      try {
+        const queryEmbedding = await generateEmbedding(message);
+        if (queryEmbedding) {
+          const [pastConvos, digests] = await Promise.all([
+            searchSimilarConversations({
+              tenantKey: access.tenant,
+              queryEmbedding,
+              excludeSessionId: sessionId,
+              limit: 3,
+            }),
+            searchSimilarDigests({
+              tenantKey: access.tenant,
+              queryEmbedding,
+              limit: 2,
+            }),
+          ]);
+
+          if (pastConvos.length > 0) {
+            pastConversationContext = [
+              "【過去の関連会話（参考情報）】",
+              "※ 以下は過去に同テナントで交わされた類似の会話です。回答の参考にしてください。",
+              ...pastConvos.map((c) => {
+                const date = c.createdAt.slice(0, 10);
+                const agent = c.agentName ? ` [${c.agentName}]` : "";
+                const answer = c.assistantContent ?? "（返答なし）";
+                return `---\n[${date}${agent}]\nユーザー: ${c.userContent}\nAI: ${answer}`;
+              }),
+            ].join("\n");
+          }
+
+          if (digests.length > 0) {
+            digestContext = [
+              "【過去の経営サマリー（記憶ダイジェスト）】",
+              "※ 以下は過去の会話を要約した経営記録です。長期的な文脈として参照してください。",
+              ...digests.map((d) => `---\n[${d.periodStart} 〜 ${d.periodEnd}]\n${d.summary}`),
+            ].join("\n");
+          }
+        }
+      } catch (err) {
+        console.error("[agent-chat] past conversation/digest search failed:", err);
+      }
+    }
+
     const dashboardContext = await buildDashboardContext();
     const agentHubKnowledgeContext = await getAgentHubKnowledgeContext();
     const agentSpecificKnowledgeContext =
@@ -259,6 +314,8 @@ export async function POST(request: Request) {
       agentHubKnowledgeContext,
       agentSpecificKnowledgeContext,
       restaurantKnowledgeContext,
+      digestContext,
+      pastConversationContext,
     ]
       .filter(Boolean)
       .join("\n\n");
@@ -276,6 +333,40 @@ export async function POST(request: Request) {
 
     history.push({ role: "user", content: agentScopedMessage });
     history.push({ role: "assistant", content: reply });
+
+    // 会話ログ保存 → embedding生成 → embedding保存（すべて非同期・失敗してもレスポンスには影響させない）
+    void (async () => {
+      try {
+        const [userId, assistantId] = await Promise.all([
+          insertConversationLog({
+            tenantKey: access.tenant,
+            sessionId,
+            principalId: access.principalId,
+            agentName: agentName || "",
+            role: "user",
+            content: agentScopedMessage,
+          }),
+          insertConversationLog({
+            tenantKey: access.tenant,
+            sessionId,
+            principalId: access.principalId,
+            agentName: agentName || "",
+            role: "assistant",
+            content: reply,
+          }),
+        ]);
+        const [userEmb, assistantEmb] = await Promise.all([
+          generateEmbedding(agentScopedMessage),
+          generateEmbedding(reply),
+        ]);
+        await Promise.all([
+          userId && userEmb ? updateConversationEmbedding(userId, userEmb) : Promise.resolve(),
+          assistantId && assistantEmb ? updateConversationEmbedding(assistantId, assistantEmb) : Promise.resolve(),
+        ]);
+      } catch (err) {
+        console.error("[agent-chat] conversation log/embedding save failed:", err);
+      }
+    })();
 
     const structured =
       outputFormat && outputFormat !== "text"

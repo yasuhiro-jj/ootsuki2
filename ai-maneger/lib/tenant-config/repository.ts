@@ -271,6 +271,179 @@ export async function insertTenantAuditLog(record: {
   );
 }
 
+export async function insertConversationLog(record: {
+  tenantKey: string;
+  sessionId: string;
+  principalId: string;
+  agentName: string;
+  role: "user" | "assistant";
+  content: string;
+}): Promise<string | null> {
+  if (!isTenantConfigStoreEnabled()) return null;
+  const client = await getPool();
+  const result = await client.query(
+    `INSERT INTO tenant_conversations (tenant_key, session_id, principal_id, agent_name, role, content)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id`,
+    [record.tenantKey, record.sessionId, record.principalId, record.agentName, record.role, record.content],
+  );
+  return (result.rows[0]?.id as string) ?? null;
+}
+
+export async function updateConversationEmbedding(id: string, embedding: number[]): Promise<void> {
+  if (!isTenantConfigStoreEnabled()) return;
+  const client = await getPool();
+  const embeddingStr = `[${embedding.join(",")}]`;
+  await client.query(
+    `UPDATE tenant_conversations SET embedding = $1::vector WHERE id = $2`,
+    [embeddingStr, id],
+  );
+}
+
+export type SimilarConversation = {
+  userContent: string;
+  assistantContent: string | null;
+  agentName: string;
+  createdAt: string;
+};
+
+export async function searchSimilarConversations(options: {
+  tenantKey: string;
+  queryEmbedding: number[];
+  excludeSessionId: string;
+  limit: number;
+}): Promise<SimilarConversation[]> {
+  if (!isTenantConfigStoreEnabled()) return [];
+  const client = await getPool();
+  const embeddingStr = `[${options.queryEmbedding.join(",")}]`;
+  const result = await client.query(
+    `SELECT
+       u.content       AS user_content,
+       u.agent_name    AS agent_name,
+       u.created_at    AS created_at,
+       (
+         SELECT a.content
+         FROM tenant_conversations a
+         WHERE a.session_id = u.session_id
+           AND a.role = 'assistant'
+           AND a.created_at > u.created_at
+         ORDER BY a.created_at ASC
+         LIMIT 1
+       ) AS assistant_content
+     FROM tenant_conversations u
+     WHERE u.tenant_key = $1
+       AND u.role = 'user'
+       AND u.session_id != $2
+       AND u.embedding IS NOT NULL
+     ORDER BY u.embedding <=> $3::vector
+     LIMIT $4`,
+    [options.tenantKey, options.excludeSessionId, embeddingStr, options.limit],
+  );
+  return result.rows.map((row: Record<string, unknown>) => ({
+    userContent: String(row.user_content ?? ""),
+    assistantContent: row.assistant_content != null ? String(row.assistant_content) : null,
+    agentName: String(row.agent_name ?? ""),
+    createdAt: String(row.created_at ?? ""),
+  }));
+}
+
+export type ConversationEntry = {
+  role: string;
+  content: string;
+  agentName: string;
+  createdAt: string;
+};
+
+export async function listConversationsForPeriod(options: {
+  tenantKey: string;
+  from: Date;
+  to: Date;
+}): Promise<ConversationEntry[]> {
+  if (!isTenantConfigStoreEnabled()) return [];
+  const client = await getPool();
+  const result = await client.query(
+    `SELECT role, content, agent_name, created_at
+       FROM tenant_conversations
+      WHERE tenant_key = $1
+        AND created_at >= $2
+        AND created_at < $3
+      ORDER BY created_at ASC`,
+    [options.tenantKey, options.from.toISOString(), options.to.toISOString()],
+  );
+  return result.rows.map((row: Record<string, unknown>) => ({
+    role: String(row.role ?? ""),
+    content: String(row.content ?? ""),
+    agentName: String(row.agent_name ?? ""),
+    createdAt: String(row.created_at ?? ""),
+  }));
+}
+
+export async function upsertMemoryDigest(record: {
+  tenantKey: string;
+  periodStart: string;
+  periodEnd: string;
+  digestType: string;
+  summary: string;
+  sourceCount: number;
+}): Promise<string> {
+  if (!isTenantConfigStoreEnabled()) throw new Error("TENANT_CONFIG_STORE_ENABLED=true が必要です");
+  const client = await getPool();
+  const result = await client.query(
+    `INSERT INTO tenant_memory_digests
+       (tenant_key, period_start, period_end, digest_type, summary, source_count)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (tenant_key, period_start, period_end, digest_type) DO UPDATE SET
+       summary = EXCLUDED.summary,
+       source_count = EXCLUDED.source_count,
+       created_at = NOW()
+     RETURNING id`,
+    [record.tenantKey, record.periodStart, record.periodEnd, record.digestType, record.summary, record.sourceCount],
+  );
+  return String(result.rows[0]?.id ?? "");
+}
+
+export async function updateDigestEmbedding(id: string, embedding: number[]): Promise<void> {
+  if (!isTenantConfigStoreEnabled()) return;
+  const client = await getPool();
+  const embeddingStr = `[${embedding.join(",")}]`;
+  await client.query(
+    `UPDATE tenant_memory_digests SET embedding = $1::vector WHERE id = $2`,
+    [embeddingStr, id],
+  );
+}
+
+export type SimilarDigest = {
+  summary: string;
+  periodStart: string;
+  periodEnd: string;
+  digestType: string;
+};
+
+export async function searchSimilarDigests(options: {
+  tenantKey: string;
+  queryEmbedding: number[];
+  limit: number;
+}): Promise<SimilarDigest[]> {
+  if (!isTenantConfigStoreEnabled()) return [];
+  const client = await getPool();
+  const embeddingStr = `[${options.queryEmbedding.join(",")}]`;
+  const result = await client.query(
+    `SELECT summary, period_start, period_end, digest_type
+       FROM tenant_memory_digests
+      WHERE tenant_key = $1
+        AND embedding IS NOT NULL
+      ORDER BY embedding <=> $2::vector
+      LIMIT $3`,
+    [options.tenantKey, embeddingStr, options.limit],
+  );
+  return result.rows.map((row: Record<string, unknown>) => ({
+    summary: String(row.summary ?? ""),
+    periodStart: String(row.period_start ?? ""),
+    periodEnd: String(row.period_end ?? ""),
+    digestType: String(row.digest_type ?? ""),
+  }));
+}
+
 export async function listTenantAuditLogs(options?: {
   tenantKey?: TenantKey;
   actions?: string[];

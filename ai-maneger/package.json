@@ -12,6 +12,9 @@
     "check:notion-env:all": "tsx scripts/check-notion-env.ts --tenant=all",
     "hash:password": "tsx scripts/hash-password.ts",
     "migrate:tenant-config": "node scripts/migrate-tenant-config.mjs",
+    "migrate:conversations": "node scripts/migrate-conversations.mjs",
+    "migrate:conversations-vector": "node scripts/migrate-conversations-vector.mjs",
+    "migrate:memory-digests": "node scripts/migrate-memory-digests.mjs",
     "seed:tenant-config": "tsx scripts/seed-tenant-config.ts"
   },
   "dependencies": {
