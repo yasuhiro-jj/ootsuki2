@@ -247,7 +247,9 @@ export default async function DashboardPage() {
             configReady={weeklyActionsConfigReady}
           />
         </SectionCard>
+      </section>
 
+      <section className="mt-6 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <SectionCard
           title="プロジェクト状況"
           description="この内容は Notion のプロジェクトページ/DB とメモDBの最新内容から表示されます。対象案件のKPI目標と直近メモを見ながら、今週の意思決定を揃えます。"
@@ -309,14 +311,12 @@ export default async function DashboardPage() {
             </div>
           </div>
         </SectionCard>
-      </section>
 
-      <section className="mt-6 grid gap-6 xl:grid-cols-[1.05fr_1fr_1.05fr]">
         <SectionCard
           title="今週見る数字"
           description="週次集計から主要KPIを確認できます。未入力の項目だけアラート表示します。"
         >
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3">
             {metricAlerts.map((item) => (
               <div
                 key={item.label}
@@ -344,7 +344,9 @@ export default async function DashboardPage() {
             </a>
           </noscript>
         </SectionCard>
+      </section>
 
+      <section className="mt-6 grid gap-6 xl:grid-cols-[1fr_1.15fr]">
         <SectionCard
           title="今週の判断材料"
           description="最新メモをベースに表示しつつ、エージェント提案で今週の判断材料下書きを更新できます。"
