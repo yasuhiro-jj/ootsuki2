@@ -26,6 +26,7 @@ import {
   getWeeklyActionPlan,
 } from "@/lib/notion/ootsuki";
 import { getAlwaysOnNotionReferenceContext } from "@/lib/notion/agent-context";
+import { buildDefaultYoYReportContext } from "@/lib/notion/sales-yoy-context";
 import {
   aggregateMonthlySalesFromKpiEntries,
   fetchMonthlySalesSummariesFromDb,
@@ -431,7 +432,9 @@ export async function POST(request: Request) {
 
     const { context: dashboardContext, evidenceCount } = await buildDashboardContext();
     const alwaysOnNotionContext = await getAlwaysOnNotionReferenceContext(access.tenant);
-    if (!alwaysOnNotionContext && evidenceCount === 0) {
+    const salesYoYContext =
+      agentProfile.key === "sales-analyst" ? await buildDefaultYoYReportContext() : "";
+    if (!alwaysOnNotionContext && !salesYoYContext && evidenceCount === 0) {
       return NextResponse.json(
         {
           ok: false,
@@ -454,6 +457,7 @@ export async function POST(request: Request) {
       ? await getRestaurantConsultingKnowledgeContext()
       : "";
     const fullContext = [
+      salesYoYContext,
       alwaysOnNotionContext,
       dashboardContext,
       agentHubKnowledgeContext,

@@ -15,6 +15,12 @@ import {
   formatYen,
 } from "@/lib/ootsuki";
 import {
+  buildYoYReportForMonth,
+  fetchDailyYoYRows,
+  resolveLatestMonthKey,
+  type YoYReportSection,
+} from "@/lib/notion/sales-yoy-context";
+import {
   aggregateMonthlySalesFromKpiEntries,
   fetchMonthlySalesSummariesFromDb,
   formatMonthlySalesComparisonContext,
@@ -51,6 +57,26 @@ export const AGENT_TOOL_DEFINITIONS: ToolDefinition[] = [
         properties: {
           monthA: { type: "string", description: "比較元の月（例: 2026-04）" },
           monthB: { type: "string", description: "比較先の月（例: 2026-05）" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_yoy_sales_report",
+      description:
+        "指定月の昨対比レポート（売上・客数・客単価の日別表、価格帯分布、差分分析）を日次売上Notion DBから取得する。5月の昨対比、客単価分析などに使う。",
+      parameters: {
+        type: "object",
+        properties: {
+          month: { type: "string", description: "対象月（例: 2026-05）。省略時は最新月。" },
+          section: {
+            type: "string",
+            enum: ["full", "sales", "average_spend", "price_band", "difference"],
+            description:
+              "full=全セクション, sales=売上昨対比, average_spend=客単価昨対比, price_band=価格帯分布, difference=客単価差分",
+          },
         },
       },
     },
@@ -219,6 +245,29 @@ export async function executeAgentTool(
       }
 
       return context;
+    }
+
+    case "get_yoy_sales_report": {
+      const monthArg = typeof args.month === "string" ? args.month.trim() : "";
+      const sectionRaw = typeof args.section === "string" ? args.section.trim() : "full";
+      const section = (
+        ["full", "sales", "average_spend", "price_band", "difference"].includes(sectionRaw)
+          ? sectionRaw
+          : "full"
+      ) as YoYReportSection;
+
+      const rows = await fetchDailyYoYRows(PRIMARY_DAILY_SALES_DB_ID);
+      if (!rows.length) {
+        return "日次売上DBからデータを取得できませんでした。";
+      }
+
+      const monthKey = monthArg || resolveLatestMonthKey(rows);
+      const report = await buildYoYReportForMonth(monthKey, section, PRIMARY_DAILY_SALES_DB_ID);
+      return [
+        report,
+        "",
+        "【回答指示】上記の数値をそのまま使い、各セクション末尾に【所見】を3〜5行で付けること。",
+      ].join("\n");
     }
 
     case "get_action_plan": {
