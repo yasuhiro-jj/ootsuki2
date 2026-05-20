@@ -49,7 +49,7 @@ export type AgentChatSuccessResponse = {
 
 export type AgentChatErrorResponse = {
   ok: false;
-  error: "agent_failed" | "validation_error" | "missing_config";
+  error: "agent_failed" | "validation_error" | "missing_config" | "db_unavailable";
   message?: string;
 };
 

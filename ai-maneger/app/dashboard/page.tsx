@@ -21,6 +21,7 @@ import {
   attachWeekOverWeek,
   attachYearOverYear,
   buildMetricAlerts,
+  buildProfitActionAlerts,
   calculateAverageSpend,
   formatCount,
   formatPercentDelta,
@@ -142,6 +143,7 @@ export default async function DashboardPage() {
   }
   const weekSummary = attachYearOverYear(attachWeekOverWeek(currentWeek, previousWeek), sameWeekLastYear);
   const metricAlerts = buildMetricAlerts(weekSummary);
+  const profitActionAlerts = buildProfitActionAlerts(weekSummary);
   const latestWeeklyReview = latestWeeklyReviews[0];
   const judgmentMaterial =
     latestWeeklyReview &&
@@ -366,6 +368,36 @@ export default async function DashboardPage() {
             configReady={salesOverviewConfigReady}
             tenant={access.tenant}
           />
+        </SectionCard>
+      </section>
+
+      <section className="mt-6">
+        <SectionCard
+          title="利益を残す施策アラート"
+          description="粗利率・客単価・客数の前週比から、利益改善に直結する打ち手を自動提案します。"
+        >
+          <div className="grid gap-3 md:grid-cols-2">
+            {profitActionAlerts.map((alert) => (
+              <article
+                key={alert.title}
+                className={`rounded-2xl border px-4 py-4 ${
+                  alert.status === "urgent"
+                    ? "border-rose-200 bg-rose-50 text-rose-900"
+                    : alert.status === "watch"
+                      ? "border-amber-200 bg-amber-50 text-amber-900"
+                      : "border-emerald-200 bg-emerald-50 text-emerald-900"
+                }`}
+              >
+                <p className="text-sm font-semibold">{alert.title}</p>
+                <p className="mt-2 text-sm leading-6">{alert.reason}</p>
+                <div className="mt-3 grid gap-1 text-sm">
+                  {alert.actions.map((action) => (
+                    <p key={action}>- {action}</p>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
         </SectionCard>
       </section>
 

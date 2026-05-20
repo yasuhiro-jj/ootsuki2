@@ -128,6 +128,13 @@ export interface DashboardMetricAlert {
   detail: string;
 }
 
+export interface ProfitActionAlert {
+  title: string;
+  status: "good" | "watch" | "urgent";
+  reason: string;
+  actions: string[];
+}
+
 export interface WeeklyActionPlan {
   id?: string;
   title: string;

@@ -1,6 +1,7 @@
 import type {
   DashboardMetricAlert,
   KpiSnapshotEntry,
+  ProfitActionAlert,
   WeeklyAggregate,
 } from "@/types/ootsuki";
 
@@ -180,6 +181,75 @@ export function buildMetricAlerts(summary: WeeklyAggregate): DashboardMetricAler
           : "粗利率がまだ入っていません。",
     },
   ];
+}
+
+export function buildProfitActionAlerts(summary: WeeklyAggregate): ProfitActionAlert[] {
+  const alerts: ProfitActionAlert[] = [];
+
+  if (summary.sales <= 0 || summary.totalDays <= 0) {
+    alerts.push({
+      title: "データ不足",
+      status: "watch",
+      reason: "今週の日次入力が不足しているため、利益施策の判定精度が低い状態です。",
+      actions: [
+        "先に今週の売上・客数・粗利率を入力する",
+        "未入力日がある場合は最優先で埋める",
+      ],
+    });
+    return alerts;
+  }
+
+  if (typeof summary.grossMarginRateWoW === "number" && summary.grossMarginRateWoW <= -1.5) {
+    alerts.push({
+      title: "粗利率が悪化",
+      status: "urgent",
+      reason: `粗利率が前週比 ${formatPercentDelta(summary.grossMarginRateWoW)} です。値引き/原価上振れの確認が必要です。`,
+      actions: [
+        "値引き・返品が多い商品を上位3つ確認する",
+        "原価率が高い商品の販促比率を今週だけ下げる",
+        "粗利が残るセット/トッピング訴求に切り替える",
+      ],
+    });
+  }
+
+  if (typeof summary.averageSpendWoW === "number" && summary.averageSpendWoW <= -4) {
+    alerts.push({
+      title: "客単価が低下",
+      status: "urgent",
+      reason: `客単価が前週比 ${formatPercentDelta(summary.averageSpendWoW)} です。追加注文導線の弱化が疑われます。`,
+      actions: [
+        "会計前の追加提案トークを1フレーズ固定する",
+        "高粗利のサイド/ドリンクをセット表示で先頭に出す",
+        "単価上位商品の欠品・在庫切れを確認する",
+      ],
+    });
+  }
+
+  if (typeof summary.customersWoW === "number" && summary.customersWoW <= -6) {
+    alerts.push({
+      title: "客数が減少",
+      status: "watch",
+      reason: `客数が前週比 ${formatPercentDelta(summary.customersWoW)} です。来店動機の再提示が必要です。`,
+      actions: [
+        "LINE配信で来店理由を1つに絞って打ち出す",
+        "曜日別で落ち込み日を特定し、限定施策を置く",
+      ],
+    });
+  }
+
+  if (alerts.length === 0) {
+    alerts.push({
+      title: "利益指標は安定",
+      status: "good",
+      reason: "粗利率・客単価・客数とも大きな悪化は見られません。",
+      actions: [
+        "高粗利商品の販売比率を維持する",
+        "今週の良かった施策を判断メモに残す",
+      ],
+    });
+  }
+
+  return alerts;
 }
 
 export function resolveWeekRange(referenceDate: string) {

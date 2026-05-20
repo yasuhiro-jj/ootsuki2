@@ -25,6 +25,7 @@ import {
   getOotsukiProjectOverview,
   getWeeklyActionPlan,
 } from "@/lib/notion/ootsuki";
+import { getAlwaysOnNotionReferenceContext } from "@/lib/notion/agent-context";
 import type { KpiSnapshotEntry, MemoEntry } from "@/types/ootsuki";
 import {
   aggregateWeek,
@@ -63,6 +64,102 @@ function getOrCreateSession(tenant: string, id?: string) {
   return { sessionId: candidateId, history };
 }
 
+function isMonthlySummaryEntry(entry: KpiSnapshotEntry) {
+  return entry.title.includes("月次売上");
+}
+
+function resolveYoY(current: number, previous: number | undefined, stored: number | undefined) {
+  if (typeof stored === "number" && Number.isFinite(stored)) return stored;
+  if (typeof previous === "number" && previous > 0) {
+    return ((current - previous) / previous) * 100;
+  }
+  return undefined;
+}
+
+function calculateAverageSpend(sales: number, customers: number) {
+  return customers > 0 ? sales / customers : 0;
+}
+
+function buildSalesOverviewContext(entries: KpiSnapshotEntry[]) {
+  const dailyEntries = entries
+    .filter((entry): entry is KpiSnapshotEntry & { date: string } => Boolean(entry.date))
+    .sort((left, right) => left.date.localeCompare(right.date));
+  const weeklySummaryEntries = entries
+    .filter((entry) => !entry.date && isWeeklySummaryEntry(entry))
+    .sort((left, right) => left.weekStart.localeCompare(right.weekStart));
+  const monthlySummaryEntries = entries
+    .filter((entry) => !entry.date && isMonthlySummaryEntry(entry))
+    .sort((left, right) => left.weekStart.localeCompare(right.weekStart));
+
+  const monthKeys = Array.from(
+    new Set([
+      ...dailyEntries.map((entry) => entry.date.slice(0, 7)),
+      ...weeklySummaryEntries.map((entry) => entry.weekStart.slice(0, 7)).filter(Boolean),
+      ...monthlySummaryEntries.map((entry) => entry.weekStart.slice(0, 7)).filter(Boolean),
+    ]),
+  ).sort((left, right) => right.localeCompare(left));
+  const selectedMonth = monthKeys[0];
+  if (!selectedMonth) return "";
+
+  const monthEntries = dailyEntries.filter((entry) => entry.date.startsWith(selectedMonth));
+  const selectedMonthlySummary = monthlySummaryEntries.find((entry) => entry.weekStart.startsWith(selectedMonth));
+  const previousYearMonthKey = `${String(Number(selectedMonth.slice(0, 4)) - 1)}${selectedMonth.slice(4)}`;
+  const previousYearMonthSales =
+    monthlySummaryEntries.find((entry) => entry.weekStart.startsWith(previousYearMonthKey))?.sales ||
+    dailyEntries
+      .filter((entry) => entry.date.startsWith(previousYearMonthKey))
+      .reduce((sum, entry) => sum + entry.sales, 0);
+
+  const monthlySales =
+    selectedMonthlySummary?.sales ?? monthEntries.reduce((sum, entry) => sum + entry.sales, 0);
+  const monthlyCustomers =
+    selectedMonthlySummary?.customers ??
+    monthEntries.reduce((sum, entry) => sum + entry.customers, 0);
+  const monthlyAverageSpend = calculateAverageSpend(monthlySales, monthlyCustomers);
+  const monthlyYoY =
+    previousYearMonthSales > 0
+      ? ((monthlySales - previousYearMonthSales) / previousYearMonthSales) * 100
+      : undefined;
+
+  const recentDailyLines = [...monthEntries]
+    .reverse()
+    .slice(0, 5)
+    .map(
+      (entry) =>
+        `${entry.date}: 売上 ${formatYen(entry.sales)}, 客数 ${formatCount(entry.customers)}, 客単価 ${formatYen(entry.averageSpend || calculateAverageSpend(entry.sales, entry.customers))}, 昨対比 ${formatPercentDelta(resolveYoY(entry.sales, entry.previousSales, entry.salesYoY))}`,
+    );
+
+  const monthStart = `${selectedMonth}-01`;
+  const nextMonthDate = new Date(`${monthStart}T00:00:00.000Z`);
+  nextMonthDate.setUTCMonth(nextMonthDate.getUTCMonth() + 1);
+  const monthEnd = new Date(nextMonthDate.getTime() - 86400000).toISOString().slice(0, 10);
+
+  const weeklyRows = weeklySummaryEntries
+    .filter((entry) => entry.weekEnd >= monthStart && entry.weekStart <= monthEnd)
+    .map((entry) => {
+      const compareStart = `${String(Number(entry.weekStart.slice(0, 4)) - 1)}${entry.weekStart.slice(4)}`;
+      const compareEnd = `${String(Number(entry.weekEnd.slice(0, 4)) - 1)}${entry.weekEnd.slice(4)}`;
+      const compareSales =
+        weeklySummaryEntries.find((item) => item.weekStart === compareStart && item.weekEnd === compareEnd)
+          ?.sales || 0;
+      return `${entry.weekStart}〜${entry.weekEnd}: 売上 ${formatYen(entry.sales)}, 客数 ${formatCount(entry.customers)}, 客単価 ${formatYen(entry.averageSpend || calculateAverageSpend(entry.sales, entry.customers))}, 昨対比 ${formatPercentDelta(compareSales > 0 ? ((entry.sales - compareSales) / compareSales) * 100 : resolveYoY(entry.sales, entry.previousSales, entry.salesYoY))}`;
+    });
+
+  return [
+    `【売上早見表（${selectedMonth}）】`,
+    `当月累計売上: ${formatYen(monthlySales)}`,
+    `当月累計客数: ${formatCount(monthlyCustomers)}`,
+    `当月客単価: ${formatYen(monthlyAverageSpend)}`,
+    `当月売上昨対比: ${formatPercentDelta(monthlyYoY)}`,
+    "",
+    "【売上早見表: 直近の日次売上（最大5件）】",
+    ...(recentDailyLines.length ? recentDailyLines : ["- 日次データなし"]),
+    "",
+    "【売上早見表: 週次売上】",
+    ...(weeklyRows.length ? weeklyRows : ["- 週次データなし"]),
+  ].join("\n");
+}
+
 async function buildDashboardContext() {
   const [project, entries, memoEntries, reviewEntries, lineMessage, instructionsDoc] = await Promise.all([
     getOotsukiProjectOverview(),
@@ -88,7 +185,8 @@ async function buildDashboardContext() {
     )
     .slice(0, 7);
 
-  return [
+  const salesOverviewContext = buildSalesOverviewContext(entries);
+  const context = [
     `案件名: ${project.name}`,
     `KPI目標: ${project.kpiTarget || "未設定"}`,
     `対象週: ${summary.weekStart}〜${summary.weekEnd}`,
@@ -125,11 +223,22 @@ async function buildDashboardContext() {
     "",
     `【LINE配信文】\n${lineMessage.title}\n${lineMessage.body}`,
     "",
+    salesOverviewContext,
+    "",
     "【運用指示書】",
     instructionsDoc.configured
       ? `${instructionsDoc.title}\n${instructionsDoc.body}`
       : instructionsDoc.body,
   ].join("\n");
+
+  const evidenceCount =
+    entries.length +
+    memoEntries.length +
+    reviewEntries.length +
+    (weeklyActionPlan?.actions.length ?? 0) +
+    (lineMessage.body.trim() ? 1 : 0);
+
+  return { context, evidenceCount };
 }
 
 function tryParseStructured(reply: string, outputFormat: string): StructuredAgentResult | null {
@@ -297,7 +406,19 @@ export async function POST(request: Request) {
       }
     }
 
-    const dashboardContext = await buildDashboardContext();
+    const { context: dashboardContext, evidenceCount } = await buildDashboardContext();
+    const alwaysOnNotionContext = await getAlwaysOnNotionReferenceContext(access.tenant);
+    if (!alwaysOnNotionContext && evidenceCount === 0) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "db_unavailable",
+          message:
+            "Notion DB を参照できないため回答を生成できません。NOTION_* の設定と Notion インテグレーション接続を確認してください。",
+        } satisfies AgentChatErrorResponse,
+        { status: 503 },
+      );
+    }
     const agentHubKnowledgeContext = await getAgentHubKnowledgeContext();
     const agentSpecificKnowledgeContext =
       agentProfile.knowledgeLabel && agentProfile.knowledgeEnvKey
@@ -310,6 +431,7 @@ export async function POST(request: Request) {
       ? await getRestaurantConsultingKnowledgeContext()
       : "";
     const fullContext = [
+      alwaysOnNotionContext,
       dashboardContext,
       agentHubKnowledgeContext,
       agentSpecificKnowledgeContext,
@@ -360,8 +482,8 @@ export async function POST(request: Request) {
           generateEmbedding(reply),
         ]);
         await Promise.all([
-          userId && userEmb ? updateConversationEmbedding(userId, userEmb) : Promise.resolve(),
-          assistantId && assistantEmb ? updateConversationEmbedding(assistantId, assistantEmb) : Promise.resolve(),
+          userId && userEmb ? updateConversationEmbedding(access.tenant, userId, userEmb) : Promise.resolve(),
+          assistantId && assistantEmb ? updateConversationEmbedding(access.tenant, assistantId, assistantEmb) : Promise.resolve(),
         ]);
       } catch (err) {
         console.error("[agent-chat] conversation log/embedding save failed:", err);
