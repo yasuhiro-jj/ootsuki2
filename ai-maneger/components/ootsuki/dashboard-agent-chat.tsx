@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { AgentLoadingStatus } from "@/components/ootsuki/agent-loading-status";
 import type { AgentChatResponse } from "@/types/chat";
 
 type ChatBubble = {
@@ -37,6 +38,7 @@ export function DashboardAgentChat({ enabled }: { enabled: boolean }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingAgentName, setLoadingAgentName] = useState<string | undefined>();
   const [error, setError] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatBubble[]>([
     {
@@ -54,6 +56,7 @@ export function DashboardAgentChat({ enabled }: { enabled: boolean }) {
 
       setError(null);
       setLoading(true);
+      setLoadingAgentName(options?.agentName);
       setMessages((prev) => [...prev, { id: nextId(), role: "user", content: text }]);
       if (!options?.message) {
         setInput("");
@@ -83,6 +86,7 @@ export function DashboardAgentChat({ enabled }: { enabled: boolean }) {
         setError(error instanceof Error ? error.message : "通信に失敗しました。");
       } finally {
         setLoading(false);
+        setLoadingAgentName(undefined);
       }
     },
     [enabled, input, loading, sessionId],
@@ -139,8 +143,8 @@ export function DashboardAgentChat({ enabled }: { enabled: boolean }) {
           ))}
           {loading ? (
             <div className="flex justify-start">
-              <div className="rounded-2xl border border-stone-900/10 bg-white px-4 py-3 text-sm text-stone-500">
-                回答を作成中...
+              <div className="max-w-[88%]">
+                <AgentLoadingStatus active={loading} agentName={loadingAgentName} />
               </div>
             </div>
           ) : null}

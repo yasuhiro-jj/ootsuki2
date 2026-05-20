@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { AgentLoadingStatus } from "@/components/ootsuki/agent-loading-status";
 import type {
   AgentChatResponse,
   SalesAnalysisResult,
@@ -398,6 +399,10 @@ export function AgentRequestHub({ enabled, agents }: AgentRequestHubProps) {
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
                   `OPENAI_API_KEY` が未設定のため、まだ送信できません。
                 </div>
+              ) : null}
+
+              {state.loading ? (
+                <AgentLoadingStatus active={state.loading} agentName={agent.name} />
               ) : null}
 
               {state.error ? (
