@@ -14,6 +14,12 @@ import {
   formatPercentValue,
   formatYen,
 } from "@/lib/ootsuki";
+import {
+  aggregateMonthlySalesFromKpiEntries,
+  fetchMonthlySalesSummariesFromDb,
+  formatMonthlySalesComparisonContext,
+  PRIMARY_DAILY_SALES_DB_ID,
+} from "@/lib/notion/sales-monthly-context";
 
 export type ToolDefinition = {
   type: "function";
@@ -32,6 +38,21 @@ export const AGENT_TOOL_DEFINITIONS: ToolDefinition[] = [
       description:
         "直近の日次KPIデータ（売上・客数・客単価・粗利率・LINE登録数など）を取得する。今週と前週の集計も含む。",
       parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_monthly_sales_comparison",
+      description:
+        "日次売上Notion DBから月次集計を取得する。4月・5月など特定月の売上比較や前月比の確認に使う。",
+      parameters: {
+        type: "object",
+        properties: {
+          monthA: { type: "string", description: "比較元の月（例: 2026-04）" },
+          monthB: { type: "string", description: "比較先の月（例: 2026-05）" },
+        },
+      },
     },
   },
   {
@@ -163,6 +184,41 @@ export async function executeAgentTool(
         "【今週の日次詳細】",
         ...dailyLines,
       ].join("\n");
+    }
+
+    case "get_monthly_sales_comparison": {
+      const monthA = typeof args.monthA === "string" ? args.monthA.trim() : "";
+      const monthB = typeof args.monthB === "string" ? args.monthB.trim() : "";
+
+      let summaries;
+      try {
+        summaries = await fetchMonthlySalesSummariesFromDb(PRIMARY_DAILY_SALES_DB_ID);
+      } catch {
+        summaries = aggregateMonthlySalesFromKpiEntries(await getKpiEntries());
+      }
+
+      const context = formatMonthlySalesComparisonContext(summaries, {
+        dbId: PRIMARY_DAILY_SALES_DB_ID,
+        title: "【日次売上DB 月次集計】",
+        detailMonthCount: 12,
+      });
+
+      const pick = (key: string) => summaries.find((m) => m.monthKey === key);
+
+      if (monthA || monthB) {
+        const a = monthA ? pick(monthA) : undefined;
+        const b = monthB ? pick(monthB) : undefined;
+        const compareLines = [
+          monthA ? `${monthA}: ${a ? `売上 ${formatYen(a.sales)} / 客数 ${formatCount(a.customers)} / 客単価 ${formatYen(a.averageSpend)}` : "データなし"}` : "",
+          monthB ? `${monthB}: ${b ? `売上 ${formatYen(b.sales)} / 客数 ${formatCount(b.customers)} / 客単価 ${formatYen(b.averageSpend)}` : "データなし"}` : "",
+          a && b && a.sales > 0
+            ? `差分: ${formatYen(b!.sales - a.sales)}（${monthA}→${monthB}）`
+            : "",
+        ].filter(Boolean);
+        return [context, "", "【指定月の比較】", ...compareLines].join("\n");
+      }
+
+      return context;
     }
 
     case "get_action_plan": {

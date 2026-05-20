@@ -1,30 +1,14 @@
 import type { TenantKey } from "@/lib/tenant-config/types";
-import { propertyToText, queryDatabaseAll } from "@/lib/notion/client";
-
-const MAX_ROWS = 12;
-const MAX_FIELDS_PER_ROW = 6;
-const MAX_FIELD_TEXT_LENGTH = 120;
+import { getTenantNotionConfig } from "@/lib/tenant-config/service";
+import {
+  buildDailySalesDbMonthlyContext,
+  extractNotionDatabaseId,
+  PRIMARY_DAILY_SALES_DB_ID,
+  resolveDailySalesDbIds,
+} from "@/lib/notion/sales-monthly-context";
 
 function read(value?: string | null) {
   return value?.trim() || "";
-}
-
-function toHyphenatedNotionId(id32: string) {
-  const normalized = id32.toLowerCase();
-  return `${normalized.slice(0, 8)}-${normalized.slice(8, 12)}-${normalized.slice(12, 16)}-${normalized.slice(16, 20)}-${normalized.slice(20)}`;
-}
-
-function extractNotionDatabaseId(rawValue: string) {
-  const raw = read(rawValue);
-  if (!raw) return "";
-
-  const idPattern = /([0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/;
-  const matched = raw.match(idPattern);
-  if (!matched) return "";
-
-  const stripped = matched[1].replace(/-/g, "");
-  if (stripped.length !== 32) return "";
-  return toHyphenatedNotionId(stripped);
 }
 
 function resolveReferenceDbIds(tenant: TenantKey) {
@@ -41,46 +25,36 @@ function resolveReferenceDbIds(tenant: TenantKey) {
   return Array.from(new Set(ids));
 }
 
-function clip(text: string, max = MAX_FIELD_TEXT_LENGTH) {
-  if (text.length <= max) return text;
-  return `${text.slice(0, max)}...`;
-}
-
 export async function getAlwaysOnNotionReferenceContext(tenant: TenantKey) {
-  const dbIds = resolveReferenceDbIds(tenant);
-  if (!dbIds.length) return "";
+  const referenceDbIds = resolveReferenceDbIds(tenant);
+  const tenantConfig = await getTenantNotionConfig(tenant);
+  const dailySalesDbIds = resolveDailySalesDbIds(referenceDbIds, tenantConfig.dailySalesDbId);
+
+  if (!dailySalesDbIds.length) return "";
 
   const sections: string[] = [];
-  for (const dbId of dbIds) {
-    const rows = await queryDatabaseAll(dbId, {
-      sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
-    });
-
-    if (!rows.length) {
-      sections.push(`【DB ID: ${dbId}】\n- レコードが見つかりません。`);
-      continue;
+  for (const dbId of dailySalesDbIds) {
+    try {
+      const monthlyContext = await buildDailySalesDbMonthlyContext(dbId);
+      if (monthlyContext.includes("日次売上レコードが見つかりません")) {
+        if (dbId !== PRIMARY_DAILY_SALES_DB_ID) continue;
+      }
+      sections.push(monthlyContext);
+    } catch (error) {
+      console.warn(`[agent-context] failed to load daily sales db ${dbId}:`, error);
+      if (dbId === PRIMARY_DAILY_SALES_DB_ID || referenceDbIds.includes(dbId)) {
+        sections.push(`【DB ID: ${dbId}】\n- 取得エラー: ${error instanceof Error ? error.message : "不明"}`);
+      }
     }
-
-    const lines: string[] = [];
-    for (const row of rows.slice(0, MAX_ROWS)) {
-      const fields = Object.entries(row.properties)
-        .map(([key, property]) => [key, propertyToText(property).trim()] as const)
-        .filter(([, value]) => Boolean(value))
-        .slice(0, MAX_FIELDS_PER_ROW)
-        .map(([key, value]) => `${key}: ${clip(value)}`);
-
-      if (!fields.length) continue;
-      lines.push(`- ${fields.join(" / ")} (更新: ${row.last_edited_time.slice(0, 10)})`);
-    }
-
-    sections.push([`【DB ID: ${dbId}】`, ...(lines.length ? lines : ["- 有効なテキスト項目なし"])]
-      .join("\n"));
   }
+
+  if (!sections.length) return "";
 
   return [
     "【常時参照Notion DB（最優先）】",
-    `参照DB数: ${dbIds.length}`,
-    "以下すべてのDB内容を根拠として使い、矛盾があればユーザー確認を促すこと。",
+    `参照DB数: ${dailySalesDbIds.length}`,
+    "日次売上DBの全月次データを根拠に回答すること。4月・5月など月指定の比較質問は必ず【月次サマリー】を使う。",
+    "「DB上で未確認」と答える前に、下記の利用可能な月一覧を必ず確認すること。",
     ...sections,
-  ].join("\n");
+  ].join("\n\n");
 }

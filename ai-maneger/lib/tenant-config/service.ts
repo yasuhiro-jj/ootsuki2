@@ -43,7 +43,7 @@ function parseTenantHostMap() {
   }
 }
 
-function resolveTenantKeyFromHost(hostHeader?: string | null): TenantKey | null {
+export function resolveTenantKeyFromHost(hostHeader?: string | null): TenantKey | null {
   const hostname = read(hostHeader).split(":")[0].toLowerCase();
   if (!hostname) return null;
 

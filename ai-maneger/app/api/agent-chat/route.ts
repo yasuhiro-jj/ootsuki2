@@ -26,6 +26,12 @@ import {
   getWeeklyActionPlan,
 } from "@/lib/notion/ootsuki";
 import { getAlwaysOnNotionReferenceContext } from "@/lib/notion/agent-context";
+import {
+  aggregateMonthlySalesFromKpiEntries,
+  fetchMonthlySalesSummariesFromDb,
+  formatMonthlySalesComparisonContext,
+  PRIMARY_DAILY_SALES_DB_ID,
+} from "@/lib/notion/sales-monthly-context";
 import type { KpiSnapshotEntry, MemoEntry } from "@/types/ootsuki";
 import {
   aggregateWeek,
@@ -80,7 +86,7 @@ function calculateAverageSpend(sales: number, customers: number) {
   return customers > 0 ? sales / customers : 0;
 }
 
-function buildSalesOverviewContext(entries: KpiSnapshotEntry[]) {
+async function buildSalesOverviewContext(entries: KpiSnapshotEntry[]) {
   const dailyEntries = entries
     .filter((entry): entry is KpiSnapshotEntry & { date: string } => Boolean(entry.date))
     .sort((left, right) => left.date.localeCompare(right.date));
@@ -91,6 +97,21 @@ function buildSalesOverviewContext(entries: KpiSnapshotEntry[]) {
     .filter((entry) => !entry.date && isMonthlySummaryEntry(entry))
     .sort((left, right) => left.weekStart.localeCompare(right.weekStart));
 
+  let monthlyComparisonContext = "";
+  try {
+    const summaries = await fetchMonthlySalesSummariesFromDb(PRIMARY_DAILY_SALES_DB_ID);
+    monthlyComparisonContext = formatMonthlySalesComparisonContext(summaries, {
+      dbId: PRIMARY_DAILY_SALES_DB_ID,
+      title: "【売上早見表: 日次売上DB 月次比較（全月）】",
+      detailMonthCount: 12,
+    });
+  } catch {
+    monthlyComparisonContext = formatMonthlySalesComparisonContext(
+      aggregateMonthlySalesFromKpiEntries(dailyEntries),
+      { title: "【売上早見表: 月次比較（KPIフォールバック）】", detailMonthCount: 12 },
+    );
+  }
+
   const monthKeys = Array.from(
     new Set([
       ...dailyEntries.map((entry) => entry.date.slice(0, 7)),
@@ -99,7 +120,7 @@ function buildSalesOverviewContext(entries: KpiSnapshotEntry[]) {
     ]),
   ).sort((left, right) => right.localeCompare(left));
   const selectedMonth = monthKeys[0];
-  if (!selectedMonth) return "";
+  if (!selectedMonth) return monthlyComparisonContext;
 
   const monthEntries = dailyEntries.filter((entry) => entry.date.startsWith(selectedMonth));
   const selectedMonthlySummary = monthlySummaryEntries.find((entry) => entry.weekStart.startsWith(selectedMonth));
@@ -146,7 +167,9 @@ function buildSalesOverviewContext(entries: KpiSnapshotEntry[]) {
     });
 
   return [
-    `【売上早見表（${selectedMonth}）】`,
+    monthlyComparisonContext,
+    "",
+    `【売上早見表（${selectedMonth} 詳細）】`,
     `当月累計売上: ${formatYen(monthlySales)}`,
     `当月累計客数: ${formatCount(monthlyCustomers)}`,
     `当月客単価: ${formatYen(monthlyAverageSpend)}`,
@@ -185,7 +208,7 @@ async function buildDashboardContext() {
     )
     .slice(0, 7);
 
-  const salesOverviewContext = buildSalesOverviewContext(entries);
+  const salesOverviewContext = await buildSalesOverviewContext(entries);
   const context = [
     `案件名: ${project.name}`,
     `KPI目標: ${project.kpiTarget || "未設定"}`,
