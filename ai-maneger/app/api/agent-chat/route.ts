@@ -482,8 +482,8 @@ export async function POST(request: Request) {
           generateEmbedding(reply),
         ]);
         await Promise.all([
-          userId && userEmb ? updateConversationEmbedding(access.tenant, userId, userEmb) : Promise.resolve(),
-          assistantId && assistantEmb ? updateConversationEmbedding(access.tenant, assistantId, assistantEmb) : Promise.resolve(),
+          userId && userEmb ? updateConversationEmbedding(userId, userEmb) : Promise.resolve(),
+          assistantId && assistantEmb ? updateConversationEmbedding(assistantId, assistantEmb) : Promise.resolve(),
         ]);
       } catch (err) {
         console.error("[agent-chat] conversation log/embedding save failed:", err);
