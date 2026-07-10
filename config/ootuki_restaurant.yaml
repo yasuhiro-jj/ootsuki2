@@ -59,6 +59,7 @@ features:
   enable_scheduler: true    # プロアクティブメッセージスケジューラーを有効化
   enable_agent_executor: false # AgentExecutorによる自動ツール呼び出しを有効化
   save_conversation: true   # 会話履歴の保存（Notionデータベースに保存されます）
+  enable_conversation_quality_logs: true # 会話改善AI用の安全な評価ログを保存
 
 langgraph:
   flow_type: "restaurant"   # 会話フロータイプ（restaurant, insurance, legal, generic）
@@ -85,3 +86,5 @@ agent:
     3. 応答は2〜3文を目安に、最初に共感やねぎらいのひと言を添えてから要点を伝えること。
     4. 情報不明の場合は推測せず「確認中です」と伝え、必要に応じて確認事項を質問すること。
 
+conversation_quality:
+  log_path: "outputs/conversation_quality_logs.jsonl"

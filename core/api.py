@@ -6,6 +6,7 @@ FastAPIベースの汎用APIフレームワーク
 
 import logging
 import asyncio
+import time
 from typing import Optional, Dict, Any, Set, List
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -32,6 +33,7 @@ from .menu_existence import (
     format_direct_menu_existence_answer,
     is_direct_menu_existence_question,
 )
+from .conversation_quality import ConversationQualityLog, ConversationQualityLogger
 
 logger = logging.getLogger(__name__)
 
@@ -249,6 +251,10 @@ def create_app(config: ConfigLoader) -> FastAPI:
         config=config,
         menu_service=shared_menu_service,
     )
+    quality_logger = ConversationQualityLogger(
+        path=config.get("conversation_quality.log_path", "outputs/conversation_quality_logs.jsonl"),
+        enabled=config.get("features.enable_conversation_quality_logs", True),
+    )
     
     # 不明キーワード検索サービス初期化
     unknown_keywords_db_id = config.get("notion.database_ids.unknown_keywords_db")
@@ -341,6 +347,50 @@ def create_app(config: ConfigLoader) -> FastAPI:
     
     # WebSocket接続管理
     ws_manager = ConnectionManager()
+
+    def _elapsed_ms(started_at: float) -> int:
+        return int((time.perf_counter() - started_at) * 1000)
+
+    def _record_quality_log(
+        *,
+        session_id: str,
+        user_id: Optional[str],
+        user_message: str,
+        ai_response: str,
+        recent_history: Optional[List[Dict[str, Any]]] = None,
+        session_memory: Optional[Dict[str, Any]] = None,
+        detected_intent: Optional[str] = None,
+        route: Optional[str] = None,
+        route_reason: Optional[str] = None,
+        node: Optional[str] = None,
+        referenced_sources: Optional[Dict[str, Any]] = None,
+        latency_ms: int = 0,
+        error: Optional[str] = None,
+        channel: str = "web",
+    ) -> None:
+        try:
+            memory = session_memory or ai_engine.get_session_memory(session_id)
+            quality_logger.save(
+                ConversationQualityLog.from_turn(
+                    session_id=session_id,
+                    user_id=user_id,
+                    user_message=user_message,
+                    ai_response=ai_response,
+                    recent_history=recent_history,
+                    active_topic=memory.get("active_topic"),
+                    pending_flow=memory.get("pending_flow"),
+                    detected_intent=detected_intent,
+                    route=route,
+                    route_reason=route_reason,
+                    node=node,
+                    referenced_sources=referenced_sources,
+                    latency_ms=latency_ms,
+                    error=error,
+                    channel=channel,
+                )
+            )
+        except Exception as exc:
+            logger.warning("[ConversationQuality] logging skipped: %s", exc)
     
     # プロアクティブスケジューラー
     scheduler = None
@@ -411,13 +461,18 @@ def create_app(config: ConfigLoader) -> FastAPI:
     @app.post("/chat", response_model=ChatResponse)
     async def chat(request: ChatRequest):
         """チャット処理"""
+        started_at = time.perf_counter()
+        session_id = request.session_id or ""
+        user_message = request.message
+        recent_turns: List[Dict[str, Any]] = []
+        session_memory: Dict[str, Any] = {}
+        conversation_route = None
+        detected_intent = ""
         try:
             # セッション作成または取得
-            session_id = request.session_id
             if not session_id:
                 session_id = ai_engine.create_session(request.customer_id)
             
-            user_message = request.message
             intent_result = intent_classifier.classify(user_message)
             ai_engine.save_memory(
                 session_id,
@@ -483,6 +538,21 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 if session:
                     session.add_message("user", request.message)
                     session.add_message("assistant", LATEST_INFO_UNAVAILABLE_MESSAGE)
+                _record_quality_log(
+                    session_id=session_id,
+                    user_id=request.customer_id,
+                    user_message=request.message,
+                    ai_response=LATEST_INFO_UNAVAILABLE_MESSAGE,
+                    recent_history=recent_turns,
+                    session_memory=session_memory,
+                    detected_intent=intent_result.intent.value,
+                    route=conversation_route.kind,
+                    route_reason=conversation_route.reason,
+                    node="latest_unavailable",
+                    referenced_sources={"latest_connected": False},
+                    latency_ms=_elapsed_ms(started_at),
+                    channel="web",
+                )
                 return ChatResponse(
                     message=LATEST_INFO_UNAVAILABLE_MESSAGE,
                     session_id=session_id,
@@ -511,6 +581,21 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     session_id[:8],
                     conversation_route.kind,
                 )
+                _record_quality_log(
+                    session_id=session_id,
+                    user_id=request.customer_id,
+                    user_message=request.message,
+                    ai_response=response_message,
+                    recent_history=recent_turns,
+                    session_memory=session_memory,
+                    detected_intent=intent_result.intent.value,
+                    route=conversation_route.kind,
+                    route_reason=conversation_route.reason,
+                    node="natural_chat",
+                    referenced_sources={"store_tools_used": False},
+                    latency_ms=_elapsed_ms(started_at),
+                    channel="web",
+                )
 
                 return ChatResponse(
                     message=response_message,
@@ -528,6 +613,26 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     limit=5,
                 )
                 response_message = format_direct_menu_existence_answer(menu_items)
+                current_entity = (
+                    getattr(menu_items[0], "name", "") if menu_items else user_message
+                )
+                ai_engine.save_memory(
+                    session_id,
+                    {
+                        "active_topic": "menu",
+                        "current_entity": current_entity,
+                        "detected_intent": "product_existence",
+                        "user_goal": "availability_check",
+                        "order_intent_level": "none",
+                        "answered_facts": {
+                            "product_existence": current_entity,
+                            "exists": bool(menu_items),
+                        },
+                        "previous_question": user_message,
+                        "last_assistant_action": "answered_product_existence",
+                    },
+                )
+                session_memory = ai_engine.get_session_memory(session_id)
                 session = ai_engine.get_session(session_id)
                 if session:
                     session.add_message("user", user_message)
@@ -536,6 +641,26 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     "[Decision] session=%s source=direct_menu_existence hits=%d",
                     session_id[:8],
                     len(menu_items),
+                )
+                _record_quality_log(
+                    session_id=session_id,
+                    user_id=request.customer_id,
+                    user_message=user_message,
+                    ai_response=response_message,
+                    recent_history=recent_turns,
+                    session_memory=session_memory,
+                    detected_intent=intent_result.intent.value,
+                    route=conversation_route.kind,
+                    route_reason=conversation_route.reason,
+                    node="direct_menu_existence",
+                    referenced_sources={
+                        "menu_hits": len(menu_items),
+                        "menu_names": [
+                            getattr(item, "name", "") for item in menu_items[:5]
+                        ],
+                    },
+                    latency_ms=_elapsed_ms(started_at),
+                    channel="web",
                 )
 
                 return ChatResponse(
@@ -584,6 +709,24 @@ def create_app(config: ConfigLoader) -> FastAPI:
                         if session:
                             session.add_message("user", user_message)
                             session.add_message("assistant", standard_answer)
+                        _record_quality_log(
+                            session_id=session_id,
+                            user_id=request.customer_id,
+                            user_message=user_message,
+                            ai_response=standard_answer,
+                            recent_history=recent_turns,
+                            session_memory=session_memory,
+                            detected_intent=intent_result.intent.value,
+                            route=conversation_route.kind,
+                            route_reason=conversation_route.reason,
+                            node="unknown_keyword_standard_answer",
+                            referenced_sources={
+                                "faq_match": matched_question_title,
+                                "similarity_score": similarity_score,
+                            },
+                            latency_ms=_elapsed_ms(started_at),
+                            channel="web",
+                        )
                         
                         return ChatResponse(
                             message=standard_answer,
@@ -642,6 +785,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
             response_message = ""
             agent_used = False
             detected_intent = intent_result.intent.value
+            response_source = "ai_engine"
 
             if agent_engine:
                 try:
@@ -651,6 +795,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
                         rag_results=rag_results,
                     )
                     agent_used = True
+                    response_source = "agent"
                     logger.info("[OK] AgentExecutorで応答生成")
                 except AgentEngineError as e:
                     logger.warning(f"[WARN] AgentExecutorエラーのためフォールバック: {e}")
@@ -694,6 +839,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
                         final_state = graph_engine.invoke(initial_state)
                         response_message = final_state.get("response", "")
                         response_options = final_state.get("options", [])
+                        response_source = "langgraph"
                         # 意図を取得（存在する場合）
                         detected_intent = final_state.get("user_intent", "Other")
                         if not detected_intent or detected_intent.strip() == "":
@@ -748,15 +894,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
             logger.info(
                 "[Decision] session=%s source=%s intent=%s mode=%s rag_hits=%d notion_hits=%d",
                 session_id[:8],
-                (
-                    "agent"
-                    if agent_used
-                    else (
-                        "langgraph"
-                        if should_use_graph and graph_engine and config.get("features.enable_langgraph", False)
-                        else "ai_engine"
-                    )
-                ),
+                response_source,
                 intent_result.intent.value,
                 response_mode,
                 len(rag_results),
@@ -795,6 +933,28 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 except Exception as e:
                     logger.error(f"[ERROR] 会話履歴の保存に失敗: {e}")
                     # エラーが発生しても会話は続行
+
+            _record_quality_log(
+                session_id=session_id,
+                user_id=request.customer_id,
+                user_message=request.message,
+                ai_response=response_message,
+                recent_history=recent_turns,
+                session_memory=session_memory,
+                detected_intent=detected_intent,
+                route=conversation_route.kind,
+                route_reason=conversation_route.reason,
+                node=response_source,
+                referenced_sources={
+                    "rag_hits": len(rag_results),
+                    "unknown_keyword_context": bool(unknown_context_result),
+                    "live_notion_context": bool(live_notion_context),
+                    "options_count": len(response_options),
+                    "menu_image": bool(menu_image_url),
+                },
+                latency_ms=_elapsed_ms(started_at),
+                channel="web",
+            )
             
             # レスポンス
             return ChatResponse(
@@ -811,6 +971,23 @@ def create_app(config: ConfigLoader) -> FastAPI:
             logger.error(f"[ERROR] チャット処理エラー: {e}")
             import traceback
             logger.error(f"[ERROR] トレースバック: {traceback.format_exc()}")
+            if session_id:
+                _record_quality_log(
+                    session_id=session_id,
+                    user_id=request.customer_id,
+                    user_message=user_message,
+                    ai_response="",
+                    recent_history=recent_turns,
+                    session_memory=session_memory,
+                    detected_intent=detected_intent,
+                    route=conversation_route.kind if conversation_route else "",
+                    route_reason=conversation_route.reason if conversation_route else "",
+                    node="chat_error",
+                    referenced_sources={},
+                    latency_ms=_elapsed_ms(started_at),
+                    error=str(e),
+                    channel="web",
+                )
             raise HTTPException(status_code=500, detail=f"チャット処理でエラーが発生しました: {str(e)}")
     
     # セッション管理
@@ -970,6 +1147,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
         
         try:
             while True:
+                started_at = time.perf_counter()
                 data = await websocket.receive_json()
                 message = data.get("message", "")
                 
@@ -1019,6 +1197,25 @@ def create_app(config: ConfigLoader) -> FastAPI:
                                 limit=5,
                             )
                             direct_response = format_direct_menu_existence_answer(menu_items)
+                            current_entity = (
+                                getattr(menu_items[0], "name", "") if menu_items else message
+                            )
+                            ai_engine.save_memory(
+                                session_id,
+                                {
+                                    "active_topic": "menu",
+                                    "current_entity": current_entity,
+                                    "detected_intent": "product_existence",
+                                    "user_goal": "availability_check",
+                                    "order_intent_level": "none",
+                                    "answered_facts": {
+                                        "product_existence": current_entity,
+                                        "exists": bool(menu_items),
+                                    },
+                                    "previous_question": message,
+                                    "last_assistant_action": "answered_product_existence",
+                                },
+                            )
                             result = {
                                 **state,
                                 "intent": "menu_existence",
@@ -1090,6 +1287,26 @@ def create_app(config: ConfigLoader) -> FastAPI:
                                 full_with_footer, ws_img_url
                             ),
                         }
+                        ws_context = result.get("context", {}) or {}
+                        _record_quality_log(
+                            session_id=session_id,
+                            user_id=session_id,
+                            user_message=message,
+                            ai_response=display_text,
+                            recent_history=conv_turns,
+                            session_memory=ai_engine.get_session_memory(session_id),
+                            detected_intent=detected_intent,
+                            route=ws_context.get("conversation_route", ""),
+                            route_reason=ws_context.get("conversation_route_reason", ""),
+                            node=result.get("current_step") or result.get("intent") or "simple_graph",
+                            referenced_sources={
+                                "options_count": len(result.get("options", [])),
+                                "menu_image": bool(ws_img_url),
+                                "line_messages": bool(response.get("line_reply_messages")),
+                            },
+                            latency_ms=_elapsed_ms(started_at),
+                            channel="websocket",
+                        )
                         logger.info(f"[WS] 送信メッセージ詳細: {response['message']}")
                         await websocket.send_json(response)
                         
@@ -1098,6 +1315,22 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     
                     except Exception as e:
                         logger.error(f"[WS] グラフ実行エラー: {e}")
+                        _record_quality_log(
+                            session_id=session_id,
+                            user_id=session_id,
+                            user_message=message,
+                            ai_response="",
+                            recent_history=ai_engine.get_llm_conversation_turns(session_id),
+                            session_memory=ai_engine.get_session_memory(session_id),
+                            detected_intent="",
+                            route="",
+                            route_reason="",
+                            node="websocket_error",
+                            referenced_sources={},
+                            latency_ms=_elapsed_ms(started_at),
+                            error=str(e),
+                            channel="websocket",
+                        )
                         await websocket.send_json({
                             "type": "error",
                             "message": "申し訳ございません。エラーが発生しました。",

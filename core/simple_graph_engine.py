@@ -16,6 +16,7 @@ import logging
 from .line_contact import append_line_contact_link, log_unknown_keyword_to_notion
 from .conversation_utils import build_chat_messages
 from .conversation_router import classify_conversation_route, infer_memory_updates
+from .menu_existence import is_direct_menu_existence_question
 
 logger = logging.getLogger(__name__)
 
@@ -4972,6 +4973,12 @@ class SimpleGraphEngine:
         if self._is_option_click(last_message):
             logger.info(f"[Route] 選択肢クリック判定: '{last_message}' → option_click")
             return "option_click"
+
+        if is_direct_menu_existence_question(last_message):
+            logger.info(f"[Route] 商品存在確認を検出: '{last_message}' → general")
+            state.setdefault("context", {})
+            state["context"]["detected_intent"] = "product_existence"
+            return "general"
 
         context = state.get("context") or {}
         conversation_turns = context.get("conversation_turns") or []

@@ -120,6 +120,40 @@ class ConversationRouterTests(unittest.TestCase):
         self.assertEqual(slots.get("budget"), 5000)
         self.assertEqual(slots.get("room_preference"), "個室")
 
+    def test_order_followup_after_product_existence_stays_store_order(self):
+        current_memory = {
+            "active_topic": "menu",
+            "current_entity": "中生ビール",
+            "detected_intent": "product_existence",
+            "last_assistant_action": "answered_product_existence",
+        }
+        route = classify_conversation_route(
+            "じゃあ一つ",
+            active_topic=current_memory["active_topic"],
+        )
+        updates = infer_memory_updates(
+            "じゃあ一つ",
+            route,
+            current_memory=current_memory,
+        )
+
+        self.assertEqual(route.kind, "store")
+        self.assertEqual(updates.get("active_topic"), "order")
+        self.assertEqual(updates.get("pending_flow"), "order")
+
+    def test_topic_shift_from_product_existence_to_business_hours(self):
+        route = classify_conversation_route(
+            "ところで明日は何時から？",
+            active_topic="menu",
+        )
+
+        self.assertEqual(route.kind, "store")
+        self.assertTrue(
+            route.reason.startswith("store_question")
+            or route.reason == "store_keyword"
+            or route.reason == "fallback_existing_pipeline"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

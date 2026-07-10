@@ -2,6 +2,53 @@
 
 from typing import Any, List
 
+SNACK_RECOMMENDATION_TERMS = [
+    "つまみ",
+    "おつまみ",
+    "合う料理",
+    "合うもの",
+    "合うつまみ",
+    "肴",
+]
+
+MENU_EXISTENCE_TERMS = [
+    "ある",
+    "あります",
+    "ございます",
+    "置いて",
+    "置いてます",
+    "置いてる",
+    "飲める",
+    "飲めます",
+    "食べられる",
+    "食べれます",
+]
+
+MENU_PRODUCT_TERMS = [
+    "ビール",
+    "生ビール",
+    "中生",
+    "大生",
+    "小生",
+    "瓶ビール",
+    "メガビール",
+    "ノンアル",
+    "レモンサワー",
+    "サワー",
+    "酎ハイ",
+    "チューハイ",
+    "レモン酎ハイ",
+    "日本酒",
+    "焼酎",
+    "ハイボール",
+    "ワイン",
+    "ソフトドリンク",
+    "刺身",
+    "お刺身",
+    "刺身盛り合わせ",
+    "刺身盛合",
+]
+
 
 def is_direct_menu_existence_question(message: str) -> bool:
     """Return True for short menu availability questions."""
@@ -9,38 +56,11 @@ def is_direct_menu_existence_question(message: str) -> bool:
         return False
 
     normalized = message.strip().lower()
-    if any(word in normalized for word in ["つまみ", "おつまみ", "合う料理", "合うもの"]):
+    if any(word in normalized for word in SNACK_RECOMMENDATION_TERMS):
         return False
 
-    menu_terms = [
-        "ビール",
-        "生ビール",
-        "中生",
-        "大生",
-        "小生",
-        "瓶ビール",
-        "メガビール",
-        "ノンアル",
-        "日本酒",
-        "焼酎",
-        "ハイボール",
-        "酎ハイ",
-        "ワイン",
-        "ソフトドリンク",
-    ]
-    existence_terms = [
-        "ある",
-        "あります",
-        "ございます",
-        "置いて",
-        "飲める",
-        "飲めます",
-        "食べられる",
-        "食べれます",
-    ]
-
-    return any(term in normalized for term in menu_terms) and any(
-        term in normalized for term in existence_terms
+    return any(term in normalized for term in MENU_PRODUCT_TERMS) and any(
+        term in normalized for term in MENU_EXISTENCE_TERMS
     )
 
 
@@ -55,7 +75,7 @@ def format_direct_menu_existence_answer(items: List[Any]) -> str:
     price_text = f"（{int(price):,}円）" if isinstance(price, (int, float)) and price > 0 else ""
 
     if len(items) == 1:
-        return f"はい、{name}{price_text}ございます。"
+        return f"はい、{name}{price_text}ありますよ。ご注文になさいますか？"
 
     names = []
     for item in items[:5]:
@@ -65,4 +85,4 @@ def format_direct_menu_existence_answer(items: List[Any]) -> str:
             suffix = f"（{int(item_price):,}円）" if isinstance(item_price, (int, float)) and item_price > 0 else ""
             names.append(f"{item_name}{suffix}")
 
-    return "はい、ございます。該当しそうなメニューは " + "、".join(names) + " です。"
+    return "はい、ございます。近いものでは " + "、".join(names) + " があります。どれになさいますか？"

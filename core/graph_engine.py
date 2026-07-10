@@ -10,6 +10,7 @@ from typing import Dict, Any, TypedDict, Literal, Optional, List, Tuple
 logger = logging.getLogger(__name__)
 
 from .conversation_utils import build_chat_messages
+from .menu_existence import is_direct_menu_existence_question
 
 # LangGraphのimportを安全に行う
 try:
@@ -259,6 +260,9 @@ class GraphEngine:
                 intent = "option_click"
                 state["selected_option"] = last_message
                 logger.info(f"[DEBUG] selected_optionを設定: '{last_message}'")
+            # 商品名 + 存在確認は、おすすめ/酒つまみより先にメニュー確認として扱う。
+            elif is_direct_menu_existence_question(last_message):
+                intent = "menu"
             # 酒のつまみ関連のキーワードを直接チェック（優先度高）
             elif self._is_sake_snack_query(last_message):
                 intent = "sake_snack"
@@ -716,9 +720,6 @@ class GraphEngine:
             "どれが",
             "何か",
             "教えて",
-            "は？",
-            "ですか？",
-            "ありますか？"
         ]
         
         message_lower = message.lower()
