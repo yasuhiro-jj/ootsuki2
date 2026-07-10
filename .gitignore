@@ -66,6 +66,7 @@ frontend/.env.local
 *.bat
 *.sh
 test_*.py
+!tests/test_*.py
 debug_*.py
 check_*.py
 analyze_*.py

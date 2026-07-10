@@ -5,6 +5,11 @@
 
 const NOTION_BASE = 'https://api.notion.com/v1';
 const NOTION_VERSION = '2022-06-28';
+const DEFAULT_MENU_DB_ID = '258e9a7e-e5b7-8054-922d-e365bec99064';
+const DEFAULT_STORE_DB_ID = '262e9a7e-e5b7-806e-911c-e966a0ccf7fe';
+const DEFAULT_CONVERSATION_DB_ID = '700563e396c84f8f89adafb90c51ca3f';
+const DEFAULT_UNKNOWN_KEYWORDS_DB_ID = '6cccf26b198645f2b08d71fb9b1d01f0';
+const DEFAULT_CONVERSATION_NODES_DB_ID = '700563e396c84f8f89adafb90c51ca3f';
 
 function getNotionToken(): string {
   const token =
@@ -64,12 +69,71 @@ function rowToText(properties: Record<string, any>): string {
   return parts.join(' / ');
 }
 
-async function queryDatabase(dbId: string, pageSize = 50): Promise<string[]> {
+function extractMenuSearchTerms(message?: string): string[] {
+  if (!message) return [];
+  const text = message.trim().toLowerCase();
+  const knownTerms = [
+    'ノンアルコールビール',
+    '中生ビール',
+    '大生ビール',
+    '小生ビール',
+    'メガビール',
+    '瓶ビール',
+    '生ビール',
+    'ビール',
+    'ハイボール',
+    '酎ハイ',
+    '日本酒',
+    '焼酎',
+    'ワイン',
+    'ソフトドリンク',
+  ];
+
+  const terms = knownTerms.filter((term) => text.includes(term.toLowerCase()));
+  let cleaned = text.replace(/[?？!！。．、,]/g, ' ');
+  for (const word of [
+    'ありますか',
+    'あるかな',
+    'ある',
+    'あります',
+    'ございますか',
+    'ございます',
+    '置いてますか',
+    '置いてる',
+    '飲めますか',
+    '飲める',
+    'メニュー',
+    'ください',
+    '下さい',
+    '教えて',
+    'って',
+    'とは',
+    'は',
+    'を',
+    'が',
+    'の',
+  ]) {
+    cleaned = cleaned.replaceAll(word.toLowerCase(), ' ');
+  }
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  if (cleaned.length >= 2) terms.push(cleaned);
+
+  return Array.from(new Set(terms));
+}
+
+async function queryDatabase(
+  dbId: string,
+  pageSize = 50,
+  filter?: Record<string, unknown>
+): Promise<string[]> {
   if (!dbId) return [];
   const res = await fetch(`${NOTION_BASE}/databases/${dbId}/query`, {
     method: 'POST',
     headers: headers(),
-    body: JSON.stringify({ page_size: pageSize }),
+    body: JSON.stringify({
+      page_size: pageSize,
+      ...(filter ? { filter } : {}),
+    }),
   });
 
   if (!res.ok) {
@@ -82,6 +146,27 @@ async function queryDatabase(dbId: string, pageSize = 50): Promise<string[]> {
   return data.results.map((page: any) => rowToText(page.properties));
 }
 
+async function queryMenuByMessage(menuDbId: string, message?: string): Promise<string[]> {
+  const terms = extractMenuSearchTerms(message);
+  if (terms.length === 0) return [];
+
+  const rows: string[] = [];
+  const seen = new Set<string>();
+  for (const term of terms.slice(0, 5)) {
+    const found = await queryDatabase(menuDbId, 10, {
+      property: 'Name',
+      title: { contains: term },
+    });
+    for (const row of found) {
+      if (!seen.has(row)) {
+        seen.add(row);
+        rows.push(row);
+      }
+    }
+  }
+  return rows;
+}
+
 export type NotionContext = {
   menu: string[];
   store: string[];
@@ -90,21 +175,26 @@ export type NotionContext = {
   conversationNodes: string[];
 };
 
-export async function fetchNotionContext(): Promise<NotionContext> {
-  const menuDbId = process.env.NOTION_DATABASE_ID_MENU ?? '';
-  const storeDbId = process.env.NOTION_DATABASE_ID_STORE ?? '';
-  const conversationDbId = process.env.NOTION_DATABASE_ID_CONVERSATION ?? '';
-  const unknownKwDbId = process.env.NOTION_DATABASE_ID_UNKNOWN_KEYWORDS ?? '';
-  const convNodesDbId = process.env.NOTION_DB_CONVERSATION ?? '';
+export async function fetchNotionContext(message?: string): Promise<NotionContext> {
+  const menuDbId = process.env.NOTION_DATABASE_ID_MENU ?? DEFAULT_MENU_DB_ID;
+  const storeDbId = process.env.NOTION_DATABASE_ID_STORE ?? DEFAULT_STORE_DB_ID;
+  const conversationDbId =
+    process.env.NOTION_DATABASE_ID_CONVERSATION ?? DEFAULT_CONVERSATION_DB_ID;
+  const unknownKwDbId =
+    process.env.NOTION_DATABASE_ID_UNKNOWN_KEYWORDS ?? DEFAULT_UNKNOWN_KEYWORDS_DB_ID;
+  const convNodesDbId = process.env.NOTION_DB_CONVERSATION ?? DEFAULT_CONVERSATION_NODES_DB_ID;
 
-  const [menu, store, conversation, unknownKeywords, conversationNodes] =
+  const [focusedMenu, fallbackMenu, store, conversation, unknownKeywords, conversationNodes] =
     await Promise.all([
+      queryMenuByMessage(menuDbId, message),
       queryDatabase(menuDbId, 100),
       queryDatabase(storeDbId, 20),
       queryDatabase(conversationDbId, 50),
       queryDatabase(unknownKwDbId, 50),
       queryDatabase(convNodesDbId, 50),
     ]);
+
+  const menu = focusedMenu.length > 0 ? focusedMenu : fallbackMenu;
 
   return { menu, store, conversation, unknownKeywords, conversationNodes };
 }

@@ -21,7 +21,17 @@ from .ai_engine import AIEngine
 from .chroma_client import ChromaClient
 from .intent_classifier import IntentClassifier, IntentType
 from .notion_client import NotionClient
+from .notion_knowledge_service import NotionKnowledgeContextService
 from .unknown_keyword_service import UnknownKeywordSearchService
+from .conversation_router import (
+    classify_conversation_route,
+    infer_memory_updates,
+    should_search_standard_answer,
+)
+from .menu_existence import (
+    format_direct_menu_existence_answer,
+    is_direct_menu_existence_question,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +54,12 @@ LINE_CONTACT_FOOTER = (
     'font-weight:600;text-decoration:none;">メニューを見る</a>'
 )
 
+LATEST_INFO_UNAVAILABLE_MESSAGE = (
+    "現在のリアルタイム情報にはまだ接続されていないため、"
+    "今日の天気・ニュース・試合結果などを正確には確認できません。"
+    "確認できる情報源を見ながらなら、一緒に整理できます。"
+)
+
 
 def append_line_contact_footer(message: str) -> str:
     """ユーザー向け回答の末尾にLINE案内を重複なく付与する。"""
@@ -55,6 +71,7 @@ def append_line_contact_footer(message: str) -> str:
         return normalized
 
     return f"{normalized}\n\n{LINE_CONTACT_FOOTER}"
+
 
 # LangGraphは条件付きimport（使用時のみ）
 try:
@@ -227,6 +244,11 @@ def create_app(config: ConfigLoader) -> FastAPI:
 
     _menu_db_id = config.get("notion.database_ids.menu_db")
     shared_menu_service = MenuService(notion_client, _menu_db_id)
+    notion_knowledge_service = NotionKnowledgeContextService(
+        notion_client=notion_client,
+        config=config,
+        menu_service=shared_menu_service,
+    )
     
     # 不明キーワード検索サービス初期化
     unknown_keywords_db_id = config.get("notion.database_ids.unknown_keywords_db")
@@ -421,9 +443,113 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 else "normal"
             )
             tone = ai_engine.adjust_tone(intent_result.intent.value)
+            session_memory = ai_engine.get_session_memory(session_id)
+            recent_turns = ai_engine.get_llm_conversation_turns(session_id, max_pairs=4)
+            recent_messages = [
+                turn.get("content", "")
+                for turn in recent_turns
+                if turn.get("content")
+            ]
+            conversation_route = classify_conversation_route(
+                user_message,
+                recent_messages=recent_messages,
+                active_topic=session_memory.get("active_topic"),
+                pending_flow=session_memory.get("pending_flow"),
+            )
+            allow_standard_answer_search = should_search_standard_answer(
+                user_message,
+                recent_messages=recent_messages,
+                active_topic=session_memory.get("active_topic"),
+                pending_flow=session_memory.get("pending_flow"),
+            )
+            logger.info(
+                "[Route] session=%s conversation_route=%s reason=%s standard_answer=%s",
+                session_id[:8],
+                conversation_route.kind,
+                conversation_route.reason,
+                allow_standard_answer_search,
+            )
+            memory_updates = infer_memory_updates(
+                user_message,
+                conversation_route,
+                current_memory=session_memory,
+            )
+            if memory_updates:
+                ai_engine.save_memory(session_id, memory_updates)
+                session_memory = {**session_memory, **memory_updates}
+
+            if conversation_route.kind == "latest":
+                session = ai_engine.get_session(session_id)
+                if session:
+                    session.add_message("user", request.message)
+                    session.add_message("assistant", LATEST_INFO_UNAVAILABLE_MESSAGE)
+                return ChatResponse(
+                    message=LATEST_INFO_UNAVAILABLE_MESSAGE,
+                    session_id=session_id,
+                    timestamp=datetime.now().isoformat(),
+                    options=[],
+                    suggestions=None,
+                    image_url=None,
+                    line_reply_messages=None,
+                )
+
+            if conversation_route.kind == "natural":
+                route_context = (
+                    "この発話は店舗データを使わない自然会話として扱ってください。"
+                    "メニュー、価格、営業時間、予約などの店舗事実は推測しないでください。"
+                )
+                response_message = ai_engine.generate_response(
+                    session_id=session_id,
+                    user_message=request.message,
+                    context=route_context,
+                    response_mode="normal",
+                    tone="casual",
+                    intent_result=intent_result,
+                )
+                logger.info(
+                    "[Decision] session=%s source=natural_chat route=%s",
+                    session_id[:8],
+                    conversation_route.kind,
+                )
+
+                return ChatResponse(
+                    message=response_message,
+                    session_id=session_id,
+                    timestamp=datetime.now().isoformat(),
+                    options=[],
+                    suggestions=None,
+                    image_url=None,
+                    line_reply_messages=None,
+                )
+
+            if is_direct_menu_existence_question(user_message):
+                menu_items = shared_menu_service.search_menu_items_for_existence(
+                    user_message,
+                    limit=5,
+                )
+                response_message = format_direct_menu_existence_answer(menu_items)
+                session = ai_engine.get_session(session_id)
+                if session:
+                    session.add_message("user", user_message)
+                    session.add_message("assistant", response_message)
+                logger.info(
+                    "[Decision] session=%s source=direct_menu_existence hits=%d",
+                    session_id[:8],
+                    len(menu_items),
+                )
+
+                return ChatResponse(
+                    message=response_message,
+                    session_id=session_id,
+                    timestamp=datetime.now().isoformat(),
+                    options=[],
+                    suggestions=None,
+                    image_url=None,
+                    line_reply_messages=None,
+                )
             
             # 【優先】不明キーワードDB検索を最初に実行（RAG結果に関係なく）
-            if unknown_keyword_service:
+            if unknown_keyword_service and allow_standard_answer_search:
                 try:
                     unknown_result = unknown_keyword_service.search_similar_question(user_message)
                     if unknown_result and unknown_result.get("standard_answer"):
@@ -479,7 +605,11 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 rag_results = chroma_client.query(user_message, k=15)
 
             unknown_context_result = None
-            if unknown_keyword_service and response_mode == "suggestion":
+            if (
+                unknown_keyword_service
+                and response_mode == "suggestion"
+                and allow_standard_answer_search
+            ):
                 try:
                     unknown_context_result = unknown_keyword_service.search_similar_question(
                         user_message,
@@ -496,6 +626,17 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 notion_data=notion_context,
                 intent_result=intent_result,
             )
+            live_notion_context = notion_knowledge_service.build_context(
+                message=user_message,
+                route=conversation_route,
+                session_memory=session_memory,
+            )
+            if live_notion_context:
+                combined_context = (
+                    f"{combined_context}\n\n"
+                    "[Live Notion knowledge]\n"
+                    f"{live_notion_context}"
+                ).strip()
             
             response_options: list = []
             response_message = ""
@@ -872,9 +1013,26 @@ def create_app(config: ConfigLoader) -> FastAPI:
                                 "session_id": session_id
                             }
                         
-                        logger.info(f"[WS] SimpleGraphEngine invoke開始")
-                        result = simple_graph.invoke(state)
-                        logger.info(f"[WS] SimpleGraphEngine invoke完了: {result.get('response', '')[:50]}...")
+                        if is_direct_menu_existence_question(message):
+                            menu_items = shared_menu_service.search_menu_items_for_existence(
+                                message,
+                                limit=5,
+                            )
+                            direct_response = format_direct_menu_existence_answer(menu_items)
+                            result = {
+                                **state,
+                                "intent": "menu_existence",
+                                "response": direct_response,
+                                "options": [],
+                            }
+                            logger.info(
+                                "[WS] direct_menu_existence hits=%d",
+                                len(menu_items),
+                            )
+                        else:
+                            logger.info(f"[WS] SimpleGraphEngine invoke開始")
+                            result = simple_graph.invoke(state)
+                            logger.info(f"[WS] SimpleGraphEngine invoke完了: {result.get('response', '')[:50]}...")
                         
                         if message.strip():
                             sess = ai_engine.get_session(session_id)

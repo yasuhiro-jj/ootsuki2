@@ -15,8 +15,15 @@ import logging
 
 from .line_contact import append_line_contact_link, log_unknown_keyword_to_notion
 from .conversation_utils import build_chat_messages
+from .conversation_router import classify_conversation_route, infer_memory_updates
 
 logger = logging.getLogger(__name__)
+
+LATEST_INFO_UNAVAILABLE_MESSAGE = (
+    "現在のリアルタイム情報にはまだ接続されていないため、"
+    "今日の天気・ニュース・試合結果などを正確には確認できません。"
+    "確認できる情報源を見ながらなら、一緒に整理できます。"
+)
 
 # --- 状態定義 ---
 class State(TypedDict):
@@ -73,6 +80,7 @@ class SimpleGraphEngine:
         graph.add_node("banquet_flow", self.banquet_flow)
         graph.add_node("proactive_recommend", self.proactive_recommend)
         graph.add_node("option_click", self.option_click)
+        graph.add_node("natural_chat", self.natural_chat)
         graph.add_node("general_response", self.general_response)
         graph.add_node("end_flow", self.end_flow)
         
@@ -86,6 +94,7 @@ class SimpleGraphEngine:
             "banquet_flow": "banquet_flow",
             "proactive_recommend": "proactive_recommend",
             "option_click": "option_click",
+            "natural_chat": "natural_chat",
             "general": "general_response",
             END: END
         })
@@ -96,6 +105,7 @@ class SimpleGraphEngine:
         graph.add_edge("banquet_flow", "end_flow")
         graph.add_edge("proactive_recommend", "end_flow")
         graph.add_edge("option_click", "end_flow")
+        graph.add_edge("natural_chat", "end_flow")
         graph.add_edge("general_response", "end_flow")
         graph.add_edge("end_flow", END)
         
@@ -3809,6 +3819,59 @@ class SimpleGraphEngine:
         
         return state
     
+    def natural_chat(self, state: State) -> State:
+        """自然会話ノード。店舗データが不要な発話はLLMだけで返す。"""
+        logger.info("[Node] natural_chat")
+
+        last_message = state.get("messages", [])[-1] if state.get("messages") else ""
+        context = state.get("context") or {}
+        conversation_turns = context.get("conversation_turns") or []
+
+        if context.get("conversation_route") == "latest":
+            state["response"] = LATEST_INFO_UNAVAILABLE_MESSAGE
+            state["options"] = []
+            return state
+
+        if not self.llm:
+            state["response"] = (
+                "うん、ちゃんと聞いています。いま少しAIの応答準備が整っていないので、"
+                "お店のことでも雑談でも、もう一度だけ送ってください。"
+            )
+            state["options"] = []
+            return state
+
+        system_prompt = (
+            "あなたは食事処おおつきの会話AIです。普段はChatGPTのように自然で親しみやすく会話します。"
+            "ただし、メニュー、価格、営業時間、予約、宴会、アクセスなど店舗の事実が必要な話は、"
+            "推測せず『お店の情報を確認します』という姿勢で短く受け止めます。"
+            "雑談や一般相談には店舗データを無理に使わず、会話の流れを踏まえて日本語で返してください。"
+            "返答は基本2から4文で、必要なときだけ質問を1つ添えてください。"
+        )
+
+        messages = [SystemMessage(content=system_prompt)]
+        for turn in conversation_turns[-8:]:
+            role = turn.get("role")
+            content = turn.get("content", "")
+            if not content:
+                continue
+            if role == "user":
+                messages.append(HumanMessage(content=content))
+            elif role == "assistant":
+                messages.append(AIMessage(content=content))
+        messages.append(HumanMessage(content=last_message))
+
+        try:
+            response = self.llm.invoke(messages)
+            state["response"] = str(response.content).strip()
+        except Exception as e:
+            logger.error(f"[NaturalChat] LLM応答生成エラー: {e}")
+            state["response"] = "そうですね。もう少し聞かせてもらえたら、流れに合わせて一緒に考えます。"
+
+        state["options"] = []
+        state.setdefault("context", {})
+        state["context"]["route"] = "natural_chat"
+        return state
+
     def general_response(self, state: State) -> State:
         """一般応答ノード（人間味のある会話対応・RAG統合）"""
         logger.info("[Node] general_response")
@@ -4909,6 +4972,38 @@ class SimpleGraphEngine:
         if self._is_option_click(last_message):
             logger.info(f"[Route] 選択肢クリック判定: '{last_message}' → option_click")
             return "option_click"
+
+        context = state.get("context") or {}
+        conversation_turns = context.get("conversation_turns") or []
+        recent_messages = [
+            turn.get("content", "")
+            for turn in conversation_turns
+            if isinstance(turn, dict) and turn.get("content")
+        ]
+        conversation_route = classify_conversation_route(
+            last_message,
+            recent_messages=recent_messages,
+            active_topic=context.get("active_topic"),
+            pending_flow=context.get("pending_flow"),
+        )
+        state.setdefault("context", {})
+        state["context"]["conversation_route"] = conversation_route.kind
+        state["context"]["conversation_route_reason"] = conversation_route.reason
+        state["context"].update(
+            infer_memory_updates(
+                last_message,
+                conversation_route,
+                current_memory=state.get("context") or {},
+            )
+        )
+        logger.info(
+            "[Route] conversation_route=%s reason=%s message='%s'",
+            conversation_route.kind,
+            conversation_route.reason,
+            last_message,
+        )
+        if conversation_route.kind in {"natural", "latest"}:
+            return "natural_chat"
         
         # 【重要】忘年会キーワードを最優先検出（刺身キーワードより前に配置）
         # 会話ノードDBから忘年会ノードを検索
@@ -4955,6 +5050,8 @@ class SimpleGraphEngine:
                     if "context" not in state:
                         state["context"] = {}
                     state["context"]["banquet_node_id"] = node_id
+                    state["context"]["active_topic"] = "reservation"
+                    state["context"]["pending_flow"] = "reservation"
                     return "banquet_flow"
         
         # 刺身関連キーワードを検出（intent.sashimi）- 「たい」の誤検出を防ぐため、より厳密に
@@ -6692,4 +6789,3 @@ class SimpleGraphEngine:
         
         final_state = self.graph.invoke(initial_state)
         return final_state
-

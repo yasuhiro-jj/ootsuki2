@@ -5,6 +5,7 @@ NotionメニューDBから情報を取得して表示用に整形する
 """
 
 import os
+import re
 import logging
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
@@ -486,6 +487,93 @@ class MenuService:
 
         return unique_items[:limit]
 
+    def search_menu_items_for_existence(self, query: str, limit: int = 5) -> List[MenuItemView]:
+        """「このメニューある？」系の発話から候補名を抜き出して検索する。"""
+        candidates = self.extract_menu_name_candidates(query)
+        if not candidates:
+            return []
+
+        found: List[MenuItemView] = []
+        seen_names = set()
+        for candidate in candidates:
+            for item in self.fetch_menu_items(candidate, limit=limit):
+                if item.name and item.name not in seen_names:
+                    found.append(item)
+                    seen_names.add(item.name)
+            if len(found) >= limit:
+                break
+
+        return found[:limit]
+
+    def extract_menu_name_candidates(self, query: str) -> List[str]:
+        """メニュー存在確認の検索語を、質問文からできるだけ商品名寄りに整える。"""
+        if not query:
+            return []
+
+        text = query.strip().lower()
+        known_terms = [
+            "ノンアルコールビール",
+            "中生ビール",
+            "大生ビール",
+            "小生ビール",
+            "メガビール",
+            "瓶ビール",
+            "生ビール",
+            "ビール",
+            "ハイボール",
+            "酎ハイ",
+            "日本酒",
+            "焼酎",
+            "ワイン",
+            "ソフトドリンク",
+        ]
+
+        candidates: List[str] = []
+        for term in known_terms:
+            if term.lower() in text:
+                candidates.append(term)
+
+        cleaned = re.sub(r"[?？!！。．、,]", " ", text)
+        stopwords = [
+            "ありますか",
+            "あるかな",
+            "ある？",
+            "ある",
+            "あります",
+            "ございますか",
+            "ございます",
+            "置いてますか",
+            "置いてる",
+            "飲めますか",
+            "飲める",
+            "食べられますか",
+            "食べれる",
+            "メニュー",
+            "ください",
+            "下さい",
+            "教えて",
+            "って",
+            "とは",
+            "は",
+            "を",
+            "が",
+            "の",
+        ]
+        for word in stopwords:
+            cleaned = cleaned.replace(word.lower(), " ")
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+
+        if len(cleaned) >= 2:
+            candidates.append(cleaned)
+
+        unique: List[str] = []
+        for candidate in candidates:
+            normalized = candidate.strip()
+            if normalized and normalized not in unique:
+                unique.append(normalized)
+
+        return unique
+
     def search_menu_by_query(self, query: str, limit: int = 5) -> str:
         """
         ユーザーの質問からメニューを検索
@@ -605,4 +693,3 @@ class MenuService:
         logger.info(f"[MenuService] 抽出キーワード: {final_keywords}")
         
         return final_keywords
-

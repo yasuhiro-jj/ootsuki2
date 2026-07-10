@@ -743,14 +743,11 @@ class GraphEngine:
         sake_snack_keywords = [
             "つまみ",
             "おつまみ",
-            "お酒",
-            "酒",
-            "ビール",
-            "日本酒",
-            "焼酎",
-            "ワイン",
             "おつまみ定番",
             "ビールに合う",
+            "日本酒に合う",
+            "焼酎に合う",
+            "ワインに合う",
             "日本酒向けつまみ",
             "焼き物おつまみ",
             "揚げ物おつまみ",
@@ -1202,4 +1199,3 @@ class GraphEngine:
         
         logger.debug(f"ノード実行: option_click - {selected_option}")
         return state
-
