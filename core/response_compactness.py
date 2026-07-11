@@ -1,5 +1,6 @@
 """Helpers for keeping customer-facing replies short and natural."""
 
+import re
 from typing import Any, Dict
 
 CONTACT_GUIDANCE_TERMS = (
@@ -24,6 +25,20 @@ SHORT_ORDER_CONFIRMATION_TERMS = (
     "じゃあ一つ",
     "じゃあ1つ",
     "じゃあひとつ",
+    "それ一つ",
+    "それ1つ",
+    "それひとつ",
+    "それで",
+    "それ",
+    "同じの",
+    "同じもの",
+    "同じやつ",
+    "もう一つ",
+    "もう1つ",
+    "もうひとつ",
+    "もう一杯",
+    "もう1杯",
+    "さっきの",
     "一つ",
     "1つ",
     "ひとつ",
@@ -35,12 +50,42 @@ SHORT_ORDER_CONFIRMATION_TERMS = (
     "にする",
 )
 
+_FULL_WIDTH_DIGIT_TRANSLATION = str.maketrans("０１２３４５６７８９", "0123456789")
+
 
 def should_append_line_contact_footer(message: str) -> bool:
     """Only add contact guidance when the reply says human contact is needed."""
     if not message:
         return False
     return any(term in message for term in CONTACT_GUIDANCE_TERMS)
+
+
+def normalize_customer_reply(message: str) -> str:
+    """Normalize common store replies so they read well in chat and voice."""
+    if not message:
+        return message
+
+    normalized = message.translate(_FULL_WIDTH_DIGIT_TRANSLATION)
+    normalized = normalized.replace("〜", "～")
+    normalized = re.sub(r"(\d{1,2})時\s*[～\-ー]\s*(\d{1,2})時", r"\1時から\2時", normalized)
+    normalized = normalized.replace("夜は、", "夜は")
+    normalized = normalized.replace("までの営業になります", "です")
+    normalized = normalized.replace("まで営業になります", "です")
+    normalized = normalized.replace("の営業になります", "です")
+    normalized = normalized.replace("営業になります", "です")
+    normalized = normalized.replace(
+        "火曜日は定休日をもらっていますので、よろしくお願いいたします。",
+        "火曜日は定休日です。",
+    )
+    normalized = normalized.replace(
+        "火曜日は定休日をもらっています。",
+        "火曜日は定休日です。",
+    )
+    normalized = normalized.replace("定休日をもらっています", "定休日です")
+    normalized = re.sub(r"。\s*よろしくお願いいたします。?$", "。", normalized)
+    normalized = re.sub(r"\s+\n", "\n", normalized)
+    normalized = re.sub(r"\n{3,}", "\n\n", normalized)
+    return normalized.strip()
 
 
 def is_short_order_confirmation(message: str, memory: Dict[str, Any]) -> bool:
@@ -63,4 +108,4 @@ def is_short_order_confirmation(message: str, memory: Dict[str, Any]) -> bool:
 
 def format_short_order_confirmation(memory: Dict[str, Any]) -> str:
     item_name = str(memory.get("current_entity") or "ご注文").strip()
-    return f"かしこまりました。{item_name}1つですね。"
+    return f"かしこまりました。{item_name}1つですね。ご注文内容として控えました。"

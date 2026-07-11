@@ -36,6 +36,7 @@ from .menu_existence import (
 from .response_compactness import (
     format_short_order_confirmation,
     is_short_order_confirmation,
+    normalize_customer_reply,
     should_append_line_contact_footer,
 )
 from .conversation_quality import ConversationQualityLog, ConversationQualityLogger
@@ -73,7 +74,7 @@ def append_line_contact_footer(message: str) -> str:
     if not message:
         return ""
 
-    normalized = message.rstrip()
+    normalized = normalize_customer_reply(message.rstrip())
     if LINE_CONTACT_FOOTER in normalized:
         return normalized
 
@@ -1343,7 +1344,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
                                 # エラーが発生しても会話は続行
                         
                         # 応答をWebSocket経由で返す（画像URLは HTTP /chat と同じ解決ロジック）
-                        display_text = result.get("response", "")
+                        display_text = normalize_customer_reply(result.get("response", ""))
                         full_with_footer = append_line_contact_footer(display_text)
                         ws_img_url, ws_menu_log = resolve_menu_image_for_chat(
                             shared_menu_service, message
