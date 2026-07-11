@@ -75,14 +75,17 @@ def format_direct_menu_existence_answer(items: List[Any]) -> str:
     price_text = f"（{int(price):,}円）" if isinstance(price, (int, float)) and price > 0 else ""
 
     if len(items) == 1:
-        return f"はい、{name}{price_text}ありますよ。ご注文になさいますか？"
+        return f"はい、{name}{price_text}ありますよ。"
+
+    if name:
+        return f"はい、{name}{price_text}ありますよ。"
 
     names = []
-    for item in items[:5]:
+    for item in items[:3]:
         item_name = getattr(item, "name", "")
         item_price = getattr(item, "price", None)
         if item_name:
             suffix = f"（{int(item_price):,}円）" if isinstance(item_price, (int, float)) and item_price > 0 else ""
             names.append(f"{item_name}{suffix}")
 
-    return "はい、ございます。近いものでは " + "、".join(names) + " があります。どれになさいますか？"
+    return "はい、ございます。" + "、".join(names) + " があります。"

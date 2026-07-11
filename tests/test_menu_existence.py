@@ -43,7 +43,21 @@ class MenuExistenceTests(unittest.TestCase):
         answer = format_direct_menu_existence_answer(
             [SimpleNamespace(name="中生ビール", price=650)],
         )
-        self.assertEqual(answer, "はい、中生ビール（650円）ありますよ。ご注文になさいますか？")
+        self.assertEqual(answer, "はい、中生ビール（650円）ありますよ。")
+
+    def test_formats_multiple_existence_hits_without_large_candidate_list(self):
+        answer = format_direct_menu_existence_answer(
+            [
+                SimpleNamespace(name="中生ビール", price=650),
+                SimpleNamespace(name="大生ビール", price=880),
+                SimpleNamespace(name="小生ビール", price=0),
+                SimpleNamespace(name="ノンアルコールビール", price=380),
+            ],
+        )
+
+        self.assertEqual(answer, "はい、中生ビール（650円）ありますよ。")
+        self.assertNotIn("ノンアルコールビール", answer)
+        self.assertNotIn("どれになさいますか", answer)
 
 
 if __name__ == "__main__":

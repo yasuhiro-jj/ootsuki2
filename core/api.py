@@ -33,6 +33,11 @@ from .menu_existence import (
     format_direct_menu_existence_answer,
     is_direct_menu_existence_question,
 )
+from .response_compactness import (
+    format_short_order_confirmation,
+    is_short_order_confirmation,
+    should_append_line_contact_footer,
+)
 from .conversation_quality import ConversationQualityLog, ConversationQualityLogger
 
 logger = logging.getLogger(__name__)
@@ -66,10 +71,13 @@ LATEST_INFO_UNAVAILABLE_MESSAGE = (
 def append_line_contact_footer(message: str) -> str:
     """ユーザー向け回答の末尾にLINE案内を重複なく付与する。"""
     if not message:
-        return LINE_CONTACT_FOOTER
+        return ""
 
     normalized = message.rstrip()
     if LINE_CONTACT_FOOTER in normalized:
+        return normalized
+
+    if not should_append_line_contact_footer(normalized):
         return normalized
 
     return f"{normalized}\n\n{LINE_CONTACT_FOOTER}"
@@ -532,6 +540,49 @@ def create_app(config: ConfigLoader) -> FastAPI:
             if memory_updates:
                 ai_engine.save_memory(session_id, memory_updates)
                 session_memory = {**session_memory, **memory_updates}
+
+            if is_short_order_confirmation(user_message, session_memory):
+                response_message = format_short_order_confirmation(session_memory)
+                ai_engine.save_memory(
+                    session_id,
+                    {
+                        "active_topic": "order",
+                        "pending_flow": "order",
+                        "detected_intent": "product_order",
+                        "order_intent_level": "confirming",
+                        "recently_confirmed_item": session_memory.get("current_entity"),
+                        "last_assistant_action": "confirmed_order_item",
+                    },
+                )
+                session_memory = ai_engine.get_session_memory(session_id)
+                session = ai_engine.get_session(session_id)
+                if session:
+                    session.add_message("user", request.message)
+                    session.add_message("assistant", response_message)
+                _record_quality_log(
+                    session_id=session_id,
+                    user_id=request.customer_id,
+                    user_message=request.message,
+                    ai_response=response_message,
+                    recent_history=recent_turns,
+                    session_memory=session_memory,
+                    detected_intent="product_order",
+                    route=conversation_route.kind,
+                    route_reason=conversation_route.reason,
+                    node="short_order_confirmation",
+                    referenced_sources={"store_tools_used": False},
+                    latency_ms=_elapsed_ms(started_at),
+                    channel="web",
+                )
+                return ChatResponse(
+                    message=response_message,
+                    session_id=session_id,
+                    timestamp=datetime.now().isoformat(),
+                    options=[],
+                    suggestions=None,
+                    image_url=None,
+                    line_reply_messages=None,
+                )
 
             if conversation_route.kind == "latest":
                 session = ai_engine.get_session(session_id)
@@ -1191,7 +1242,28 @@ def create_app(config: ConfigLoader) -> FastAPI:
                                 "session_id": session_id
                             }
                         
-                        if is_direct_menu_existence_question(message):
+                        ws_session_memory = ai_engine.get_session_memory(session_id)
+                        if is_short_order_confirmation(message, ws_session_memory):
+                            direct_response = format_short_order_confirmation(ws_session_memory)
+                            ai_engine.save_memory(
+                                session_id,
+                                {
+                                    "active_topic": "order",
+                                    "pending_flow": "order",
+                                    "detected_intent": "product_order",
+                                    "order_intent_level": "confirming",
+                                    "recently_confirmed_item": ws_session_memory.get("current_entity"),
+                                    "last_assistant_action": "confirmed_order_item",
+                                },
+                            )
+                            result = {
+                                **state,
+                                "intent": "product_order",
+                                "response": direct_response,
+                                "options": [],
+                            }
+                            logger.info("[WS] short_order_confirmation")
+                        elif is_direct_menu_existence_question(message):
                             menu_items = shared_menu_service.search_menu_items_for_existence(
                                 message,
                                 limit=5,
