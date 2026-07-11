@@ -40,10 +40,18 @@ must not add LINE or phone guidance and must not list many products.
 
 Status: implemented in this phase.
 
-## Phase 3.2: Production Strategy Smoke Test
+## Phase 3.2: Sales Strategy Admin API Authentication
 
-Register one temporary production sales strategy, verify that explicit
-recommendation requests use it, then deactivate it.
+Protect sales strategy management routes with a server-side admin API key before
+allowing production strategy registration.
+
+Status: admin authentication implemented in this phase.
+
+## Phase 3.3: Production Strategy Registration
+
+Set `ADMIN_API_KEY` in Railway, register one temporary sales strategy through a
+trusted admin client, verify the recommendation behavior, then deactivate the
+strategy.
 
 Status: next.
 

@@ -10,7 +10,7 @@ import time
 from dataclasses import asdict
 from typing import Optional, Dict, Any, Set, List
 from datetime import datetime
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import JSONResponse
@@ -41,6 +41,7 @@ from .response_compactness import (
     should_append_line_contact_footer,
 )
 from .conversation_quality import ConversationQualityLog, ConversationQualityLogger
+from .security.admin_auth import require_admin_api_key
 from .integrations.chatbot_ai_manager import (
     ChatbotAIManagerBridge,
     ExplicitSalesRecommendationConnector,
@@ -542,7 +543,10 @@ def create_app(config: ConfigLoader) -> FastAPI:
             product["priority"] = product.pop("priority_score")
         return payload
 
-    @app.post("/admin/ai-manager/sales-strategies")
+    @app.post(
+        "/admin/ai-manager/sales-strategies",
+        dependencies=[Depends(require_admin_api_key)],
+    )
     async def create_sales_strategy(payload: SalesStrategyPayload):
         try:
             strategy = sales_strategy_service.create(_strategy_payload(payload))
@@ -550,7 +554,10 @@ def create_app(config: ConfigLoader) -> FastAPI:
         except SalesStrategyValidationError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
-    @app.get("/admin/ai-manager/sales-strategies")
+    @app.get(
+        "/admin/ai-manager/sales-strategies",
+        dependencies=[Depends(require_admin_api_key)],
+    )
     async def list_sales_strategies(include_inactive: bool = True):
         return {
             "strategies": [
@@ -559,21 +566,30 @@ def create_app(config: ConfigLoader) -> FastAPI:
             ]
         }
 
-    @app.get("/admin/ai-manager/sales-strategies/current")
+    @app.get(
+        "/admin/ai-manager/sales-strategies/current",
+        dependencies=[Depends(require_admin_api_key)],
+    )
     async def get_current_sales_strategy():
         strategy = sales_strategy_service.get_current()
         if not strategy:
             return {"strategy": None}
         return {"strategy": _strategy_response(strategy)}
 
-    @app.get("/admin/ai-manager/sales-strategies/{strategy_id}")
+    @app.get(
+        "/admin/ai-manager/sales-strategies/{strategy_id}",
+        dependencies=[Depends(require_admin_api_key)],
+    )
     async def get_sales_strategy(strategy_id: str):
         strategy = sales_strategy_service.get(strategy_id)
         if not strategy:
             raise HTTPException(status_code=404, detail="sales strategy not found")
         return _strategy_response(strategy)
 
-    @app.put("/admin/ai-manager/sales-strategies/{strategy_id}")
+    @app.put(
+        "/admin/ai-manager/sales-strategies/{strategy_id}",
+        dependencies=[Depends(require_admin_api_key)],
+    )
     async def update_sales_strategy(strategy_id: str, payload: SalesStrategyUpdatePayload):
         try:
             strategy = sales_strategy_service.update(strategy_id, _strategy_payload(payload))
@@ -583,7 +599,10 @@ def create_app(config: ConfigLoader) -> FastAPI:
         except SalesStrategyValidationError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
-    @app.post("/admin/ai-manager/sales-strategies/{strategy_id}/activate")
+    @app.post(
+        "/admin/ai-manager/sales-strategies/{strategy_id}/activate",
+        dependencies=[Depends(require_admin_api_key)],
+    )
     async def activate_sales_strategy(strategy_id: str):
         try:
             strategy = sales_strategy_service.set_active(strategy_id, True)
@@ -593,7 +612,10 @@ def create_app(config: ConfigLoader) -> FastAPI:
         except SalesStrategyValidationError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
-    @app.post("/admin/ai-manager/sales-strategies/{strategy_id}/deactivate")
+    @app.post(
+        "/admin/ai-manager/sales-strategies/{strategy_id}/deactivate",
+        dependencies=[Depends(require_admin_api_key)],
+    )
     async def deactivate_sales_strategy(strategy_id: str):
         try:
             strategy = sales_strategy_service.set_active(strategy_id, False)

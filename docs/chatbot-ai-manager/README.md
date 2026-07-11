@@ -29,6 +29,15 @@ The first management MVP stores manually configured sales strategies through a
 repository/service boundary. The current storage is JSON file backed and can be
 replaced with a database later.
 
+All sales strategy management API routes require an admin API key. Send it in
+the `X-Admin-API-Key` header. The expected value is read from the server-side
+`ADMIN_API_KEY` environment variable. If `ADMIN_API_KEY` is not configured, the
+management API returns `503` instead of opening without authentication.
+
+Do not expose this key through browser public environment variables such as
+`NEXT_PUBLIC_ADMIN_API_KEY`. Use a server-side route, CLI, or trusted admin
+script.
+
 API routes:
 
 - `POST /admin/ai-manager/sales-strategies`
@@ -42,6 +51,22 @@ API routes:
 Default storage:
 
 - `outputs/ai_manager_sales_strategies.json`
+
+CLI helper:
+
+```powershell
+$env:OOTSUKI_API_URL="https://web-production-b22a1.up.railway.app"
+$env:ADMIN_API_KEY="<admin-api-key>"
+python scripts/manage_sales_strategy.py current
+python scripts/manage_sales_strategy.py create --file .\strategy.json
+python scripts/manage_sales_strategy.py deactivate production_smoke_test_001
+```
+
+Generate a local key with:
+
+```powershell
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
 
 ## Limited Chatbot Connection
 

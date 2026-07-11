@@ -17,7 +17,9 @@ Menu / sales / inventory data
 ## Manual Strategy Management Flow
 
 ```text
-Admin API
+Trusted admin client
+  -> X-Admin-API-Key
+  -> Admin API
   -> SalesStrategyManagementService
   -> SalesStrategyRepository
   -> JSON storage for MVP
@@ -26,6 +28,10 @@ Admin API
 The manual strategy management layer is intentionally separate from the
 customer-facing chatbot runtime. The chatbot does not call this strategy service
 until a later limited-connection phase.
+
+The management API is protected by `ADMIN_API_KEY`. Missing or incorrect keys
+return `401`. Missing server configuration returns `503`. The customer-facing
+`/chat` and `/health` routes do not require this key.
 
 ## Explicit Recommendation Connection Flow
 
@@ -80,6 +86,11 @@ Location: `core/integrations/chatbot_ai_manager`
 AI manager policy is advisory. The chatbot must not blindly push priority
 products. The chatbot can ignore the policy when the customer intent, safety
 state, or conversation tone makes a suggestion inappropriate.
+
+Admin credentials must stay on the server side. Do not place the admin API key
+in public browser bundles, query parameters, logs, or documentation examples
+with real values. Rotate the key by updating Railway `ADMIN_API_KEY`, deploying
+or restarting if needed, then updating trusted admin clients.
 
 ## Customer Memory Boundary
 
