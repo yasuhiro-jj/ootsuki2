@@ -21,20 +21,27 @@ class PriorityProduct:
     priority_score: int = 0
     reason: str = ""
     suggest_when: Tuple[str, ...] = ()
+    trigger_item_ids: Tuple[str, ...] = ()
+    excluded_intents: Tuple[str, ...] = ()
     max_suggestions: int = 1
     inventory_priority: Optional[str] = None
     gross_margin_rank: Optional[int] = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "suggest_when", _as_tuple(self.suggest_when))
+        object.__setattr__(self, "trigger_item_ids", _as_tuple(self.trigger_item_ids))
+        object.__setattr__(self, "excluded_intents", _as_tuple(self.excluded_intents))
 
 
 @dataclass(frozen=True)
 class SalesStrategy:
     strategy_id: str
+    name: str = ""
     priority_products: Tuple[PriorityProduct, ...] = ()
     sales_goal: str = ""
     active: bool = True
+    valid_from: str = ""
+    valid_until: str = ""
     max_suggestions_per_session: int = 1
     allowed_topics: Tuple[str, ...] = (
         "product_recommendation",
@@ -54,6 +61,8 @@ class SalesStrategy:
         "reservation",
     )
     generated_by: str = "manual"
+    created_at: str = ""
+    updated_at: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "priority_products", tuple(self.priority_products))

@@ -10,6 +10,9 @@ short customer-friendly replies.
 Let an operator specify today's priority products from an admin screen or a
 simple configuration source.
 
+Status: MVP implemented through admin API, service, repository, validation, and
+JSON storage. A richer admin UI can be added later.
+
 ## Phase 2.5: QR Customer Memory
 
 Connect QR login sessions to pseudonymous customer profiles. Store preferences,
@@ -20,6 +23,8 @@ personal information.
 
 Use conversation state to suggest one priority product only when the customer
 context allows it.
+
+Status: not connected to the production chatbot yet.
 
 ## Phase 4: Result Tracking
 

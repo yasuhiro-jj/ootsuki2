@@ -5,13 +5,18 @@
 Represents sales policy from the AI manager.
 
 - `strategy_id`
+- `name`
 - `priority_products`
 - `sales_goal`
 - `active`
+- `valid_from`
+- `valid_until`
 - `max_suggestions_per_session`
 - `allowed_topics`
 - `blocked_intents`
 - `generated_by`
+- `created_at`
+- `updated_at`
 
 ## PriorityProduct
 
@@ -22,9 +27,18 @@ Represents one product that the AI manager wants to prioritize.
 - `priority_score`
 - `reason`
 - `suggest_when`
+- `trigger_item_ids`
+- `excluded_intents`
 - `max_suggestions`
 - `inventory_priority`
 - `gross_margin_rank`
+
+## Manual Storage
+
+The MVP stores strategies in `outputs/ai_manager_sales_strategies.json`.
+Repository methods return `SalesStrategy` objects so the storage can later move
+to SQLite, Postgres, Supabase, or another backend without changing chatbot
+business rules.
 
 ## ConversationSalesContext
 

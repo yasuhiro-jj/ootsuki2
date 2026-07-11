@@ -7,6 +7,7 @@ FastAPIベースの汎用APIフレームワーク
 import logging
 import asyncio
 import time
+from dataclasses import asdict
 from typing import Optional, Dict, Any, Set, List
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -40,6 +41,11 @@ from .response_compactness import (
     should_append_line_contact_footer,
 )
 from .conversation_quality import ConversationQualityLog, ConversationQualityLogger
+from .integrations.chatbot_ai_manager import (
+    SalesStrategyManagementService,
+    SalesStrategyRepository,
+    SalesStrategyValidationError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +148,46 @@ class ChatResponse(BaseModel):
     suggestions: Optional[list] = None  # Next.jsフロントエンド用（optionsのエイリアス）
     image_url: Optional[str] = None  # メニュー先頭1件の検証済み画像URL
     line_reply_messages: Optional[List[Dict[str, Any]]] = None  # LINE Messaging API 用
+
+
+class PriorityProductPayload(BaseModel):
+    product_id: str
+    product_name: str
+    priority: int
+    reason: str = ""
+    suggest_when: Optional[List[str]] = None
+    trigger_item_ids: Optional[List[str]] = None
+    excluded_intents: Optional[List[str]] = None
+    max_suggestions: int = 1
+    inventory_priority: Optional[str] = None
+    gross_margin_rank: Optional[int] = None
+
+
+class SalesStrategyPayload(BaseModel):
+    strategy_id: Optional[str] = None
+    name: str
+    active: bool = True
+    valid_from: str
+    valid_until: str
+    sales_goal: str = ""
+    max_suggestions_per_session: int = 1
+    priority_products: List[PriorityProductPayload]
+    allowed_topics: Optional[List[str]] = None
+    blocked_intents: Optional[List[str]] = None
+    generated_by: str = "manual"
+
+
+class SalesStrategyUpdatePayload(BaseModel):
+    name: Optional[str] = None
+    active: Optional[bool] = None
+    valid_from: Optional[str] = None
+    valid_until: Optional[str] = None
+    sales_goal: Optional[str] = None
+    max_suggestions_per_session: Optional[int] = None
+    priority_products: Optional[List[PriorityProductPayload]] = None
+    allowed_topics: Optional[List[str]] = None
+    blocked_intents: Optional[List[str]] = None
+    generated_by: Optional[str] = None
 
 
 class ConnectionManager:
@@ -263,6 +309,14 @@ def create_app(config: ConfigLoader) -> FastAPI:
     quality_logger = ConversationQualityLogger(
         path=config.get("conversation_quality.log_path", "outputs/conversation_quality_logs.jsonl"),
         enabled=config.get("features.enable_conversation_quality_logs", True),
+    )
+    sales_strategy_service = SalesStrategyManagementService(
+        SalesStrategyRepository(
+            config.get(
+                "ai_manager.sales_strategy_path",
+                "outputs/ai_manager_sales_strategies.json",
+            )
+        )
     )
     
     # 不明キーワード検索サービス初期化
@@ -466,7 +520,83 @@ def create_app(config: ConfigLoader) -> FastAPI:
             "rag_built": chroma_client._built
         }
     
-    # チャットエンドポイント
+    def _strategy_payload(model: BaseModel) -> Dict[str, Any]:
+        data = model.dict(exclude_none=True)
+        if "priority_products" in data:
+            for product in data["priority_products"]:
+                product["name"] = product.pop("product_name")
+                product["priority_score"] = product.pop("priority")
+        return data
+
+    def _strategy_response(strategy) -> Dict[str, Any]:
+        payload = asdict(strategy)
+        for product in payload.get("priority_products", []):
+            product["product_name"] = product.pop("name")
+            product["priority"] = product.pop("priority_score")
+        return payload
+
+    @app.post("/admin/ai-manager/sales-strategies")
+    async def create_sales_strategy(payload: SalesStrategyPayload):
+        try:
+            strategy = sales_strategy_service.create(_strategy_payload(payload))
+            return _strategy_response(strategy)
+        except SalesStrategyValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.get("/admin/ai-manager/sales-strategies")
+    async def list_sales_strategies(include_inactive: bool = True):
+        return {
+            "strategies": [
+                _strategy_response(strategy)
+                for strategy in sales_strategy_service.list(include_inactive=include_inactive)
+            ]
+        }
+
+    @app.get("/admin/ai-manager/sales-strategies/current")
+    async def get_current_sales_strategy():
+        strategy = sales_strategy_service.get_current()
+        if not strategy:
+            return {"strategy": None}
+        return {"strategy": _strategy_response(strategy)}
+
+    @app.get("/admin/ai-manager/sales-strategies/{strategy_id}")
+    async def get_sales_strategy(strategy_id: str):
+        strategy = sales_strategy_service.get(strategy_id)
+        if not strategy:
+            raise HTTPException(status_code=404, detail="sales strategy not found")
+        return _strategy_response(strategy)
+
+    @app.put("/admin/ai-manager/sales-strategies/{strategy_id}")
+    async def update_sales_strategy(strategy_id: str, payload: SalesStrategyUpdatePayload):
+        try:
+            strategy = sales_strategy_service.update(strategy_id, _strategy_payload(payload))
+            return _strategy_response(strategy)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="sales strategy not found")
+        except SalesStrategyValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.post("/admin/ai-manager/sales-strategies/{strategy_id}/activate")
+    async def activate_sales_strategy(strategy_id: str):
+        try:
+            strategy = sales_strategy_service.set_active(strategy_id, True)
+            return _strategy_response(strategy)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="sales strategy not found")
+        except SalesStrategyValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.post("/admin/ai-manager/sales-strategies/{strategy_id}/deactivate")
+    async def deactivate_sales_strategy(strategy_id: str):
+        try:
+            strategy = sales_strategy_service.set_active(strategy_id, False)
+            return _strategy_response(strategy)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="sales strategy not found")
+        except SalesStrategyValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    # Chat endpoint
     @app.post("/chat", response_model=ChatResponse)
     async def chat(request: ChatRequest):
         """チャット処理"""

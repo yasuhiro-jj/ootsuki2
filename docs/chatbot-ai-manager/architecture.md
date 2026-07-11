@@ -14,6 +14,19 @@ Menu / sales / inventory data
   -> AI manager analytics
 ```
 
+## Manual Strategy Management Flow
+
+```text
+Admin API
+  -> SalesStrategyManagementService
+  -> SalesStrategyRepository
+  -> JSON storage for MVP
+```
+
+The manual strategy management layer is intentionally separate from the
+customer-facing chatbot runtime. The chatbot does not call this strategy service
+until a later limited-connection phase.
+
 ## Responsibilities
 
 ### Chatbot
@@ -43,6 +56,8 @@ Location: `core/integrations/chatbot_ai_manager`
 - Evaluates chatbot conversation context against safe recommendation rules.
 - Returns at most one suggestion decision.
 - Emits suggestion result events for later analytics.
+- Manages manually configured sales strategies through repository/service
+  boundaries.
 
 ## Safety Boundary
 

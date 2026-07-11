@@ -19,12 +19,32 @@ conversation.
 
 ## Current Scope
 
-This project starts with documentation and a passive integration scaffold.
-Customer-facing chatbot behavior is not changed by this directory alone.
+This project now includes a passive integration scaffold and a manual sales
+strategy management MVP. Customer-facing chatbot behavior is still not changed
+by this directory alone.
+
+## Manual Strategy MVP
+
+The first management MVP stores manually configured sales strategies through a
+repository/service boundary. The current storage is JSON file backed and can be
+replaced with a database later.
+
+API routes:
+
+- `POST /admin/ai-manager/sales-strategies`
+- `GET /admin/ai-manager/sales-strategies`
+- `GET /admin/ai-manager/sales-strategies/current`
+- `GET /admin/ai-manager/sales-strategies/{strategy_id}`
+- `PUT /admin/ai-manager/sales-strategies/{strategy_id}`
+- `POST /admin/ai-manager/sales-strategies/{strategy_id}/activate`
+- `POST /admin/ai-manager/sales-strategies/{strategy_id}/deactivate`
+
+Default storage:
+
+- `outputs/ai_manager_sales_strategies.json`
 
 ## Existing Project Boundary
 
 The repository already contains `ai-maneger`. That directory is treated as the
 existing AI manager application and is not renamed here. Chatbot-side integration
 code lives under `core/integrations/chatbot_ai_manager`.
-
