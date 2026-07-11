@@ -30,7 +30,22 @@ personal information.
 Use conversation state to suggest one priority product only when the customer
 explicitly asks for a recommendation.
 
+Status: connected.
+
+## Phase 3.1: Short Fallback Without Active Strategy
+
+When no active sales strategy exists, explicit recommendation requests should
+still receive a short, natural fallback from safe menu knowledge. The fallback
+must not add LINE or phone guidance and must not list many products.
+
 Status: implemented in this phase.
+
+## Phase 3.2: Production Strategy Smoke Test
+
+Register one temporary production sales strategy, verify that explicit
+recommendation requests use it, then deactivate it.
+
+Status: next.
 
 ## Phase 4: Natural Context Suggestions
 

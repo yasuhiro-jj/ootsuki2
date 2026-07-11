@@ -10,6 +10,7 @@ from core.integrations.chatbot_ai_manager.explicit_recommendation import (
     SKIP_PRODUCT_DECLINED,
     SKIP_SESSION_LIMIT_REACHED,
     ExplicitSalesRecommendationConnector,
+    SHORT_FALLBACK_PRODUCT_ID,
 )
 from core.integrations.chatbot_ai_manager.schemas import PriorityProduct, SalesStrategy
 
@@ -125,8 +126,31 @@ class ExplicitSalesRecommendationTests(unittest.TestCase):
             session_memory={},
         )
 
-        self.assertFalse(result.has_message)
+        self.assertTrue(result.has_message)
         self.assertEqual(result.skip_reason, SKIP_NO_ACTIVE_STRATEGY)
+        self.assertEqual(result.selected_product_id, SHORT_FALLBACK_PRODUCT_ID)
+
+    def test_no_active_strategy_fallback_is_short(self):
+        connector, _ = make_connector(None)
+
+        result = connector.try_recommend(
+            session_id="s1",
+            user_message="recommend food",
+            intent_value="proposal",
+            route_kind="store",
+            session_memory={},
+        )
+
+        sentences = [
+            part
+            for part in result.message.replace("\n", "").replace("！", "。").split("。")
+            if part.strip()
+        ]
+        self.assertLessEqual(len(sentences), 3)
+        self.assertNotIn("LINE", result.message)
+        self.assertNotIn("電話", result.message)
+        self.assertNotIn("①", result.message)
+        self.assertNotIn("②", result.message)
 
     def test_strategy_service_exception_falls_back(self):
         connector, _ = make_connector(should_raise=True)
@@ -139,8 +163,9 @@ class ExplicitSalesRecommendationTests(unittest.TestCase):
             session_memory={},
         )
 
-        self.assertFalse(result.has_message)
+        self.assertTrue(result.has_message)
         self.assertEqual(result.skip_reason, SKIP_INTEGRATION_ERROR)
+        self.assertEqual(result.selected_product_id, SHORT_FALLBACK_PRODUCT_ID)
 
     def test_session_limit_blocks_second_suggestion(self):
         connector, _ = make_connector(make_strategy())

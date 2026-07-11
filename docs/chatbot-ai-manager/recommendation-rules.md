@@ -11,6 +11,11 @@ the customer's current intent.
 The production chatbot only checks sales strategy for explicit recommendation
 requests. The current implementation does not perform automatic upsell.
 
+If no active sales strategy exists, the chatbot returns a short menu fallback
+instead of passing the turn to an open-ended recommendation response. This keeps
+the answer to one safe item, avoids long lists, and does not add LINE or phone
+guidance.
+
 ## Allowed Examples
 
 - Customer asks for a recommendation.
@@ -35,8 +40,28 @@ requests. The current implementation does not perform automatic upsell.
 
 - Default: at most one suggestion per session.
 - Candidate list: at most one item unless the customer asks for choices.
+- No-strategy fallback: one item and two short sentences.
 - Declined products: do not suggest again in the same session.
 - Avoided products: do not suggest.
+
+## Production Smoke Test Strategy
+
+Use a temporary manual strategy for production verification. Create it through
+`POST /admin/ai-manager/sales-strategies`, verify it with
+`GET /admin/ai-manager/sales-strategies/current`, then disable it with
+`POST /admin/ai-manager/sales-strategies/{strategy_id}/deactivate`.
+
+Recommended temporary product:
+
+```json
+{
+  "product_id": "262e9a7e-e5b7-81d6-980b-eca518b63e27",
+  "product_name": "刺身定食"
+}
+```
+
+Use a short JST validity window such as the current test hour only. Do not leave
+the smoke-test strategy active after verification.
 
 ## Example Mappings
 

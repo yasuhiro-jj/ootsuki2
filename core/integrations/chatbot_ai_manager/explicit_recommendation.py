@@ -29,6 +29,12 @@ BLOCKED_PENDING_FLOWS = frozenset({"reservation", "banquet", "order", "takeout"}
 BLOCKED_ASSISTANT_ACTIONS = frozenset(
     {"confirmed_order_item", "answered_product_existence"}
 )
+SHORT_FALLBACK_PRODUCT_ID = "262e9a7e-e5b7-81d6-980b-eca518b63e27"
+SHORT_FALLBACK_PRODUCT_NAME = "刺身定食"
+SHORT_FALLBACK_MESSAGE = (
+    "今日は刺身定食がおすすめです。\n"
+    "新鮮なお刺身を楽しみたい方に人気ですよ。"
+)
 
 
 @dataclass(frozen=True)
@@ -73,10 +79,10 @@ class ExplicitSalesRecommendationConnector:
             strategy = self.strategy_service.get_current()
         except Exception as exc:
             logger.warning("[SalesStrategy] get_current failed: %s", exc)
-            return self._skipped(session_id, SKIP_INTEGRATION_ERROR)
+            return self._short_fallback(session_id, SKIP_INTEGRATION_ERROR)
 
         if not strategy:
-            return self._skipped(session_id, SKIP_NO_ACTIVE_STRATEGY)
+            return self._short_fallback(session_id, SKIP_NO_ACTIVE_STRATEGY)
 
         context = self._build_context(
             session_id=session_id,
@@ -197,6 +203,24 @@ class ExplicitSalesRecommendationConnector:
 
     def _key(self, value: str) -> str:
         return str(value or "").strip().lower()
+
+    def _short_fallback(
+        self, session_id: str, skip_reason: str
+    ) -> ExplicitRecommendationResult:
+        skipped = self._skipped(session_id, skip_reason)
+        memory_updates = {
+            "active_topic": "recommendation",
+            "detected_intent": "product_recommendation",
+            "current_entity": SHORT_FALLBACK_PRODUCT_NAME,
+            "last_assistant_action": "short_recommendation_fallback",
+        }
+        return ExplicitRecommendationResult(
+            message=SHORT_FALLBACK_MESSAGE,
+            skip_reason=skip_reason,
+            selected_product_id=SHORT_FALLBACK_PRODUCT_ID,
+            memory_updates=memory_updates,
+            event=skipped.event,
+        )
 
     def _skipped(
         self, session_id: str, skip_reason: str, strategy_id: str = ""
