@@ -27,6 +27,22 @@ The manual strategy management layer is intentionally separate from the
 customer-facing chatbot runtime. The chatbot does not call this strategy service
 until a later limited-connection phase.
 
+## Explicit Recommendation Connection Flow
+
+```text
+Existing intent router
+  -> IntentType.PROPOSAL only
+  -> Existing direct answer guards
+  -> ExplicitSalesRecommendationConnector
+  -> Current SalesStrategy
+  -> ChatbotAIManagerBridge.decide_suggestion
+  -> One customer-facing recommendation or existing fallback
+```
+
+The connector is used only after product existence checks and order-confirmation
+guards have already had a chance to respond. It records `suggestion_shown` and
+`suggestion_skipped` events in the bridge event buffer.
+
 ## Responsibilities
 
 ### Chatbot

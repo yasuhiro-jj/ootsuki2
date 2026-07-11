@@ -43,6 +43,17 @@ Default storage:
 
 - `outputs/ai_manager_sales_strategies.json`
 
+## Limited Chatbot Connection
+
+Manual sales strategies are now connected only for explicit recommendation
+requests. The chatbot checks the existing intent and conversation route first,
+then calls the sales strategy connector only when the user is clearly asking
+for a recommendation.
+
+Blocked cases include product existence checks, FAQ, business hours,
+reservation, order confirmation, natural chat, and order follow-ups. If the
+strategy service fails, the chatbot falls back to the existing response path.
+
 ## Existing Project Boundary
 
 The repository already contains `ai-maneger`. That directory is treated as the

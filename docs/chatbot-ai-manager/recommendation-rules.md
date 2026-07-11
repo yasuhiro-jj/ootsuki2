@@ -6,6 +6,11 @@ Suggest nothing unless the customer context makes a suggestion natural.
 Customer memory can make a suggestion more relevant, but it does not override
 the customer's current intent.
 
+## Current Connection Scope
+
+The production chatbot only checks sales strategy for explicit recommendation
+requests. The current implementation does not perform automatic upsell.
+
 ## Allowed Examples
 
 - Customer asks for a recommendation.
@@ -19,6 +24,7 @@ the customer's current intent.
 - Customer only asks business hours.
 - Customer only asks whether an item exists.
 - Customer just confirmed a simple order.
+- Customer is in a FAQ, reservation, or facility-information turn.
 - Customer declined the same product earlier in the session.
 - Customer memory says the customer avoids that item or category.
 - Customer is discussing allergy details.
@@ -30,6 +36,7 @@ the customer's current intent.
 - Default: at most one suggestion per session.
 - Candidate list: at most one item unless the customer asks for choices.
 - Declined products: do not suggest again in the same session.
+- Avoided products: do not suggest.
 
 ## Example Mappings
 

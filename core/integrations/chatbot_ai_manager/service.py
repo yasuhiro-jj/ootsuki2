@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import List
 
-from .rules import BLOCKED_ASSISTANT_ACTIONS, BLOCKED_PENDING_FLOWS, find_eligible_product
+from .rules import (
+    BLOCKED_ASSISTANT_ACTIONS,
+    BLOCKED_PENDING_FLOWS,
+    find_eligible_product,
+)
 from .schemas import (
     ConversationSalesContext,
     SalesStrategy,
@@ -54,4 +58,3 @@ class ChatbotAIManagerBridge:
 
     def list_recorded_events(self) -> List[SuggestionEvent]:
         return list(self._events)
-

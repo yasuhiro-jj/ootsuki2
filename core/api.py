@@ -42,6 +42,8 @@ from .response_compactness import (
 )
 from .conversation_quality import ConversationQualityLog, ConversationQualityLogger
 from .integrations.chatbot_ai_manager import (
+    ChatbotAIManagerBridge,
+    ExplicitSalesRecommendationConnector,
     SalesStrategyManagementService,
     SalesStrategyRepository,
     SalesStrategyValidationError,
@@ -317,6 +319,11 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 "outputs/ai_manager_sales_strategies.json",
             )
         )
+    )
+    sales_strategy_bridge = ChatbotAIManagerBridge()
+    explicit_sales_recommendation = ExplicitSalesRecommendationConnector(
+        sales_strategy_service,
+        sales_strategy_bridge,
     )
     
     # 不明キーワード検索サービス初期化
@@ -856,6 +863,62 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 )
             
             # 【優先】不明キーワードDB検索を最初に実行（RAG結果に関係なく）
+            sales_recommendation = explicit_sales_recommendation.try_recommend(
+                session_id=session_id,
+                user_message=user_message,
+                intent_value=intent_result.intent.value,
+                route_kind=conversation_route.kind,
+                session_memory=session_memory,
+            )
+            if sales_recommendation.has_message:
+                response_message = sales_recommendation.message
+                ai_engine.save_memory(session_id, sales_recommendation.memory_updates or {})
+                session_memory = ai_engine.get_session_memory(session_id)
+                session = ai_engine.get_session(session_id)
+                if session:
+                    session.add_message("user", user_message)
+                    session.add_message("assistant", response_message)
+                logger.info(
+                    "[SalesStrategy] session=%s strategy_id=%s product_id=%s",
+                    session_id[:8],
+                    sales_recommendation.strategy_id,
+                    sales_recommendation.selected_product_id,
+                )
+                _record_quality_log(
+                    session_id=session_id,
+                    user_id=request.customer_id,
+                    user_message=user_message,
+                    ai_response=response_message,
+                    recent_history=recent_turns,
+                    session_memory=session_memory,
+                    detected_intent=intent_result.intent.value,
+                    route=conversation_route.kind,
+                    route_reason=conversation_route.reason,
+                    node="sales_strategy_recommendation",
+                    referenced_sources={
+                        "strategy_id": sales_recommendation.strategy_id,
+                        "selected_product_id": sales_recommendation.selected_product_id,
+                    },
+                    latency_ms=_elapsed_ms(started_at),
+                    channel="web",
+                )
+                return ChatResponse(
+                    message=response_message,
+                    session_id=session_id,
+                    timestamp=datetime.now().isoformat(),
+                    options=[],
+                    suggestions=None,
+                    image_url=None,
+                    line_reply_messages=None,
+                )
+
+            if sales_recommendation.skip_reason:
+                logger.info(
+                    "[SalesStrategy] session=%s skipped=%s",
+                    session_id[:8],
+                    sales_recommendation.skip_reason,
+                )
+
             if unknown_keyword_service and allow_standard_answer_search:
                 try:
                     unknown_result = unknown_keyword_service.search_similar_question(user_message)
@@ -1431,7 +1494,54 @@ def create_app(config: ConfigLoader) -> FastAPI:
                             )
                         else:
                             logger.info(f"[WS] SimpleGraphEngine invoke開始")
-                            result = simple_graph.invoke(state)
+                            ws_intent_result = intent_classifier.classify(message)
+                            ws_route = classify_conversation_route(
+                                message,
+                                recent_messages=[
+                                    turn.get("content", "")
+                                    for turn in conv_turns
+                                    if turn.get("content")
+                                ],
+                                active_topic=ws_session_memory.get("active_topic"),
+                                pending_flow=ws_session_memory.get("pending_flow"),
+                            )
+                            sales_recommendation = explicit_sales_recommendation.try_recommend(
+                                session_id=session_id,
+                                user_message=message,
+                                intent_value=ws_intent_result.intent.value,
+                                route_kind=ws_route.kind,
+                                session_memory=ws_session_memory,
+                            )
+                            if sales_recommendation.has_message:
+                                ai_engine.save_memory(
+                                    session_id,
+                                    sales_recommendation.memory_updates or {},
+                                )
+                                result = {
+                                    **state,
+                                    "intent": "product_recommendation",
+                                    "response": sales_recommendation.message,
+                                    "options": [],
+                                    "context": {
+                                        **state.get("context", {}),
+                                        "conversation_route": ws_route.kind,
+                                        "conversation_route_reason": ws_route.reason,
+                                        "sales_strategy_id": sales_recommendation.strategy_id,
+                                        "selected_product_id": sales_recommendation.selected_product_id,
+                                    },
+                                }
+                                logger.info(
+                                    "[WS][SalesStrategy] strategy_id=%s product_id=%s",
+                                    sales_recommendation.strategy_id,
+                                    sales_recommendation.selected_product_id,
+                                )
+                            else:
+                                if sales_recommendation.skip_reason:
+                                    logger.info(
+                                        "[WS][SalesStrategy] skipped=%s",
+                                        sales_recommendation.skip_reason,
+                                    )
+                                result = simple_graph.invoke(state)
                             logger.info(f"[WS] SimpleGraphEngine invoke完了: {result.get('response', '')[:50]}...")
                         
                         if message.strip():

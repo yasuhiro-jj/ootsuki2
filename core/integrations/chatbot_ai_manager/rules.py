@@ -27,20 +27,28 @@ def product_was_proposed(product: PriorityProduct, proposed_items: Iterable[str]
     return normalize_key(product.product_id) in proposed or normalize_key(product.name) in proposed
 
 
+def product_was_avoided(product: PriorityProduct, avoided_items: Iterable[str]) -> bool:
+    avoided = {normalize_key(item) for item in avoided_items}
+    return normalize_key(product.product_id) in avoided or normalize_key(product.name) in avoided
+
+
 def trigger_matches(
     product: PriorityProduct, context: ConversationSalesContext, strategy: SalesStrategy
 ) -> bool:
-    if not product.suggest_when:
+    if not product.suggest_when and not product.trigger_item_ids:
         return context.recommendation_requested
 
     signals = {
+        normalize_key(context.message),
         normalize_key(context.active_topic),
         normalize_key(context.detected_intent),
         normalize_key(context.current_entity),
         normalize_key(context.time_slot),
     }
+    signals.update(normalize_key(item) for item in context.ordered_items)
+    signals.update(normalize_key(item) for item in context.last_ordered_items)
 
-    for trigger in product.suggest_when:
+    for trigger in (*product.suggest_when, *product.trigger_item_ids):
         key = normalize_key(trigger)
         if key in signals:
             return True
@@ -58,7 +66,11 @@ def find_eligible_product(
         reverse=True,
     )
     for product in ranked_products:
+        if context.detected_intent and context.detected_intent in product.excluded_intents:
+            continue
         if product_was_declined(product, context.declined_products):
+            continue
+        if product_was_avoided(product, context.avoided_items):
             continue
         if product_was_proposed(product, context.proposed_items):
             continue

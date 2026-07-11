@@ -8,6 +8,7 @@ from .schemas import (
     SuggestionDecision,
     SuggestionEvent,
 )
+from .explicit_recommendation import ExplicitSalesRecommendationConnector
 from .repository import SalesStrategyRepository
 from .service import ChatbotAIManagerBridge
 from .strategy_service import (
@@ -19,6 +20,7 @@ __all__ = [
     "ChatbotAIManagerBridge",
     "ConversationSalesContext",
     "CustomerMemoryProfile",
+    "ExplicitSalesRecommendationConnector",
     "PriorityProduct",
     "SalesStrategy",
     "SalesStrategyManagementService",
