@@ -152,6 +152,39 @@ class ExplicitSalesRecommendationTests(unittest.TestCase):
         self.assertNotIn("①", result.message)
         self.assertNotIn("②", result.message)
 
+    def test_no_active_strategy_second_fallback_is_compact_repeat(self):
+        connector, _ = make_connector(None)
+
+        first = connector.try_recommend(
+            session_id="s1",
+            user_message="recommend food",
+            intent_value="proposal",
+            route_kind="store",
+            session_memory={},
+        )
+        second = connector.try_recommend(
+            session_id="s1",
+            user_message="recommend food",
+            intent_value="proposal",
+            route_kind="store",
+            session_memory=first.memory_updates,
+        )
+
+        self.assertTrue(first.has_message)
+        self.assertTrue(second.has_message)
+        self.assertEqual(second.skip_reason, SKIP_NO_ACTIVE_STRATEGY)
+        self.assertEqual(
+            second.memory_updates["last_assistant_action"],
+            "repeated_short_recommendation_fallback",
+        )
+        self.assertNotEqual(first.message, second.message)
+        self.assertLessEqual(second.message.count("\u3002"), 3)
+        self.assertNotIn("LINE", second.message)
+        self.assertNotIn("\u96fb\u8a71", second.message)
+        self.assertNotIn("\u30e1\u30cb\u30e5\u30fc", second.message)
+        self.assertNotIn("\u2460", second.message)
+        self.assertNotIn("\u2461", second.message)
+
     def test_strategy_service_exception_falls_back(self):
         connector, _ = make_connector(should_raise=True)
 

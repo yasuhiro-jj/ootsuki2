@@ -35,6 +35,7 @@ SHORT_FALLBACK_MESSAGE = (
     "今日は刺身定食がおすすめです。\n"
     "新鮮なお刺身を楽しみたい方に人気ですよ。"
 )
+REPEATED_SHORT_FALLBACK_MESSAGE = "先ほどご案内した刺身定食がおすすめです。"
 
 
 @dataclass(frozen=True)
@@ -79,10 +80,18 @@ class ExplicitSalesRecommendationConnector:
             strategy = self.strategy_service.get_current()
         except Exception as exc:
             logger.warning("[SalesStrategy] get_current failed: %s", exc)
-            return self._short_fallback(session_id, SKIP_INTEGRATION_ERROR)
+            return self._short_fallback(
+                session_id,
+                SKIP_INTEGRATION_ERROR,
+                session_memory=session_memory,
+            )
 
         if not strategy:
-            return self._short_fallback(session_id, SKIP_NO_ACTIVE_STRATEGY)
+            return self._short_fallback(
+                session_id,
+                SKIP_NO_ACTIVE_STRATEGY,
+                session_memory=session_memory,
+            )
 
         context = self._build_context(
             session_id=session_id,
@@ -210,17 +219,31 @@ class ExplicitSalesRecommendationConnector:
         return str(value or "").strip().lower()
 
     def _short_fallback(
-        self, session_id: str, skip_reason: str
+        self,
+        session_id: str,
+        skip_reason: str,
+        *,
+        session_memory: Dict[str, Any],
     ) -> ExplicitRecommendationResult:
         skipped = self._skipped(session_id, skip_reason)
+        repeated = session_memory.get("last_assistant_action") in {
+            "short_recommendation_fallback",
+            "repeated_short_recommendation_fallback",
+        }
         memory_updates = {
             "active_topic": "recommendation",
             "detected_intent": "product_recommendation",
             "current_entity": SHORT_FALLBACK_PRODUCT_NAME,
-            "last_assistant_action": "short_recommendation_fallback",
+            "last_assistant_action": (
+                "repeated_short_recommendation_fallback"
+                if repeated
+                else "short_recommendation_fallback"
+            ),
         }
         return ExplicitRecommendationResult(
-            message=SHORT_FALLBACK_MESSAGE,
+            message=(
+                REPEATED_SHORT_FALLBACK_MESSAGE if repeated else SHORT_FALLBACK_MESSAGE
+            ),
             skip_reason=skip_reason,
             selected_product_id=SHORT_FALLBACK_PRODUCT_ID,
             memory_updates=memory_updates,
