@@ -150,6 +150,45 @@ NIGHT_VISIT_REPLY = (
     "\u591c\u306e\u3054\u6765\u5e97\u3067\u3059\u306d\u3002\n"
     "\u65e5\u306b\u3061\u3068\u4eba\u6570\u3092\u6559\u3048\u3066\u304f\u3060\u3055\u3044\u3002"
 )
+CANCEL_REQUEST_TERMS = (
+    "\u3084\u3063\u3071\u308a\u3084\u3081\u308b",
+    "\u3084\u3081\u308b",
+    "\u30ad\u30e3\u30f3\u30bb\u30eb",
+    "\u53d6\u308a\u6d88\u3057",
+)
+RESERVATION_CORRECTION_TERMS = (
+    "\u4e88\u7d04\u3058\u3083\u306a\u304f\u3066\u8cea\u554f",
+    "\u4e88\u7d04\u3058\u3083\u306a\u3044",
+    "\u4e88\u7d04\u3067\u306f\u306a\u3044",
+)
+ACCEPT_PROPOSAL_TERMS = (
+    "\u305d\u308c\u3067\u304a\u9858\u3044",
+    "\u305d\u308c\u3067\u304a\u9858\u3044\u3057\u307e\u3059",
+    "\u305d\u308c\u306b\u3057\u307e\u3059",
+    "\u305d\u308c\u3067",
+)
+PREVIOUS_PRICE_TERMS = (
+    "\u3055\u3063\u304d\u306e\u3044\u304f\u3089",
+    "\u3055\u3063\u304d\u306e\u5024\u6bb5",
+    "\u305d\u308c\u3044\u304f\u3089",
+)
+OTHER_RECOMMENDATION_TERMS = (
+    "\u4ed6\u306b\u306f",
+    "\u307b\u304b\u306b\u306f",
+    "\u5225\u306e",
+)
+WHAT_AVAILABLE_TERMS = (
+    "\u4f55\u304c\u3042\u308b",
+    "\u306a\u306b\u304c\u3042\u308b",
+    "\u3069\u3093\u306a\u306e\u304c\u3042\u308b",
+)
+OTHER_RECOMMENDATION_REPLY = (
+    "\u5225\u3067\u3057\u305f\u3089\u3001\u5510\u63da\u3052\u5b9a\u98df\u3082\u304a\u3059\u3059\u3081\u3067\u3059\u3002"
+)
+WHAT_AVAILABLE_MENU_REPLY = (
+    "\u5b9a\u98df\u3084\u4e00\u54c1\u6599\u7406\u3001\u30c6\u30a4\u30af\u30a2\u30a6\u30c8\u306e\u304a\u5f01\u5f53\u304c\u3042\u308a\u307e\u3059\u3002\n"
+    "\u6c17\u306b\u306a\u308b\u7a2e\u985e\u304c\u3042\u308c\u3070\u6559\u3048\u3066\u304f\u3060\u3055\u3044\u3002"
+)
 
 
 def should_append_line_contact_footer(message: str) -> bool:
@@ -313,6 +352,90 @@ def is_night_visit_request(message: str, memory: Dict[str, Any]) -> bool:
 
 def format_night_visit_reply() -> str:
     return NIGHT_VISIT_REPLY
+
+
+def is_cancel_request(message: str, memory: Dict[str, Any]) -> bool:
+    text = (message or "").strip()
+    if not text:
+        return False
+    if not any(term in text for term in CANCEL_REQUEST_TERMS):
+        return False
+    return bool(
+        memory.get("pending_flow")
+        or memory.get("active_topic")
+        or get_recent_item_name(memory)
+    )
+
+
+def format_cancel_request_reply(memory: Dict[str, Any]) -> str:
+    item_name = get_recent_item_name(memory)
+    if item_name and memory.get("pending_flow") == "order":
+        return f"\u627f\u77e5\u3057\u307e\u3057\u305f\u3002{item_name}\u306e\u6ce8\u6587\u306f\u53d6\u308a\u6d88\u3057\u307e\u3059\u3002"
+    if memory.get("pending_flow") == "reservation" or memory.get("active_topic") == "reservation":
+        return "\u627f\u77e5\u3057\u307e\u3057\u305f\u3002\u4e88\u7d04\u306e\u3054\u76f8\u8ac7\u306f\u3044\u3063\u305f\u3093\u6b62\u3081\u307e\u3059\u3002"
+    return "\u627f\u77e5\u3057\u307e\u3057\u305f\u3002\u3044\u3063\u305f\u3093\u53d6\u308a\u6d88\u3057\u307e\u3059\u3002"
+
+
+def is_reservation_correction(message: str, memory: Dict[str, Any]) -> bool:
+    text = (message or "").strip()
+    if not text:
+        return False
+    if memory.get("pending_flow") != "reservation" and memory.get("active_topic") != "reservation":
+        return False
+    return any(term in text for term in RESERVATION_CORRECTION_TERMS)
+
+
+def format_reservation_correction_reply() -> str:
+    return "\u627f\u77e5\u3057\u307e\u3057\u305f\u3002\u4e88\u7d04\u306e\u8a71\u306f\u3044\u3063\u305f\u3093\u5916\u3057\u307e\u3059\u3002\n\u8cea\u554f\u5185\u5bb9\u3092\u6559\u3048\u3066\u304f\u3060\u3055\u3044\u3002"
+
+
+def is_accept_proposal_request(message: str, memory: Dict[str, Any]) -> bool:
+    text = (message or "").strip()
+    if not text:
+        return False
+    return any(term in text for term in ACCEPT_PROPOSAL_TERMS) and bool(
+        get_recent_item_name(memory)
+    )
+
+
+def format_accept_proposal_reply(memory: Dict[str, Any]) -> str:
+    item_name = get_recent_item_name(memory) or "\u305d\u3061\u3089"
+    return f"\u304b\u3057\u3053\u307e\u308a\u307e\u3057\u305f\u3002{item_name}\u3067\u627f\u308a\u307e\u3059\u3002"
+
+
+def is_previous_price_request(message: str, memory: Dict[str, Any]) -> bool:
+    text = (message or "").strip()
+    if not text:
+        return False
+    return any(term in text for term in PREVIOUS_PRICE_TERMS) and bool(
+        get_recent_item_name(memory)
+    )
+
+
+def is_other_recommendation_request(message: str, memory: Dict[str, Any]) -> bool:
+    text = (message or "").strip()
+    if not text:
+        return False
+    if memory.get("active_topic") not in {"recommendation", "menu"}:
+        return False
+    return any(term in text for term in OTHER_RECOMMENDATION_TERMS)
+
+
+def format_other_recommendation_reply() -> str:
+    return OTHER_RECOMMENDATION_REPLY
+
+
+def is_what_available_request(message: str, memory: Dict[str, Any]) -> bool:
+    text = (message or "").strip()
+    if not text:
+        return False
+    if memory.get("active_topic") not in {"recommendation", "menu", "store_info", "restaurant"}:
+        return False
+    return any(term in text for term in WHAT_AVAILABLE_TERMS)
+
+
+def format_what_available_reply() -> str:
+    return WHAT_AVAILABLE_MENU_REPLY
 
 
 def normalize_customer_reply(message: str) -> str:

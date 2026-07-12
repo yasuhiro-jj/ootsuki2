@@ -2,24 +2,35 @@ import unittest
 
 from core.response_compactness import (
     detect_short_store_faq_key,
+    format_accept_proposal_reply,
+    format_cancel_request_reply,
     format_contextual_price_reply,
     format_initial_reservation_reply,
     format_night_visit_reply,
+    format_other_recommendation_reply,
     format_party_size_without_context_reply,
+    format_reservation_correction_reply,
     format_reservation_followup_reply,
     format_short_order_confirmation,
     format_short_store_faq_reply,
     format_snack_recommendation_reply,
     format_today_business_reply,
+    format_what_available_reply,
     get_recent_item_name,
+    is_accept_proposal_request,
+    is_cancel_request,
     is_contextual_price_request,
     is_initial_reservation_request,
     is_night_visit_request,
+    is_other_recommendation_request,
     is_party_size_without_context,
+    is_previous_price_request,
+    is_reservation_correction,
     is_reservation_followup_request,
     is_short_order_confirmation,
     is_snack_recommendation_request,
     is_today_business_request,
+    is_what_available_request,
     normalize_customer_reply,
     should_append_line_contact_footer,
 )
@@ -226,6 +237,66 @@ class ResponseCompactnessTests(unittest.TestCase):
         self.assertIn("夜", reply)
         self.assertIn("日にち", reply)
         self.assertIn("人数", reply)
+        self.assertLessEqual(reply.count("。"), 3)
+
+    def test_cancel_request_clears_order_context(self):
+        memory = {
+            "pending_flow": "order",
+            "recently_confirmed_item": "中生ビール",
+        }
+
+        self.assertTrue(is_cancel_request("やっぱりやめる", memory))
+        reply = format_cancel_request_reply(memory)
+
+        self.assertIn("中生ビール", reply)
+        self.assertIn("取り消", reply)
+        self.assertLessEqual(reply.count("。"), 3)
+
+    def test_reservation_correction_requires_reservation_context(self):
+        memory = {"pending_flow": "reservation", "active_topic": "reservation"}
+
+        self.assertTrue(is_reservation_correction("予約じゃなくて質問です", memory))
+        self.assertFalse(is_reservation_correction("予約じゃなくて質問です", {}))
+        reply = format_reservation_correction_reply()
+
+        self.assertIn("予約", reply)
+        self.assertIn("質問", reply)
+        self.assertLessEqual(reply.count("。"), 3)
+
+    def test_accept_proposal_uses_recent_item(self):
+        memory = {"current_entity": "刺身定食"}
+
+        self.assertTrue(is_accept_proposal_request("それでお願いします", memory))
+        self.assertEqual(
+            format_accept_proposal_reply(memory),
+            "かしこまりました。刺身定食で承ります。",
+        )
+
+    def test_previous_price_request_uses_recent_item(self):
+        memory = {"current_entity": "刺身定食"}
+
+        self.assertTrue(is_previous_price_request("さっきのいくら？", memory))
+        self.assertFalse(is_previous_price_request("さっきのいくら？", {}))
+
+    def test_other_recommendation_is_compact(self):
+        memory = {"active_topic": "recommendation", "current_entity": "刺身定食"}
+
+        self.assertTrue(is_other_recommendation_request("他には？", memory))
+        reply = format_other_recommendation_reply()
+
+        self.assertIn("唐揚げ定食", reply)
+        self.assertNotIn("LINE", reply)
+        self.assertLessEqual(reply.count("。"), 2)
+
+    def test_what_available_depends_on_context(self):
+        memory = {"active_topic": "menu"}
+
+        self.assertTrue(is_what_available_request("何がある？", memory))
+        self.assertFalse(is_what_available_request("何がある？", {}))
+        reply = format_what_available_reply()
+
+        self.assertIn("定食", reply)
+        self.assertNotIn("LINE", reply)
         self.assertLessEqual(reply.count("。"), 3)
 
     def test_store_info_reply_is_normalized_for_voice(self):
