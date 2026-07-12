@@ -36,15 +36,24 @@ from .menu_existence import (
 )
 from .response_compactness import (
     detect_short_store_faq_key,
+    format_contextual_price_reply,
     format_initial_reservation_reply,
+    format_night_visit_reply,
+    format_party_size_without_context_reply,
     format_reservation_followup_reply,
     format_short_order_confirmation,
     format_short_store_faq_reply,
     format_snack_recommendation_reply,
+    format_today_business_reply,
+    get_recent_item_name,
+    is_contextual_price_request,
     is_initial_reservation_request,
+    is_night_visit_request,
+    is_party_size_without_context,
     is_reservation_followup_request,
     is_short_order_confirmation,
     is_snack_recommendation_request,
+    is_today_business_request,
     normalize_customer_reply,
     should_append_line_contact_footer,
 )
@@ -798,6 +807,182 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     line_reply_messages=None,
                 )
 
+            if is_today_business_request(user_message):
+                response_message = format_today_business_reply()
+                ai_engine.save_memory(
+                    session_id,
+                    {
+                        "active_topic": "store_info",
+                        "detected_intent": "business_hours",
+                        "last_assistant_action": "answered_today_business",
+                    },
+                )
+                session_memory = ai_engine.get_session_memory(session_id)
+                session = ai_engine.get_session(session_id)
+                if session:
+                    session.add_message("user", request.message)
+                    session.add_message("assistant", response_message)
+                _record_quality_log(
+                    session_id=session_id,
+                    user_id=request.customer_id,
+                    user_message=request.message,
+                    ai_response=response_message,
+                    recent_history=recent_turns,
+                    session_memory=session_memory,
+                    detected_intent="business_hours",
+                    route=conversation_route.kind,
+                    route_reason=conversation_route.reason,
+                    node="today_business",
+                    referenced_sources={"store_tools_used": False},
+                    latency_ms=_elapsed_ms(started_at),
+                    channel="web",
+                )
+                return ChatResponse(
+                    message=response_message,
+                    session_id=session_id,
+                    timestamp=datetime.now().isoformat(),
+                    options=[],
+                    suggestions=None,
+                    image_url=None,
+                    line_reply_messages=None,
+                )
+
+            if is_contextual_price_request(user_message, session_memory):
+                recent_item_name = get_recent_item_name(session_memory)
+                menu_items = shared_menu_service.search_menu_items_for_existence(
+                    recent_item_name,
+                    limit=1,
+                )
+                response_message = format_contextual_price_reply(
+                    recent_item_name,
+                    menu_items,
+                )
+                ai_engine.save_memory(
+                    session_id,
+                    {
+                        "active_topic": "menu",
+                        "current_entity": recent_item_name,
+                        "detected_intent": "product_price",
+                        "last_assistant_action": "answered_product_price",
+                    },
+                )
+                session_memory = ai_engine.get_session_memory(session_id)
+                session = ai_engine.get_session(session_id)
+                if session:
+                    session.add_message("user", request.message)
+                    session.add_message("assistant", response_message)
+                _record_quality_log(
+                    session_id=session_id,
+                    user_id=request.customer_id,
+                    user_message=request.message,
+                    ai_response=response_message,
+                    recent_history=recent_turns,
+                    session_memory=session_memory,
+                    detected_intent="product_price",
+                    route=conversation_route.kind,
+                    route_reason=conversation_route.reason,
+                    node="contextual_price",
+                    referenced_sources={
+                        "menu_hits": len(menu_items),
+                        "menu_names": [
+                            getattr(item, "name", "") for item in menu_items[:1]
+                        ],
+                    },
+                    latency_ms=_elapsed_ms(started_at),
+                    channel="web",
+                )
+                return ChatResponse(
+                    message=response_message,
+                    session_id=session_id,
+                    timestamp=datetime.now().isoformat(),
+                    options=[],
+                    suggestions=None,
+                    image_url=None,
+                    line_reply_messages=None,
+                )
+
+            if is_party_size_without_context(user_message, session_memory):
+                response_message = format_party_size_without_context_reply()
+                ai_engine.save_memory(
+                    session_id,
+                    {
+                        "active_topic": "reservation",
+                        "pending_flow": "reservation",
+                        "detected_intent": "reservation",
+                        "last_assistant_action": "reservation_party_size_clarification",
+                    },
+                )
+                session_memory = ai_engine.get_session_memory(session_id)
+                session = ai_engine.get_session(session_id)
+                if session:
+                    session.add_message("user", request.message)
+                    session.add_message("assistant", response_message)
+                _record_quality_log(
+                    session_id=session_id,
+                    user_id=request.customer_id,
+                    user_message=request.message,
+                    ai_response=response_message,
+                    recent_history=recent_turns,
+                    session_memory=session_memory,
+                    detected_intent="reservation",
+                    route=conversation_route.kind,
+                    route_reason=conversation_route.reason,
+                    node="party_size_without_context",
+                    referenced_sources={"store_tools_used": False},
+                    latency_ms=_elapsed_ms(started_at),
+                    channel="web",
+                )
+                return ChatResponse(
+                    message=response_message,
+                    session_id=session_id,
+                    timestamp=datetime.now().isoformat(),
+                    options=[],
+                    suggestions=None,
+                    image_url=None,
+                    line_reply_messages=None,
+                )
+
+            if is_night_visit_request(user_message, session_memory):
+                response_message = format_night_visit_reply()
+                ai_engine.save_memory(
+                    session_id,
+                    {
+                        "active_topic": "reservation",
+                        "pending_flow": "reservation",
+                        "detected_intent": "reservation",
+                        "last_assistant_action": "night_visit_clarification",
+                    },
+                )
+                session_memory = ai_engine.get_session_memory(session_id)
+                session = ai_engine.get_session(session_id)
+                if session:
+                    session.add_message("user", request.message)
+                    session.add_message("assistant", response_message)
+                _record_quality_log(
+                    session_id=session_id,
+                    user_id=request.customer_id,
+                    user_message=request.message,
+                    ai_response=response_message,
+                    recent_history=recent_turns,
+                    session_memory=session_memory,
+                    detected_intent="reservation",
+                    route=conversation_route.kind,
+                    route_reason=conversation_route.reason,
+                    node="night_visit",
+                    referenced_sources={"store_tools_used": False},
+                    latency_ms=_elapsed_ms(started_at),
+                    channel="web",
+                )
+                return ChatResponse(
+                    message=response_message,
+                    session_id=session_id,
+                    timestamp=datetime.now().isoformat(),
+                    options=[],
+                    suggestions=None,
+                    image_url=None,
+                    line_reply_messages=None,
+                )
+
             if is_reservation_followup_request(user_message, session_memory):
                 response_message = format_reservation_followup_reply(session_memory)
                 ai_engine.save_memory(
@@ -848,7 +1033,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
                         "pending_flow": "order",
                         "detected_intent": "product_order",
                         "order_intent_level": "confirming",
-                        "recently_confirmed_item": session_memory.get("current_entity"),
+                        "recently_confirmed_item": get_recent_item_name(session_memory),
                         "last_assistant_action": "confirmed_order_item",
                     },
                 )
@@ -1720,6 +1905,85 @@ def create_app(config: ConfigLoader) -> FastAPI:
                                 "options": [],
                             }
                             logger.info("[WS] short_store_faq key=%s", short_store_faq_key)
+                        elif is_today_business_request(message):
+                            direct_response = format_today_business_reply()
+                            ai_engine.save_memory(
+                                session_id,
+                                {
+                                    "active_topic": "store_info",
+                                    "detected_intent": "business_hours",
+                                    "last_assistant_action": "answered_today_business",
+                                },
+                            )
+                            result = {
+                                **state,
+                                "intent": "business_hours",
+                                "response": direct_response,
+                                "options": [],
+                            }
+                            logger.info("[WS] today_business")
+                        elif is_contextual_price_request(message, ws_session_memory):
+                            recent_item_name = get_recent_item_name(ws_session_memory)
+                            menu_items = shared_menu_service.search_menu_items_for_existence(
+                                recent_item_name,
+                                limit=1,
+                            )
+                            direct_response = format_contextual_price_reply(
+                                recent_item_name,
+                                menu_items,
+                            )
+                            ai_engine.save_memory(
+                                session_id,
+                                {
+                                    "active_topic": "menu",
+                                    "current_entity": recent_item_name,
+                                    "detected_intent": "product_price",
+                                    "last_assistant_action": "answered_product_price",
+                                },
+                            )
+                            result = {
+                                **state,
+                                "intent": "product_price",
+                                "response": direct_response,
+                                "options": [],
+                            }
+                            logger.info("[WS] contextual_price")
+                        elif is_party_size_without_context(message, ws_session_memory):
+                            direct_response = format_party_size_without_context_reply()
+                            ai_engine.save_memory(
+                                session_id,
+                                {
+                                    "active_topic": "reservation",
+                                    "pending_flow": "reservation",
+                                    "detected_intent": "reservation",
+                                    "last_assistant_action": "reservation_party_size_clarification",
+                                },
+                            )
+                            result = {
+                                **state,
+                                "intent": "reservation",
+                                "response": direct_response,
+                                "options": [],
+                            }
+                            logger.info("[WS] party_size_without_context")
+                        elif is_night_visit_request(message, ws_session_memory):
+                            direct_response = format_night_visit_reply()
+                            ai_engine.save_memory(
+                                session_id,
+                                {
+                                    "active_topic": "reservation",
+                                    "pending_flow": "reservation",
+                                    "detected_intent": "reservation",
+                                    "last_assistant_action": "night_visit_clarification",
+                                },
+                            )
+                            result = {
+                                **state,
+                                "intent": "reservation",
+                                "response": direct_response,
+                                "options": [],
+                            }
+                            logger.info("[WS] night_visit")
                         elif is_reservation_followup_request(message, ws_session_memory):
                             ws_route = classify_conversation_route(
                                 message,
@@ -1767,7 +2031,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
                                     "pending_flow": "order",
                                     "detected_intent": "product_order",
                                     "order_intent_level": "confirming",
-                                    "recently_confirmed_item": ws_session_memory.get("current_entity"),
+                                    "recently_confirmed_item": get_recent_item_name(ws_session_memory),
                                     "last_assistant_action": "confirmed_order_item",
                                 },
                             )

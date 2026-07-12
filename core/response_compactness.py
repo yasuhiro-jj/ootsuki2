@@ -119,6 +119,37 @@ SHORT_STORE_FAQ_INQUIRY_TERMS = (
     "?",
     "\uff1f",
 )
+CONTEXTUAL_PRICE_TERMS = (
+    "\u3044\u304f\u3089",
+    "\u5024\u6bb5",
+    "\u4fa1\u683c",
+    "\u6599\u91d1",
+)
+TODAY_BUSINESS_TERMS = (
+    "\u4eca\u65e5\u3084\u3063\u3066\u308b",
+    "\u4eca\u65e5\u55b6\u696d",
+    "\u4eca\u65e5\u958b\u3044\u3066",
+    "\u4eca\u65e5\u3042\u3044\u3066",
+)
+PARTY_SIZE_PATTERN = re.compile(r"^\s*([0-9\uff10-\uff19]+)\s*(?:\u4eba|\u540d)")
+NIGHT_VISIT_TERMS = (
+    "\u591c\u884c\u304d\u305f\u3044",
+    "\u591c\u306b\u884c\u304d\u305f\u3044",
+    "\u591c\u884c\u304f",
+    "\u591c\u3046\u304b\u304c\u3044\u305f\u3044",
+)
+TODAY_BUSINESS_REPLY = (
+    "\u672c\u65e5\u306e\u55b6\u696d\u306f\u3001\u5e97\u8217\u306e\u55b6\u696d\u30ab\u30ec\u30f3\u30c0\u30fc\u3067\u306e\u78ba\u8a8d\u304c\u5fc5\u8981\u3067\u3059\u3002\n"
+    "\u901a\u5e38\u306f\u30e9\u30f3\u30c111\u6642\u304b\u308914\u6642\u3001\u591c\u306f17\u6642\u304b\u308921\u6642\u3067\u3059\u3002"
+)
+PARTY_SIZE_REPLY = (
+    "\u3054\u4e88\u7d04\u306e\u4eba\u6570\u3067\u3057\u3087\u3046\u304b\u3002\n"
+    "\u65e5\u306b\u3061\u3068\u6642\u9593\u3082\u6559\u3048\u3066\u304f\u3060\u3055\u3044\u3002"
+)
+NIGHT_VISIT_REPLY = (
+    "\u591c\u306e\u3054\u6765\u5e97\u3067\u3059\u306d\u3002\n"
+    "\u65e5\u306b\u3061\u3068\u4eba\u6570\u3092\u6559\u3048\u3066\u304f\u3060\u3055\u3044\u3002"
+)
 
 
 def should_append_line_contact_footer(message: str) -> bool:
@@ -219,6 +250,71 @@ def format_short_store_faq_reply(faq_key: str) -> str:
     return str(rule["reply"])
 
 
+def get_recent_item_name(memory: Dict[str, Any]) -> str:
+    if not memory:
+        return ""
+    for key in ("recently_confirmed_item", "last_ordered_item", "current_entity"):
+        value = str(memory.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def is_contextual_price_request(message: str, memory: Dict[str, Any]) -> bool:
+    text = (message or "").strip()
+    if not text or len(text) > 24:
+        return False
+    return any(term in text for term in CONTEXTUAL_PRICE_TERMS) and bool(
+        get_recent_item_name(memory)
+    )
+
+
+def format_contextual_price_reply(item_name: str, menu_items: Any) -> str:
+    item = menu_items[0] if menu_items else None
+    name = getattr(item, "name", None) or item_name
+    price = getattr(item, "price", None)
+    if isinstance(price, (int, float)) and price > 0:
+        return f"{name}\u306f{int(price):,}\u5186\u3067\u3059\u3002"
+    return f"{name}\u306e\u5024\u6bb5\u306f\u3001\u5e97\u982d\u3067\u78ba\u8a8d\u3057\u3066\u304f\u3060\u3055\u3044\u3002"
+
+
+def is_today_business_request(message: str) -> bool:
+    text = (message or "").strip()
+    if not text:
+        return False
+    return any(term in text for term in TODAY_BUSINESS_TERMS)
+
+
+def format_today_business_reply() -> str:
+    return TODAY_BUSINESS_REPLY
+
+
+def is_party_size_without_context(message: str, memory: Dict[str, Any]) -> bool:
+    text = (message or "").strip()
+    if not text:
+        return False
+    if memory.get("pending_flow") == "reservation" or memory.get("active_topic") == "reservation":
+        return False
+    return bool(PARTY_SIZE_PATTERN.search(text))
+
+
+def format_party_size_without_context_reply() -> str:
+    return PARTY_SIZE_REPLY
+
+
+def is_night_visit_request(message: str, memory: Dict[str, Any]) -> bool:
+    text = (message or "").strip()
+    if not text:
+        return False
+    if memory.get("pending_flow") == "reservation" or memory.get("active_topic") == "reservation":
+        return False
+    return any(term in text for term in NIGHT_VISIT_TERMS)
+
+
+def format_night_visit_reply() -> str:
+    return NIGHT_VISIT_REPLY
+
+
 def normalize_customer_reply(message: str) -> str:
     """Normalize common store replies so they read well in chat and voice."""
     if not message:
@@ -251,9 +347,12 @@ def is_short_order_confirmation(message: str, memory: Dict[str, Any]) -> bool:
     """Return True when a short follow-up confirms the just-mentioned item."""
     if not message or not memory:
         return False
-    if memory.get("last_assistant_action") != "answered_product_existence":
+    if memory.get("last_assistant_action") not in {
+        "answered_product_existence",
+        "confirmed_order_item",
+    }:
         return False
-    if not memory.get("current_entity"):
+    if not get_recent_item_name(memory):
         return False
 
     normalized = message.strip().replace("　", "")
@@ -266,5 +365,7 @@ def is_short_order_confirmation(message: str, memory: Dict[str, Any]) -> bool:
 
 
 def format_short_order_confirmation(memory: Dict[str, Any]) -> str:
-    item_name = str(memory.get("current_entity") or "ご注文").strip()
+    item_name = get_recent_item_name(memory) or "ご注文"
+    if memory.get("last_assistant_action") == "confirmed_order_item":
+        return f"かしこまりました。{item_name}をもう1つですね。"
     return f"かしこまりました。{item_name}1つですね。ご注文内容として控えました。"

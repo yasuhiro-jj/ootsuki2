@@ -86,6 +86,46 @@ DEFAULT_CASES: Sequence[SmokeCase] = (
         ),
     ),
     SmokeCase(
+        case_id="ambiguous_repeat_order",
+        messages=("生ビールある？", "じゃあ一つ", "もう一つ"),
+        expectations=(
+            TurnExpectation(
+                contains_any=("生ビール", "中生ビール"),
+                excludes=("つまみ", "おすすめ", "LINE", "電話", "メニュー"),
+                max_sentences=3,
+            ),
+            TurnExpectation(
+                contains_all=("1つ",),
+                contains_any=("生ビール", "中生ビール"),
+                excludes=("つまみ", "おすすめ", "LINE", "電話", "メニュー"),
+                max_sentences=3,
+            ),
+            TurnExpectation(
+                contains_all=("もう1つ",),
+                contains_any=("生ビール", "中生ビール"),
+                excludes=("つまみ", "おすすめ", "LINE", "電話", "メニュー"),
+                max_sentences=3,
+            ),
+        ),
+    ),
+    SmokeCase(
+        case_id="contextual_price",
+        messages=("生ビールある？", "いくら？"),
+        expectations=(
+            TurnExpectation(
+                contains_any=("生ビール", "中生ビール"),
+                excludes=("つまみ", "おすすめ", "LINE", "電話", "メニュー"),
+                max_sentences=3,
+            ),
+            TurnExpectation(
+                contains_all=("円",),
+                contains_any=("生ビール", "中生ビール"),
+                excludes=("つまみ", "おすすめ", "LINE", "電話", "メニュー"),
+                max_sentences=3,
+            ),
+        ),
+    ),
+    SmokeCase(
         case_id="business_hours",
         messages=("営業時間は？",),
         expectations=(
@@ -94,6 +134,39 @@ DEFAULT_CASES: Sequence[SmokeCase] = (
                 contains_any=("火曜日", "定休日"),
                 excludes=("おすすめ", "LINE", "電話", "メニュー"),
                 max_sentences=4,
+            ),
+        ),
+    ),
+    SmokeCase(
+        case_id="today_business",
+        messages=("今日やってる？",),
+        expectations=(
+            TurnExpectation(
+                contains_any=("11時", "17時", "営業"),
+                excludes=("おすすめ", "刺身定食", "LINE", "電話", "メニュー"),
+                max_sentences=3,
+            ),
+        ),
+    ),
+    SmokeCase(
+        case_id="party_size_without_context",
+        messages=("4人なんだけど",),
+        expectations=(
+            TurnExpectation(
+                contains_any=("予約", "日にち", "時間"),
+                excludes=("おすすめ", "刺身定食", "LINE", "電話", "メニュー"),
+                max_sentences=3,
+            ),
+        ),
+    ),
+    SmokeCase(
+        case_id="night_visit",
+        messages=("夜行きたい",),
+        expectations=(
+            TurnExpectation(
+                contains_any=("夜", "日にち", "人数"),
+                excludes=("おすすめ", "刺身定食", "LINE", "電話", "メニュー"),
+                max_sentences=3,
             ),
         ),
     ),

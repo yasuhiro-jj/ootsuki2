@@ -31,7 +31,12 @@ class ProdChatSmokeTests(unittest.TestCase):
 
         self.assertIn("recommendation_repeat", case_ids)
         self.assertIn("beer_order_followup", case_ids)
+        self.assertIn("ambiguous_repeat_order", case_ids)
+        self.assertIn("contextual_price", case_ids)
         self.assertIn("business_hours", case_ids)
+        self.assertIn("today_business", case_ids)
+        self.assertIn("party_size_without_context", case_ids)
+        self.assertIn("night_visit", case_ids)
         self.assertIn("reservation_start", case_ids)
         self.assertIn("parking", case_ids)
         self.assertIn("payment", case_ids)

@@ -2,15 +2,24 @@ import unittest
 
 from core.response_compactness import (
     detect_short_store_faq_key,
+    format_contextual_price_reply,
     format_initial_reservation_reply,
+    format_night_visit_reply,
+    format_party_size_without_context_reply,
     format_reservation_followup_reply,
     format_short_order_confirmation,
     format_short_store_faq_reply,
     format_snack_recommendation_reply,
+    format_today_business_reply,
+    get_recent_item_name,
+    is_contextual_price_request,
     is_initial_reservation_request,
+    is_night_visit_request,
+    is_party_size_without_context,
     is_reservation_followup_request,
     is_short_order_confirmation,
     is_snack_recommendation_request,
+    is_today_business_request,
     normalize_customer_reply,
     should_append_line_contact_footer,
 )
@@ -150,6 +159,74 @@ class ResponseCompactnessTests(unittest.TestCase):
                 {"current_entity": "中生ビール", "last_assistant_action": "other"},
             )
         )
+
+    def test_repeat_order_after_confirmed_item_uses_recent_item(self):
+        memory = {
+            "recently_confirmed_item": "中生ビール",
+            "last_assistant_action": "confirmed_order_item",
+        }
+
+        self.assertEqual(get_recent_item_name(memory), "中生ビール")
+        self.assertTrue(is_short_order_confirmation("もう一つ", memory))
+        self.assertEqual(
+            format_short_order_confirmation(memory),
+            "かしこまりました。中生ビールをもう1つですね。",
+        )
+
+    def test_contextual_price_request_uses_recent_item(self):
+        class Item:
+            name = "中生ビール"
+            price = 528
+
+        memory = {
+            "current_entity": "中生ビール",
+            "last_assistant_action": "answered_product_existence",
+        }
+
+        self.assertTrue(is_contextual_price_request("いくら？", memory))
+        self.assertEqual(
+            format_contextual_price_reply("中生ビール", [Item()]),
+            "中生ビールは528円です。",
+        )
+
+    def test_contextual_price_request_requires_context(self):
+        self.assertFalse(is_contextual_price_request("いくら？", {}))
+
+    def test_today_business_request_is_compact(self):
+        self.assertTrue(is_today_business_request("今日やってる？"))
+        reply = format_today_business_reply()
+
+        self.assertIn("11時", reply)
+        self.assertIn("17時", reply)
+        self.assertNotIn("LINE", reply)
+        self.assertNotIn("電話", reply)
+        self.assertLessEqual(reply.count("。"), 3)
+
+    def test_party_size_without_context_starts_reservation_clarification(self):
+        self.assertTrue(is_party_size_without_context("4人なんだけど", {}))
+        reply = format_party_size_without_context_reply()
+
+        self.assertIn("予約", reply)
+        self.assertIn("日にち", reply)
+        self.assertIn("時間", reply)
+        self.assertLessEqual(reply.count("。"), 3)
+
+    def test_party_size_does_not_override_reservation_context(self):
+        self.assertFalse(
+            is_party_size_without_context(
+                "4人なんだけど",
+                {"pending_flow": "reservation", "active_topic": "reservation"},
+            )
+        )
+
+    def test_night_visit_request_starts_reservation_clarification(self):
+        self.assertTrue(is_night_visit_request("夜行きたい", {}))
+        reply = format_night_visit_reply()
+
+        self.assertIn("夜", reply)
+        self.assertIn("日にち", reply)
+        self.assertIn("人数", reply)
+        self.assertLessEqual(reply.count("。"), 3)
 
     def test_store_info_reply_is_normalized_for_voice(self):
         answer = normalize_customer_reply(
