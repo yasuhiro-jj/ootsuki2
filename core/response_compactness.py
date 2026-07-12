@@ -139,7 +139,8 @@ def format_reservation_followup_reply(memory: Dict[str, Any]) -> str:
         prefix = "\u627f\u77e5\u3057\u307e\u3057\u305f"
         if details:
             prefix = f"{'、'.join(details)}\u3067\u3059\u306d"
-        return f"{prefix}\u3002\n{'\u3068'.join(missing)}\u3092\u6559\u3048\u3066\u304f\u3060\u3055\u3044\u3002"
+        missing_text = "\u3068".join(missing)
+        return f"{prefix}\u3002\n{missing_text}\u3092\u6559\u3048\u3066\u304f\u3060\u3055\u3044\u3002"
 
     return (
         f"{'、'.join(details)}\u3067\u304a\u9810\u304b\u308a\u3057\u307e\u3059\u3002\n"
