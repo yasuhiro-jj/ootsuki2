@@ -92,11 +92,16 @@ class ExplicitSalesRecommendationConnector:
         )
         decision = self.bridge.decide_suggestion(context, strategy)
         if not decision.allowed or not decision.product:
-            return self._skipped(
-                session_id,
-                self._skip_reason_from_decision(decision.reason, strategy, context),
-                strategy_id=strategy.strategy_id,
+            skip_reason = self._skip_reason_from_decision(
+                decision.reason, strategy, context
             )
+            if skip_reason == SKIP_SESSION_LIMIT_REACHED:
+                return self._repeated_recommendation(
+                    session_id=session_id,
+                    strategy=strategy,
+                    context=context,
+                )
+            return self._skipped(session_id, skip_reason, strategy_id=strategy.strategy_id)
 
         message = self._render_customer_message(decision.product, context)
         event = suggestion_event(
@@ -221,6 +226,44 @@ class ExplicitSalesRecommendationConnector:
             memory_updates=memory_updates,
             event=skipped.event,
         )
+
+    def _repeated_recommendation(
+        self,
+        *,
+        session_id: str,
+        strategy: SalesStrategy,
+        context: ConversationSalesContext,
+    ) -> ExplicitRecommendationResult:
+        skipped = self._skipped(
+            session_id,
+            SKIP_SESSION_LIMIT_REACHED,
+            strategy_id=strategy.strategy_id,
+        )
+        product_name = self._previous_product_name(strategy, context)
+        memory_updates = {
+            "active_topic": "recommendation",
+            "detected_intent": "product_recommendation",
+            "suggestion_count": context.suggestion_count,
+            "suggested_product_ids": list(context.proposed_items),
+            "last_assistant_action": "repeated_recommendation_limit",
+        }
+        return ExplicitRecommendationResult(
+            message=f"先ほどご案内した{product_name}がおすすめです。",
+            skip_reason=SKIP_SESSION_LIMIT_REACHED,
+            selected_product_id=(context.proposed_items[-1] if context.proposed_items else ""),
+            strategy_id=strategy.strategy_id,
+            memory_updates=memory_updates,
+            event=skipped.event,
+        )
+
+    def _previous_product_name(
+        self, strategy: SalesStrategy, context: ConversationSalesContext
+    ) -> str:
+        previous_product_id = context.proposed_items[-1] if context.proposed_items else ""
+        for product in strategy.priority_products:
+            if product.product_id == previous_product_id:
+                return product.name
+        return SHORT_FALLBACK_PRODUCT_NAME
 
     def _skipped(
         self, session_id: str, skip_reason: str, strategy_id: str = ""

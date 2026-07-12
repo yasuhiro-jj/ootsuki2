@@ -35,7 +35,9 @@ from .menu_existence import (
     is_direct_menu_existence_question,
 )
 from .response_compactness import (
+    format_initial_reservation_reply,
     format_short_order_confirmation,
+    is_initial_reservation_request,
     is_short_order_confirmation,
     normalize_customer_reply,
     should_append_line_contact_footer,
@@ -697,9 +699,53 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 conversation_route,
                 current_memory=session_memory,
             )
+            initial_reservation_requested = is_initial_reservation_request(
+                user_message, session_memory
+            )
             if memory_updates:
                 ai_engine.save_memory(session_id, memory_updates)
                 session_memory = {**session_memory, **memory_updates}
+
+            if initial_reservation_requested:
+                response_message = format_initial_reservation_reply()
+                ai_engine.save_memory(
+                    session_id,
+                    {
+                        "active_topic": "reservation",
+                        "pending_flow": "reservation",
+                        "detected_intent": "reservation",
+                        "last_assistant_action": "initial_reservation_request",
+                    },
+                )
+                session_memory = ai_engine.get_session_memory(session_id)
+                session = ai_engine.get_session(session_id)
+                if session:
+                    session.add_message("user", request.message)
+                    session.add_message("assistant", response_message)
+                _record_quality_log(
+                    session_id=session_id,
+                    user_id=request.customer_id,
+                    user_message=request.message,
+                    ai_response=response_message,
+                    recent_history=recent_turns,
+                    session_memory=session_memory,
+                    detected_intent="reservation",
+                    route=conversation_route.kind,
+                    route_reason=conversation_route.reason,
+                    node="initial_reservation_request",
+                    referenced_sources={"store_tools_used": False},
+                    latency_ms=_elapsed_ms(started_at),
+                    channel="web",
+                )
+                return ChatResponse(
+                    message=response_message,
+                    session_id=session_id,
+                    timestamp=datetime.now().isoformat(),
+                    options=[],
+                    suggestions=None,
+                    image_url=None,
+                    line_reply_messages=None,
+                )
 
             if is_short_order_confirmation(user_message, session_memory):
                 response_message = format_short_order_confirmation(session_memory)
@@ -1459,7 +1505,25 @@ def create_app(config: ConfigLoader) -> FastAPI:
                             }
                         
                         ws_session_memory = ai_engine.get_session_memory(session_id)
-                        if is_short_order_confirmation(message, ws_session_memory):
+                        if is_initial_reservation_request(message, ws_session_memory):
+                            direct_response = format_initial_reservation_reply()
+                            ai_engine.save_memory(
+                                session_id,
+                                {
+                                    "active_topic": "reservation",
+                                    "pending_flow": "reservation",
+                                    "detected_intent": "reservation",
+                                    "last_assistant_action": "initial_reservation_request",
+                                },
+                            )
+                            result = {
+                                **state,
+                                "intent": "reservation",
+                                "response": direct_response,
+                                "options": [],
+                            }
+                            logger.info("[WS] initial_reservation_request")
+                        elif is_short_order_confirmation(message, ws_session_memory):
                             direct_response = format_short_order_confirmation(ws_session_memory)
                             ai_engine.save_memory(
                                 session_id,

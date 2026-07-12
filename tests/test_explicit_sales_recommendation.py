@@ -168,18 +168,67 @@ class ExplicitSalesRecommendationTests(unittest.TestCase):
         self.assertEqual(result.selected_product_id, SHORT_FALLBACK_PRODUCT_ID)
 
     def test_session_limit_blocks_second_suggestion(self):
-        connector, _ = make_connector(make_strategy())
+        connector, bridge = make_connector(make_strategy())
 
         result = connector.try_recommend(
             session_id="s1",
             user_message="sashimi_001 pairing",
             intent_value="proposal",
             route_kind="store",
-            session_memory={"current_entity": "sashimi_001", "suggestion_count": 1},
+            session_memory={
+                "current_entity": "sashimi_001",
+                "suggestion_count": 1,
+                "suggested_product_ids": ["sake_fuji_001"],
+            },
         )
 
-        self.assertFalse(result.has_message)
+        self.assertTrue(result.has_message)
         self.assertEqual(result.skip_reason, SKIP_SESSION_LIMIT_REACHED)
+        self.assertEqual(result.memory_updates["suggestion_count"], 1)
+        self.assertEqual(
+            result.memory_updates["last_assistant_action"],
+            "repeated_recommendation_limit",
+        )
+        self.assertNotIn("LINE", result.message)
+        self.assertNotIn("\u96fb\u8a71", result.message)
+        self.assertNotIn("\u30e1\u30cb\u30e5\u30fc", result.message)
+        self.assertNotIn("\u2460", result.message)
+        self.assertNotIn("\u2461", result.message)
+        self.assertLessEqual(result.message.count("\u3002"), 3)
+        events = bridge.list_recorded_events()
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].result, "suggestion_skipped")
+
+    def test_second_recommendation_does_not_duplicate_suggestion_event(self):
+        connector, bridge = make_connector(make_strategy())
+
+        first = connector.try_recommend(
+            session_id="s1",
+            user_message="sashimi_001 pairing",
+            intent_value="proposal",
+            route_kind="store",
+            session_memory={"current_entity": "sashimi_001"},
+        )
+        second = connector.try_recommend(
+            session_id="s1",
+            user_message="sashimi_001 pairing",
+            intent_value="proposal",
+            route_kind="store",
+            session_memory={
+                "current_entity": "sashimi_001",
+                "suggestion_count": first.memory_updates["suggestion_count"],
+                "suggested_product_ids": first.memory_updates["suggested_product_ids"],
+            },
+        )
+
+        self.assertEqual(first.memory_updates["suggestion_count"], 1)
+        self.assertEqual(second.memory_updates["suggestion_count"], 1)
+        self.assertEqual(second.skip_reason, SKIP_SESSION_LIMIT_REACHED)
+        self.assertTrue(second.has_message)
+        self.assertEqual(
+            [event.result for event in bridge.list_recorded_events()],
+            ["suggestion_shown", "suggestion_skipped"],
+        )
 
     def test_declined_product_is_not_suggested(self):
         connector, _ = make_connector(make_strategy())

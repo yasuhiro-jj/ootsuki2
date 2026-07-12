@@ -53,7 +53,16 @@ Set `ADMIN_API_KEY` in Railway, register one temporary sales strategy through a
 trusted admin client, verify the recommendation behavior, then deactivate the
 strategy.
 
-Status: next.
+Status: initial production trigger verified.
+
+## Phase 3.4: Repeated Recommendation Limit and Compact Reservation Replies
+
+When the explicit recommendation session limit is reached, keep the response
+short instead of falling back to the old long recommendation handler. Keep
+initial reservation replies short and avoid contact/menu guidance until it is
+actually needed.
+
+Status: implemented in this phase.
 
 ## Phase 4: Natural Context Suggestions
 

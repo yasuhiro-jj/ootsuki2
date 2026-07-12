@@ -41,6 +41,9 @@ guidance.
 - Default: at most one suggestion per session.
 - Candidate list: at most one item unless the customer asks for choices.
 - No-strategy fallback: one item and two short sentences.
+- Session limit reached: repeat the previous recommendation briefly, do not
+  call the old long recommendation handler, and do not record another
+  `suggestion_shown` event.
 - Declined products: do not suggest again in the same session.
 - Avoided products: do not suggest.
 

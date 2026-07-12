@@ -1,7 +1,9 @@
 import unittest
 
 from core.response_compactness import (
+    format_initial_reservation_reply,
     format_short_order_confirmation,
+    is_initial_reservation_request,
     is_short_order_confirmation,
     normalize_customer_reply,
     should_append_line_contact_footer,
@@ -9,6 +11,29 @@ from core.response_compactness import (
 
 
 class ResponseCompactnessTests(unittest.TestCase):
+    def test_initial_reservation_request_returns_compact_reply(self):
+        self.assertTrue(is_initial_reservation_request("\u4e88\u7d04\u3067\u304d\u307e\u3059\u304b\uff1f", {}))
+
+        reply = format_initial_reservation_reply()
+
+        self.assertIn("\u4e88\u7d04", reply)
+        self.assertIn("\u65e5\u306b\u3061", reply)
+        self.assertIn("\u6642\u9593", reply)
+        self.assertIn("\u4eba\u6570", reply)
+        self.assertNotIn("LINE", reply)
+        self.assertNotIn("\u96fb\u8a71", reply)
+        self.assertNotIn("\u30e1\u30cb\u30e5\u30fc", reply)
+        self.assertNotIn("\u523a\u8eab", reply)
+        self.assertLessEqual(reply.count("\u3002"), 3)
+
+    def test_initial_reservation_request_does_not_capture_pending_flow(self):
+        self.assertFalse(
+            is_initial_reservation_request(
+                "20\u4eba\u3067\u3059",
+                {"pending_flow": "reservation", "active_topic": "reservation"},
+            )
+        )
+
     def test_line_contact_footer_is_not_added_to_normal_answers(self):
         self.assertFalse(should_append_line_contact_footer("営業時間は11時からです。"))
 
