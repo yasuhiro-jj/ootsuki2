@@ -1,9 +1,11 @@
 import unittest
 
 from core.response_compactness import (
+    detect_short_store_faq_key,
     format_initial_reservation_reply,
     format_reservation_followup_reply,
     format_short_order_confirmation,
+    format_short_store_faq_reply,
     format_snack_recommendation_reply,
     is_initial_reservation_request,
     is_reservation_followup_request,
@@ -86,6 +88,30 @@ class ResponseCompactnessTests(unittest.TestCase):
         self.assertNotIn("\u30e1\u30cb\u30e5\u30fc", reply)
         self.assertNotIn("\u4ee5\u4e0b\u304b\u3089", reply)
         self.assertLessEqual(reply.count("\u3002"), 3)
+
+    def test_short_store_faq_replies_are_compact(self):
+        examples = {
+            "\u99d0\u8eca\u5834\u3042\u308a\u307e\u3059\u304b\uff1f": "parking",
+            "\u652f\u6255\u3044\u65b9\u6cd5\u306f\uff1f": "payment",
+            "\u5b50\u9023\u308c\u3067\u3082\u5927\u4e08\u592b\uff1f": "children",
+            "\u500b\u5ba4\u3042\u308a\u307e\u3059\u304b\uff1f": "private_room",
+            "\u30c6\u30a4\u30af\u30a2\u30a6\u30c8\u3067\u304d\u307e\u3059\u304b\uff1f": "takeout",
+        }
+
+        for message, faq_key in examples.items():
+            with self.subTest(faq_key=faq_key):
+                self.assertEqual(detect_short_store_faq_key(message), faq_key)
+                reply = format_short_store_faq_reply(faq_key)
+                self.assertNotIn("LINE", reply)
+                self.assertNotIn("\u96fb\u8a71", reply)
+                self.assertNotIn("\u30e1\u30cb\u30e5\u30fc", reply)
+                self.assertNotIn("\u304a\u3059\u3059\u3081", reply)
+                self.assertLessEqual(reply.count("\u3002"), 3)
+
+    def test_short_store_faq_does_not_capture_status_report(self):
+        self.assertIsNone(
+            detect_short_store_faq_key("\u99d0\u8eca\u5834\u3067\u5c11\u3057\u5f85\u3063\u3066\u3044\u308b\u306d")
+        )
 
     def test_line_contact_footer_is_not_added_to_normal_answers(self):
         self.assertFalse(should_append_line_contact_footer("営業時間は11時からです。"))

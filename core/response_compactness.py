@@ -1,7 +1,7 @@
 """Helpers for keeping customer-facing replies short and natural."""
 
 import re
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 CONTACT_GUIDANCE_TERMS = (
     "お問い合わせ",
@@ -79,6 +79,45 @@ DRINK_PAIRING_KEYWORDS = (
 SNACK_RECOMMENDATION_REPLY = (
     "\u30d3\u30fc\u30eb\u306b\u5408\u308f\u305b\u308b\u306a\u3089\u3001\u5510\u63da\u3052\u304c\u304a\u3059\u3059\u3081\u3067\u3059\u3002\n"
     "\u8efd\u304f\u3064\u307e\u3080\u306a\u3089\u51b7\u5974\u3082\u3042\u308a\u307e\u3059\u3088\u3002"
+)
+SHORT_STORE_FAQ_RULES = {
+    "parking": {
+        "keywords": ("\u99d0\u8eca\u5834", "\u8eca", "\u505c\u3081"),
+        "reply": "\u306f\u3044\u3001\u99d0\u8eca\u5834\u304c\u3042\u308a\u307e\u3059\u3002\n\u5e97\u8217\u306e\u88cf\u5074\u306b5\u53f0\u5206\u306e\u30b9\u30da\u30fc\u30b9\u304c\u3042\u308a\u307e\u3059\u3002",
+    },
+    "payment": {
+        "keywords": ("\u652f\u6255", "\u652f\u6255\u3044", "\u73fe\u91d1", "\u30ab\u30fc\u30c9", "QR", "PayPay", "\u30ad\u30e3\u30c3\u30b7\u30e5\u30ec\u30b9"),
+        "reply": "\u73fe\u91d1\u3067\u306e\u304a\u652f\u6255\u3044\u304c\u3067\u304d\u307e\u3059\u3002\n\u30ab\u30fc\u30c9\u3084QR\u6c7a\u6e08\u306f\u3001\u5e97\u982d\u3067\u3054\u78ba\u8a8d\u304f\u3060\u3055\u3044\u3002",
+    },
+    "children": {
+        "keywords": ("\u5b50\u9023\u308c", "\u5b50\u3069\u3082", "\u5b50\u4f9b", "\u304a\u5b50\u69d8", "\u5bb6\u65cf"),
+        "reply": "\u306f\u3044\u3001\u304a\u5b50\u69d8\u9023\u308c\u3067\u3082\u3054\u5229\u7528\u3044\u305f\u3060\u3051\u307e\u3059\u3002\n\u4eba\u6570\u304c\u591a\u3044\u5834\u5408\u306f\u3001\u3054\u6765\u5e97\u524d\u306b\u5e2d\u3092\u3054\u76f8\u8ac7\u304f\u3060\u3055\u3044\u3002",
+    },
+    "private_room": {
+        "keywords": ("\u500b\u5ba4", "\u5ea7\u6577", "\u5e2d"),
+        "reply": "\u500b\u5ba4\u3084\u5e2d\u306e\u3054\u5e0c\u671b\u306f\u3001\u65e5\u306b\u3061\u30fb\u6642\u9593\u30fb\u4eba\u6570\u3067\u78ba\u8a8d\u3057\u307e\u3059\u3002\n\u3054\u5e0c\u671b\u306e\u6761\u4ef6\u3092\u6559\u3048\u3066\u304f\u3060\u3055\u3044\u3002",
+    },
+    "takeout": {
+        "keywords": ("\u30c6\u30a4\u30af\u30a2\u30a6\u30c8", "\u6301\u3061\u5e30\u308a", "\u304a\u6301\u3061\u5e30\u308a", "\u5f01\u5f53"),
+        "reply": "\u306f\u3044\u3001\u30c6\u30a4\u30af\u30a2\u30a6\u30c8\u3082\u3067\u304d\u307e\u3059\u3002\n\u304a\u5f01\u5f53\u3084\u4e00\u54c1\u6599\u7406\u3092\u3054\u7528\u610f\u3057\u3066\u3044\u307e\u3059\u3002",
+    },
+}
+SHORT_STORE_FAQ_INQUIRY_TERMS = (
+    "\u3042\u308a\u307e\u3059",
+    "\u3042\u308b",
+    "\u3067\u304d\u307e\u3059",
+    "\u3067\u304d\u308b",
+    "\u5927\u4e08\u592b",
+    "\u6559\u3048\u3066",
+    "\u4f7f\u3048",
+    "\u53ef\u80fd",
+    "\u5e0c\u671b",
+    "\u3044\u3044",
+    "\u3069\u3046",
+    "\u3069\u3093\u306a",
+    "\u4f55",
+    "?",
+    "\uff1f",
 )
 
 
@@ -159,6 +198,25 @@ def is_snack_recommendation_request(message: str) -> bool:
 
 def format_snack_recommendation_reply() -> str:
     return SNACK_RECOMMENDATION_REPLY
+
+
+def detect_short_store_faq_key(message: str) -> Optional[str]:
+    text = (message or "").strip()
+    if not text:
+        return None
+    if not any(term in text for term in SHORT_STORE_FAQ_INQUIRY_TERMS):
+        return None
+    for key, rule in SHORT_STORE_FAQ_RULES.items():
+        if any(keyword in text for keyword in rule["keywords"]):
+            return key
+    return None
+
+
+def format_short_store_faq_reply(faq_key: str) -> str:
+    rule = SHORT_STORE_FAQ_RULES.get(faq_key)
+    if not rule:
+        return ""
+    return str(rule["reply"])
 
 
 def normalize_customer_reply(message: str) -> str:

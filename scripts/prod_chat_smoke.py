@@ -122,8 +122,52 @@ DEFAULT_CASES: Sequence[SmokeCase] = (
         expectations=(
             TurnExpectation(
                 contains_any=("駐車", "停め"),
-                excludes=("おすすめ", "刺身定食"),
-                max_sentences=5,
+                excludes=("おすすめ", "刺身定食", "LINE", "電話", "メニュー"),
+                max_sentences=3,
+            ),
+        ),
+    ),
+    SmokeCase(
+        case_id="payment",
+        messages=("支払い方法は？",),
+        expectations=(
+            TurnExpectation(
+                contains_any=("支払い", "現金", "決済"),
+                excludes=("おすすめ", "刺身定食", "LINE", "電話", "メニュー"),
+                max_sentences=3,
+            ),
+        ),
+    ),
+    SmokeCase(
+        case_id="children",
+        messages=("子連れでも大丈夫？",),
+        expectations=(
+            TurnExpectation(
+                contains_any=("子", "お子様", "利用"),
+                excludes=("おすすめ", "刺身定食", "LINE", "電話", "メニュー"),
+                max_sentences=3,
+            ),
+        ),
+    ),
+    SmokeCase(
+        case_id="private_room",
+        messages=("個室ありますか？",),
+        expectations=(
+            TurnExpectation(
+                contains_any=("個室", "席"),
+                excludes=("おすすめ", "刺身定食", "LINE", "電話", "メニュー"),
+                max_sentences=3,
+            ),
+        ),
+    ),
+    SmokeCase(
+        case_id="takeout",
+        messages=("テイクアウトできますか？",),
+        expectations=(
+            TurnExpectation(
+                contains_any=("テイクアウト", "持ち帰り", "弁当"),
+                excludes=("おすすめ", "刺身定食", "LINE", "電話"),
+                max_sentences=3,
             ),
         ),
     ),

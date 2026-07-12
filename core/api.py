@@ -35,9 +35,11 @@ from .menu_existence import (
     is_direct_menu_existence_question,
 )
 from .response_compactness import (
+    detect_short_store_faq_key,
     format_initial_reservation_reply,
     format_reservation_followup_reply,
     format_short_order_confirmation,
+    format_short_store_faq_reply,
     format_snack_recommendation_reply,
     is_initial_reservation_request,
     is_reservation_followup_request,
@@ -875,6 +877,47 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     line_reply_messages=None,
                 )
 
+            short_store_faq_key = detect_short_store_faq_key(user_message)
+            if short_store_faq_key:
+                response_message = format_short_store_faq_reply(short_store_faq_key)
+                ai_engine.save_memory(
+                    session_id,
+                    {
+                        "active_topic": "store_info",
+                        "detected_intent": "facility_inquiry",
+                        "last_assistant_action": "short_store_faq",
+                    },
+                )
+                session_memory = ai_engine.get_session_memory(session_id)
+                session = ai_engine.get_session(session_id)
+                if session:
+                    session.add_message("user", request.message)
+                    session.add_message("assistant", response_message)
+                _record_quality_log(
+                    session_id=session_id,
+                    user_id=request.customer_id,
+                    user_message=request.message,
+                    ai_response=response_message,
+                    recent_history=recent_turns,
+                    session_memory=session_memory,
+                    detected_intent="facility_inquiry",
+                    route=conversation_route.kind,
+                    route_reason=conversation_route.reason,
+                    node=f"short_store_faq:{short_store_faq_key}",
+                    referenced_sources={"store_tools_used": False},
+                    latency_ms=_elapsed_ms(started_at),
+                    channel="web",
+                )
+                return ChatResponse(
+                    message=response_message,
+                    session_id=session_id,
+                    timestamp=datetime.now().isoformat(),
+                    options=[],
+                    suggestions=None,
+                    image_url=None,
+                    line_reply_messages=None,
+                )
+
             if conversation_route.kind == "latest":
                 session = ai_engine.get_session(session_id)
                 if session:
@@ -1666,6 +1709,26 @@ def create_app(config: ConfigLoader) -> FastAPI:
                                 "options": [],
                             }
                             logger.info("[WS] short_order_confirmation")
+                        elif detect_short_store_faq_key(message):
+                            short_store_faq_key = detect_short_store_faq_key(message)
+                            direct_response = format_short_store_faq_reply(
+                                short_store_faq_key or ""
+                            )
+                            ai_engine.save_memory(
+                                session_id,
+                                {
+                                    "active_topic": "store_info",
+                                    "detected_intent": "facility_inquiry",
+                                    "last_assistant_action": "short_store_faq",
+                                },
+                            )
+                            result = {
+                                **state,
+                                "intent": "facility_inquiry",
+                                "response": direct_response,
+                                "options": [],
+                            }
+                            logger.info("[WS] short_store_faq key=%s", short_store_faq_key)
                         elif is_direct_menu_existence_question(message):
                             menu_items = shared_menu_service.search_menu_items_for_existence(
                                 message,

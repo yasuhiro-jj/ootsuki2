@@ -33,6 +33,11 @@ class ProdChatSmokeTests(unittest.TestCase):
         self.assertIn("beer_order_followup", case_ids)
         self.assertIn("business_hours", case_ids)
         self.assertIn("reservation_start", case_ids)
+        self.assertIn("parking", case_ids)
+        self.assertIn("payment", case_ids)
+        self.assertIn("children", case_ids)
+        self.assertIn("private_room", case_ids)
+        self.assertIn("takeout", case_ids)
 
     def test_evaluate_response_accepts_expected_reply(self):
         failures = evaluate_response(
