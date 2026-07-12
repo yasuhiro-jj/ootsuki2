@@ -708,6 +708,51 @@ def create_app(config: ConfigLoader) -> FastAPI:
             initial_reservation_requested = is_initial_reservation_request(
                 user_message, session_memory
             )
+            short_store_faq_key = detect_short_store_faq_key(user_message)
+            if (
+                short_store_faq_key
+                and session_memory.get("pending_flow") != "reservation"
+                and session_memory.get("active_topic") != "reservation"
+            ):
+                response_message = format_short_store_faq_reply(short_store_faq_key)
+                ai_engine.save_memory(
+                    session_id,
+                    {
+                        "active_topic": "store_info",
+                        "detected_intent": "facility_inquiry",
+                        "last_assistant_action": "short_store_faq",
+                    },
+                )
+                session_memory = ai_engine.get_session_memory(session_id)
+                session = ai_engine.get_session(session_id)
+                if session:
+                    session.add_message("user", request.message)
+                    session.add_message("assistant", response_message)
+                _record_quality_log(
+                    session_id=session_id,
+                    user_id=request.customer_id,
+                    user_message=request.message,
+                    ai_response=response_message,
+                    recent_history=recent_turns,
+                    session_memory=session_memory,
+                    detected_intent="facility_inquiry",
+                    route=conversation_route.kind,
+                    route_reason=conversation_route.reason,
+                    node=f"short_store_faq:{short_store_faq_key}",
+                    referenced_sources={"store_tools_used": False},
+                    latency_ms=_elapsed_ms(started_at),
+                    channel="web",
+                )
+                return ChatResponse(
+                    message=response_message,
+                    session_id=session_id,
+                    timestamp=datetime.now().isoformat(),
+                    options=[],
+                    suggestions=None,
+                    image_url=None,
+                    line_reply_messages=None,
+                )
+
             if memory_updates:
                 ai_engine.save_memory(session_id, memory_updates)
                 session_memory = {**session_memory, **memory_updates}
@@ -1651,6 +1696,30 @@ def create_app(config: ConfigLoader) -> FastAPI:
                                 "options": [],
                             }
                             logger.info("[WS] initial_reservation_request")
+                        elif (
+                            detect_short_store_faq_key(message)
+                            and ws_session_memory.get("pending_flow") != "reservation"
+                            and ws_session_memory.get("active_topic") != "reservation"
+                        ):
+                            short_store_faq_key = detect_short_store_faq_key(message)
+                            direct_response = format_short_store_faq_reply(
+                                short_store_faq_key or ""
+                            )
+                            ai_engine.save_memory(
+                                session_id,
+                                {
+                                    "active_topic": "store_info",
+                                    "detected_intent": "facility_inquiry",
+                                    "last_assistant_action": "short_store_faq",
+                                },
+                            )
+                            result = {
+                                **state,
+                                "intent": "facility_inquiry",
+                                "response": direct_response,
+                                "options": [],
+                            }
+                            logger.info("[WS] short_store_faq key=%s", short_store_faq_key)
                         elif is_reservation_followup_request(message, ws_session_memory):
                             ws_route = classify_conversation_route(
                                 message,
