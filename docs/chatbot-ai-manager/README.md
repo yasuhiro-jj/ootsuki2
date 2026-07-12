@@ -79,6 +79,40 @@ Blocked cases include product existence checks, FAQ, business hours,
 reservation, order confirmation, natural chat, and order follow-ups. If the
 strategy service fails, the chatbot falls back to the existing response path.
 
+## Production Chat Smoke Test
+
+Use `scripts/prod_chat_smoke.py` to verify the production chatbot with the core
+customer conversations after each deploy. It creates a fresh chatbot session per
+case and sends only normal customer chat messages.
+
+Run all cases:
+
+```powershell
+$env:OOTSUKI_API_URL="https://web-production-b22a1.up.railway.app"
+python scripts/prod_chat_smoke.py
+```
+
+Run one case:
+
+```powershell
+python scripts/prod_chat_smoke.py --case recommendation_repeat
+```
+
+Save a JSON report:
+
+```powershell
+python scripts/prod_chat_smoke.py --json-out outputs/prod_chat_smoke_latest.json
+```
+
+Covered cases:
+
+- `recommendation_repeat`
+- `beer_order_followup`
+- `business_hours`
+- `reservation_start`
+- `parking`
+- `snack_recommendation`
+
 ## Existing Project Boundary
 
 The repository already contains `ai-maneger`. That directory is treated as the
