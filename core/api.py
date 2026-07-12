@@ -36,9 +36,13 @@ from .menu_existence import (
 )
 from .response_compactness import (
     format_initial_reservation_reply,
+    format_reservation_followup_reply,
     format_short_order_confirmation,
+    format_snack_recommendation_reply,
     is_initial_reservation_request,
+    is_reservation_followup_request,
     is_short_order_confirmation,
+    is_snack_recommendation_request,
     normalize_customer_reply,
     should_append_line_contact_footer,
 )
@@ -747,6 +751,47 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     line_reply_messages=None,
                 )
 
+            if is_reservation_followup_request(user_message, session_memory):
+                response_message = format_reservation_followup_reply(session_memory)
+                ai_engine.save_memory(
+                    session_id,
+                    {
+                        "active_topic": "reservation",
+                        "pending_flow": "reservation",
+                        "detected_intent": "reservation",
+                        "last_assistant_action": "reservation_followup",
+                    },
+                )
+                session_memory = ai_engine.get_session_memory(session_id)
+                session = ai_engine.get_session(session_id)
+                if session:
+                    session.add_message("user", request.message)
+                    session.add_message("assistant", response_message)
+                _record_quality_log(
+                    session_id=session_id,
+                    user_id=request.customer_id,
+                    user_message=request.message,
+                    ai_response=response_message,
+                    recent_history=recent_turns,
+                    session_memory=session_memory,
+                    detected_intent="reservation",
+                    route=conversation_route.kind,
+                    route_reason=conversation_route.reason,
+                    node="reservation_followup",
+                    referenced_sources={"store_tools_used": False},
+                    latency_ms=_elapsed_ms(started_at),
+                    channel="web",
+                )
+                return ChatResponse(
+                    message=response_message,
+                    session_id=session_id,
+                    timestamp=datetime.now().isoformat(),
+                    options=[],
+                    suggestions=None,
+                    image_url=None,
+                    line_reply_messages=None,
+                )
+
             if is_short_order_confirmation(user_message, session_memory):
                 response_message = format_short_order_confirmation(session_memory)
                 ai_engine.save_memory(
@@ -776,6 +821,46 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     route=conversation_route.kind,
                     route_reason=conversation_route.reason,
                     node="short_order_confirmation",
+                    referenced_sources={"store_tools_used": False},
+                    latency_ms=_elapsed_ms(started_at),
+                    channel="web",
+                )
+                return ChatResponse(
+                    message=response_message,
+                    session_id=session_id,
+                    timestamp=datetime.now().isoformat(),
+                    options=[],
+                    suggestions=None,
+                    image_url=None,
+                    line_reply_messages=None,
+                )
+
+            if is_snack_recommendation_request(user_message):
+                response_message = format_snack_recommendation_reply()
+                ai_engine.save_memory(
+                    session_id,
+                    {
+                        "active_topic": "recommendation",
+                        "detected_intent": "product_recommendation",
+                        "last_assistant_action": "snack_recommendation",
+                    },
+                )
+                session_memory = ai_engine.get_session_memory(session_id)
+                session = ai_engine.get_session(session_id)
+                if session:
+                    session.add_message("user", request.message)
+                    session.add_message("assistant", response_message)
+                _record_quality_log(
+                    session_id=session_id,
+                    user_id=request.customer_id,
+                    user_message=request.message,
+                    ai_response=response_message,
+                    recent_history=recent_turns,
+                    session_memory=session_memory,
+                    detected_intent="product_recommendation",
+                    route=conversation_route.kind,
+                    route_reason=conversation_route.reason,
+                    node="snack_recommendation",
                     referenced_sources={"store_tools_used": False},
                     latency_ms=_elapsed_ms(started_at),
                     channel="web",
@@ -1523,6 +1608,44 @@ def create_app(config: ConfigLoader) -> FastAPI:
                                 "options": [],
                             }
                             logger.info("[WS] initial_reservation_request")
+                        elif is_reservation_followup_request(message, ws_session_memory):
+                            ws_route = classify_conversation_route(
+                                message,
+                                recent_messages=[
+                                    turn.get("content", "")
+                                    for turn in conv_turns
+                                    if turn.get("content")
+                                ],
+                                active_topic=ws_session_memory.get("active_topic"),
+                                pending_flow=ws_session_memory.get("pending_flow"),
+                            )
+                            ws_memory_updates = infer_memory_updates(
+                                message,
+                                ws_route,
+                                current_memory=ws_session_memory,
+                            )
+                            if ws_memory_updates:
+                                ai_engine.save_memory(session_id, ws_memory_updates)
+                            ai_engine.save_memory(
+                                session_id,
+                                {
+                                    "active_topic": "reservation",
+                                    "pending_flow": "reservation",
+                                    "detected_intent": "reservation",
+                                    "last_assistant_action": "reservation_followup",
+                                },
+                            )
+                            ws_session_memory = ai_engine.get_session_memory(session_id)
+                            direct_response = format_reservation_followup_reply(
+                                ws_session_memory
+                            )
+                            result = {
+                                **state,
+                                "intent": "reservation",
+                                "response": direct_response,
+                                "options": [],
+                            }
+                            logger.info("[WS] reservation_followup")
                         elif is_short_order_confirmation(message, ws_session_memory):
                             direct_response = format_short_order_confirmation(ws_session_memory)
                             ai_engine.save_memory(
@@ -1578,6 +1701,23 @@ def create_app(config: ConfigLoader) -> FastAPI:
                                 "[WS] direct_menu_existence hits=%d",
                                 len(menu_items),
                             )
+                        elif is_snack_recommendation_request(message):
+                            direct_response = format_snack_recommendation_reply()
+                            ai_engine.save_memory(
+                                session_id,
+                                {
+                                    "active_topic": "recommendation",
+                                    "detected_intent": "product_recommendation",
+                                    "last_assistant_action": "snack_recommendation",
+                                },
+                            )
+                            result = {
+                                **state,
+                                "intent": "product_recommendation",
+                                "response": direct_response,
+                                "options": [],
+                            }
+                            logger.info("[WS] snack_recommendation")
                         else:
                             logger.info(f"[WS] SimpleGraphEngine invoke開始")
                             ws_intent_result = intent_classifier.classify(message)

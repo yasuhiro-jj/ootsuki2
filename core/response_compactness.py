@@ -65,6 +65,21 @@ RESERVATION_REQUEST_KEYWORDS = (
     "reserve",
     "reservation",
 )
+SNACK_RECOMMENDATION_KEYWORDS = (
+    "\u3064\u307e\u307f",
+    "\u304a\u3064\u307e\u307f",
+    "\u80b4",
+)
+DRINK_PAIRING_KEYWORDS = (
+    "\u30d3\u30fc\u30eb",
+    "\u9152",
+    "\u304a\u9152",
+    "\u30a2\u30eb\u30b3\u30fc\u30eb",
+)
+SNACK_RECOMMENDATION_REPLY = (
+    "\u30d3\u30fc\u30eb\u306b\u5408\u308f\u305b\u308b\u306a\u3089\u3001\u5510\u63da\u3052\u304c\u304a\u3059\u3059\u3081\u3067\u3059\u3002\n"
+    "\u8efd\u304f\u3064\u307e\u3080\u306a\u3089\u51b7\u5974\u3082\u3042\u308a\u307e\u3059\u3088\u3002"
+)
 
 
 def should_append_line_contact_footer(message: str) -> bool:
@@ -87,6 +102,62 @@ def is_initial_reservation_request(message: str, memory: Dict[str, Any]) -> bool
 
 def format_initial_reservation_reply() -> str:
     return INITIAL_RESERVATION_REPLY
+
+
+def is_reservation_followup_request(message: str, memory: Dict[str, Any]) -> bool:
+    if not message or not memory:
+        return False
+    return (
+        memory.get("pending_flow") == "reservation"
+        or memory.get("active_topic") == "reservation"
+    )
+
+
+def format_reservation_followup_reply(memory: Dict[str, Any]) -> str:
+    slots = memory.get("reservation_slots") or {}
+    people = slots.get("people")
+    date = slots.get("date")
+    time_value = slots.get("time")
+
+    details = []
+    if people:
+        details.append(f"{people}\u540d\u69d8")
+    if date:
+        details.append(str(date))
+    if time_value:
+        details.append(str(time_value))
+
+    missing = []
+    if not date:
+        missing.append("\u65e5\u306b\u3061")
+    if not time_value:
+        missing.append("\u6642\u9593")
+    if not people:
+        missing.append("\u4eba\u6570")
+
+    if missing:
+        prefix = "\u627f\u77e5\u3057\u307e\u3057\u305f"
+        if details:
+            prefix = f"{'、'.join(details)}\u3067\u3059\u306d"
+        return f"{prefix}\u3002\n{'\u3068'.join(missing)}\u3092\u6559\u3048\u3066\u304f\u3060\u3055\u3044\u3002"
+
+    return (
+        f"{'、'.join(details)}\u3067\u304a\u9810\u304b\u308a\u3057\u307e\u3059\u3002\n"
+        "\u5ff5\u306e\u305f\u3081\u3001\u304a\u540d\u524d\u3092\u6559\u3048\u3066\u304f\u3060\u3055\u3044\u3002"
+    )
+
+
+def is_snack_recommendation_request(message: str) -> bool:
+    text = (message or "").strip()
+    if not text:
+        return False
+    has_snack = any(keyword in text for keyword in SNACK_RECOMMENDATION_KEYWORDS)
+    has_drink = any(keyword in text for keyword in DRINK_PAIRING_KEYWORDS)
+    return has_snack and has_drink
+
+
+def format_snack_recommendation_reply() -> str:
+    return SNACK_RECOMMENDATION_REPLY
 
 
 def normalize_customer_reply(message: str) -> str:

@@ -2,9 +2,13 @@ import unittest
 
 from core.response_compactness import (
     format_initial_reservation_reply,
+    format_reservation_followup_reply,
     format_short_order_confirmation,
+    format_snack_recommendation_reply,
     is_initial_reservation_request,
+    is_reservation_followup_request,
     is_short_order_confirmation,
+    is_snack_recommendation_request,
     normalize_customer_reply,
     should_append_line_contact_footer,
 )
@@ -33,6 +37,55 @@ class ResponseCompactnessTests(unittest.TestCase):
                 {"pending_flow": "reservation", "active_topic": "reservation"},
             )
         )
+
+    def test_reservation_followup_for_people_asks_only_missing_slots(self):
+        memory = {
+            "pending_flow": "reservation",
+            "active_topic": "reservation",
+            "reservation_slots": {"people": 20, "date": None, "time": None},
+        }
+
+        self.assertTrue(is_reservation_followup_request("20\u4eba\u3067\u3059", memory))
+        reply = format_reservation_followup_reply(memory)
+
+        self.assertIn("20\u540d\u69d8", reply)
+        self.assertIn("\u65e5\u306b\u3061", reply)
+        self.assertIn("\u6642\u9593", reply)
+        self.assertNotIn("LINE", reply)
+        self.assertNotIn("\u96fb\u8a71", reply)
+        self.assertNotIn("\u30e1\u30cb\u30e5\u30fc", reply)
+        self.assertNotIn("\u304a\u3059\u3059\u3081", reply)
+        self.assertLessEqual(reply.count("\u3002"), 3)
+
+    def test_reservation_followup_with_core_slots_asks_name(self):
+        memory = {
+            "pending_flow": "reservation",
+            "active_topic": "reservation",
+            "reservation_slots": {"people": 20, "date": "\u660e\u65e5", "time": "\u591c"},
+        }
+
+        reply = format_reservation_followup_reply(memory)
+
+        self.assertIn("20\u540d\u69d8", reply)
+        self.assertIn("\u660e\u65e5", reply)
+        self.assertIn("\u591c", reply)
+        self.assertIn("\u304a\u540d\u524d", reply)
+        self.assertNotIn("LINE", reply)
+        self.assertNotIn("\u96fb\u8a71", reply)
+        self.assertNotIn("\u30e1\u30cb\u30e5\u30fc", reply)
+        self.assertLessEqual(reply.count("\u3002"), 3)
+
+    def test_snack_recommendation_is_compact(self):
+        self.assertTrue(is_snack_recommendation_request("\u30d3\u30fc\u30eb\u306b\u5408\u3046\u3064\u307e\u307f\u306f\uff1f"))
+
+        reply = format_snack_recommendation_reply()
+
+        self.assertIn("\u5510\u63da\u3052", reply)
+        self.assertNotIn("LINE", reply)
+        self.assertNotIn("\u96fb\u8a71", reply)
+        self.assertNotIn("\u30e1\u30cb\u30e5\u30fc", reply)
+        self.assertNotIn("\u4ee5\u4e0b\u304b\u3089", reply)
+        self.assertLessEqual(reply.count("\u3002"), 3)
 
     def test_line_contact_footer_is_not_added_to_normal_answers(self):
         self.assertFalse(should_append_line_contact_footer("営業時間は11時からです。"))
