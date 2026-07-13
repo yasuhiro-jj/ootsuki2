@@ -292,7 +292,12 @@ def format_short_store_faq_reply(faq_key: str) -> str:
 def get_recent_item_name(memory: Dict[str, Any]) -> str:
     if not memory:
         return ""
-    for key in ("recently_confirmed_item", "last_ordered_item", "current_entity"):
+    for key in (
+        "recently_confirmed_item",
+        "last_ordered_item",
+        "current_entity",
+        "last_recommended_item",
+    ):
         value = str(memory.get(key) or "").strip()
         if value:
             return value
@@ -369,7 +374,7 @@ def is_cancel_request(message: str, memory: Dict[str, Any]) -> bool:
 
 def format_cancel_request_reply(memory: Dict[str, Any]) -> str:
     item_name = get_recent_item_name(memory)
-    if item_name and memory.get("pending_flow") == "order":
+    if item_name:
         return f"\u627f\u77e5\u3057\u307e\u3057\u305f\u3002{item_name}\u306e\u6ce8\u6587\u306f\u53d6\u308a\u6d88\u3057\u307e\u3059\u3002"
     if memory.get("pending_flow") == "reservation" or memory.get("active_topic") == "reservation":
         return "\u627f\u77e5\u3057\u307e\u3057\u305f\u3002\u4e88\u7d04\u306e\u3054\u76f8\u8ac7\u306f\u3044\u3063\u305f\u3093\u6b62\u3081\u307e\u3059\u3002"

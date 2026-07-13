@@ -71,6 +71,8 @@ class ExplicitSalesRecommendationTests(unittest.TestCase):
         self.assertTrue(result.has_message)
         self.assertEqual(result.selected_product_id, "sake_fuji_001")
         self.assertEqual(result.memory_updates["suggestion_count"], 1)
+        self.assertEqual(result.memory_updates["current_entity"], "Fuji sake")
+        self.assertEqual(result.memory_updates["last_recommended_item"], "Fuji sake")
         self.assertEqual(bridge.list_recorded_events()[0].result, "suggestion_shown")
 
     def test_product_existence_does_not_return_suggestion(self):
@@ -129,6 +131,8 @@ class ExplicitSalesRecommendationTests(unittest.TestCase):
         self.assertTrue(result.has_message)
         self.assertEqual(result.skip_reason, SKIP_NO_ACTIVE_STRATEGY)
         self.assertEqual(result.selected_product_id, SHORT_FALLBACK_PRODUCT_ID)
+        self.assertEqual(result.memory_updates["current_entity"], "刺身定食")
+        self.assertEqual(result.memory_updates["last_recommended_item"], "刺身定食")
 
     def test_no_active_strategy_fallback_is_short(self):
         connector, _ = make_connector(None)
@@ -218,6 +222,8 @@ class ExplicitSalesRecommendationTests(unittest.TestCase):
         self.assertTrue(result.has_message)
         self.assertEqual(result.skip_reason, SKIP_SESSION_LIMIT_REACHED)
         self.assertEqual(result.memory_updates["suggestion_count"], 1)
+        self.assertEqual(result.memory_updates["current_entity"], "Fuji sake")
+        self.assertEqual(result.memory_updates["last_recommended_item"], "Fuji sake")
         self.assertEqual(
             result.memory_updates["last_assistant_action"],
             "repeated_recommendation_limit",

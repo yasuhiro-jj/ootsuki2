@@ -130,6 +130,8 @@ class ExplicitSalesRecommendationConnector:
         memory_updates = {
             "active_topic": "recommendation",
             "detected_intent": "product_recommendation",
+            "current_entity": decision.product.name,
+            "last_recommended_item": decision.product.name,
             "suggestion_count": context.suggestion_count + 1,
             "suggested_product_ids": suggested_product_ids,
             "last_suggestion_at": datetime.now(timezone.utc).isoformat(),
@@ -234,6 +236,7 @@ class ExplicitSalesRecommendationConnector:
             "active_topic": "recommendation",
             "detected_intent": "product_recommendation",
             "current_entity": SHORT_FALLBACK_PRODUCT_NAME,
+            "last_recommended_item": SHORT_FALLBACK_PRODUCT_NAME,
             "last_assistant_action": (
                 "repeated_short_recommendation_fallback"
                 if repeated
@@ -266,6 +269,8 @@ class ExplicitSalesRecommendationConnector:
         memory_updates = {
             "active_topic": "recommendation",
             "detected_intent": "product_recommendation",
+            "current_entity": product_name,
+            "last_recommended_item": product_name,
             "suggestion_count": context.suggestion_count,
             "suggested_product_ids": list(context.proposed_items),
             "last_assistant_action": "repeated_recommendation_limit",
