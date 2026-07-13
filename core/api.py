@@ -69,6 +69,7 @@ from .response_compactness import (
     should_append_line_contact_footer,
 )
 from .conversation_quality import ConversationQualityLog, ConversationQualityLogger
+from .customer_memory import CustomerMemoryRepository
 from .security.admin_auth import require_admin_api_key
 from .integrations.chatbot_ai_manager import (
     ChatbotAIManagerBridge,
@@ -168,6 +169,26 @@ class SessionCreateRequest(BaseModel):
     customer_consent: Optional[bool] = False
     session_id: Optional[str] = None
     customer_id: Optional[str] = None
+
+
+class CustomerMemoryIdentifyRequest(BaseModel):
+    anonymous_customer_id: Optional[str] = None
+    consent_accepted: Optional[bool] = False
+    source: Optional[str] = None
+
+
+class CustomerMemoryProfileResponse(BaseModel):
+    customer_profile_id: str
+    anonymous_customer_id: str
+    consent_status: str
+    preference_tags: List[str] = []
+    favorite_items: List[str] = []
+    avoided_items: List[str] = []
+    last_ordered_items: List[str] = []
+    declined_products: List[str] = []
+    visit_count: int = 0
+    last_visit_at: str = ""
+    communication_notes: str = ""
 
 
 class ChatResponse(BaseModel):
@@ -353,6 +374,12 @@ def create_app(config: ConfigLoader) -> FastAPI:
     explicit_sales_recommendation = ExplicitSalesRecommendationConnector(
         sales_strategy_service,
         sales_strategy_bridge,
+    )
+    customer_memory_repository = CustomerMemoryRepository(
+        config.get(
+            "customer_memory.profile_path",
+            "outputs/customer_memory_profiles.json",
+        )
     )
     
     # 不明キーワード検索サービス初期化
@@ -570,6 +597,20 @@ def create_app(config: ConfigLoader) -> FastAPI:
             product["product_name"] = product.pop("name")
             product["priority"] = product.pop("priority_score")
         return payload
+
+    def _customer_memory_response(profile) -> Dict[str, Any]:
+        return customer_memory_repository.to_public_dict(profile)
+
+    @app.post(
+        "/customer-memory/identify",
+        response_model=CustomerMemoryProfileResponse,
+    )
+    async def identify_customer_memory(payload: CustomerMemoryIdentifyRequest):
+        profile = customer_memory_repository.identify(
+            payload.anonymous_customer_id,
+            consent_accepted=bool(payload.consent_accepted),
+        )
+        return _customer_memory_response(profile)
 
     @app.post(
         "/admin/ai-manager/sales-strategies",
@@ -1910,7 +1951,8 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 customer_secret = request.customer_secret
                 customer_consent = request.customer_consent or False
             
-            session_id = ai_engine.create_session()
+            session_customer_id = request.customer_id if request else None
+            session_id = ai_engine.create_session(session_customer_id)
             
             # 常連さまモードは一時保留のため、顧客情報の処理をコメントアウト
             # # 顧客情報をセッションメタデータに保存
@@ -1925,6 +1967,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
             
             return {
                 "session_id": session_id,
+                "customer_id": session_customer_id,
                 "customer_mode": False  # 常連さまモードは一時保留
             }
         except Exception as e:

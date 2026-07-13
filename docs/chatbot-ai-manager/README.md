@@ -23,6 +23,22 @@ This project now includes a passive integration scaffold and a manual sales
 strategy management MVP. Customer-facing chatbot behavior is still not changed
 by this directory alone.
 
+## Customer Memory and QR Login MVP
+
+The chatbot now has a pseudonymous customer memory entry point:
+
+- `POST /customer-memory/identify`
+- frontend localStorage restore for `anonymous_customer_id`
+- `/session` and `/chat` link that id through `customer_id`
+- default profile storage at `outputs/customer_memory_profiles.json`
+
+This does not collect real names, phone numbers, LINE ids, or full permanent
+conversation transcripts. Customer memory is not yet used for automatic sales
+recommendations.
+
+See `docs/customer-memory-qr-login.md` for the current privacy boundary and
+next-phase plan.
+
 ## Manual Strategy MVP
 
 The first management MVP stores manually configured sales strategies through a

@@ -18,15 +18,19 @@ export interface ChatResponse {
 
 export interface SessionResponse {
   session_id: string;
+  customer_id?: string | null;
 }
 
-export async function createSession(): Promise<SessionResponse> {
+export async function createSession(customerId?: string | null): Promise<SessionResponse> {
   try {
     const response = await fetch(`${API_BASE}/session`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
+      body: JSON.stringify({
+        customer_id: customerId ?? null,
+      }),
     });
 
     if (!response.ok) {
@@ -48,7 +52,8 @@ export async function createSession(): Promise<SessionResponse> {
 
 export async function sendChatMessage(
   message: string,
-  sessionId: string | null
+  sessionId: string | null,
+  customerId?: string | null
 ): Promise<ChatResponse> {
   try {
     const response = await fetch(`${API_BASE}/chat`, {
@@ -59,6 +64,7 @@ export async function sendChatMessage(
       body: JSON.stringify({
         message,
         session_id: sessionId,
+        customer_id: customerId ?? null,
       }),
     });
 

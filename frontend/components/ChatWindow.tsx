@@ -5,6 +5,7 @@ import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 import { QuickReplyButtons } from './QuickReplyButtons';
 import { createSession, sendChatMessage, type ChatResponse } from '../lib/api';
+import { resolveCustomerMemoryIdentity } from '../lib/customerMemory';
 
 interface Message {
   id: string;
@@ -17,6 +18,7 @@ interface Message {
 export function ChatWindow() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [customerId, setCustomerId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -31,10 +33,17 @@ export function ChatWindow() {
 
   useEffect(() => {
     let mounted = true;
-    createSession()
+    resolveCustomerMemoryIdentity()
+      .catch(() => null)
+      .then((identity) => {
+        const anonymousCustomerId = identity?.anonymous_customer_id ?? null;
+        if (mounted) setCustomerId(anonymousCustomerId);
+        return createSession(anonymousCustomerId);
+      })
       .then((data) => {
         if (mounted) {
           setSessionId(data.session_id);
+          if (data.customer_id) setCustomerId(data.customer_id);
           setMessages([
             {
               id: 'welcome',
@@ -79,7 +88,7 @@ export function ChatWindow() {
       setLoading(true);
 
       try {
-        const res: ChatResponse = await sendChatMessage(text, sessionId);
+        const res: ChatResponse = await sendChatMessage(text, sessionId, customerId);
         if (res.session_id) setSessionId(res.session_id);
 
         const botMsg: Message = {
@@ -101,7 +110,7 @@ export function ChatWindow() {
         setLoading(false);
       }
     },
-    [sessionId, loading]
+    [sessionId, customerId, loading]
   );
 
   const handleSuggestionClick = useCallback(
