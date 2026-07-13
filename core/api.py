@@ -725,6 +725,13 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 conversation_route,
                 current_memory=session_memory,
             )
+            defer_memory_updates_for_contextual_followup = (
+                is_previous_price_request(user_message, session_memory)
+                or is_contextual_price_request(user_message, session_memory)
+                or is_accept_proposal_request(user_message, session_memory)
+                or is_other_recommendation_request(user_message, session_memory)
+                or is_what_available_request(user_message, session_memory)
+            )
             initial_reservation_requested = is_initial_reservation_request(
                 user_message, session_memory
             )
@@ -773,7 +780,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     line_reply_messages=None,
                 )
 
-            if memory_updates:
+            if memory_updates and not defer_memory_updates_for_contextual_followup:
                 ai_engine.save_memory(session_id, memory_updates)
                 session_memory = {**session_memory, **memory_updates}
 
@@ -947,10 +954,17 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 user_message, session_memory
             ) or is_contextual_price_request(user_message, session_memory):
                 recent_item_name = get_recent_item_name(session_memory)
-                menu_items = shared_menu_service.search_menu_items_for_existence(
+                menu_items = shared_menu_service.fetch_menu_items(
                     recent_item_name,
-                    limit=1,
+                    limit=5,
                 )
+                exact_menu_items = [
+                    item
+                    for item in menu_items
+                    if getattr(item, "name", "") == recent_item_name
+                ]
+                if exact_menu_items:
+                    menu_items = exact_menu_items
                 response_message = format_contextual_price_reply(
                     recent_item_name,
                     menu_items,
@@ -2187,10 +2201,17 @@ def create_app(config: ConfigLoader) -> FastAPI:
                             message, ws_session_memory
                         ) or is_contextual_price_request(message, ws_session_memory):
                             recent_item_name = get_recent_item_name(ws_session_memory)
-                            menu_items = shared_menu_service.search_menu_items_for_existence(
+                            menu_items = shared_menu_service.fetch_menu_items(
                                 recent_item_name,
-                                limit=1,
+                                limit=5,
                             )
+                            exact_menu_items = [
+                                item
+                                for item in menu_items
+                                if getattr(item, "name", "") == recent_item_name
+                            ]
+                            if exact_menu_items:
+                                menu_items = exact_menu_items
                             direct_response = format_contextual_price_reply(
                                 recent_item_name,
                                 menu_items,
