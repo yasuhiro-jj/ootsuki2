@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 
 from core.menu_existence import (
@@ -23,6 +24,14 @@ class MenuExistenceTests(unittest.TestCase):
         self.assertFalse(is_direct_menu_existence_question("おつまみありますか？"))
         self.assertFalse(is_direct_menu_existence_question("ビールに合うつまみは？"))
         self.assertFalse(is_direct_menu_existence_question("酒のつまみを教えて"))
+
+    def test_direct_menu_lookup_precedes_natural_route(self):
+        source = Path("core/api.py").read_text(encoding="utf-8")
+
+        self.assertLess(
+            source.index("if is_direct_menu_existence_question(user_message):"),
+            source.index('if conversation_route.kind == "natural":'),
+        )
 
     def test_extracts_specific_menu_candidate(self):
         service = MenuService(notion_client=None, menu_db_id="dummy")

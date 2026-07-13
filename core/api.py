@@ -1516,6 +1516,72 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     line_reply_messages=None,
                 )
 
+            if is_direct_menu_existence_question(user_message):
+                menu_items = shared_menu_service.search_menu_items_for_existence(
+                    user_message,
+                    limit=5,
+                )
+                response_message = format_direct_menu_existence_answer(menu_items)
+                current_entity = (
+                    getattr(menu_items[0], "name", "") if menu_items else user_message
+                )
+                ai_engine.save_memory(
+                    session_id,
+                    {
+                        "active_topic": "menu",
+                        "current_entity": current_entity,
+                        "detected_intent": "product_existence",
+                        "user_goal": "availability_check",
+                        "order_intent_level": "none",
+                        "answered_facts": {
+                            "product_existence": current_entity,
+                            "exists": bool(menu_items),
+                        },
+                        "previous_question": user_message,
+                        "last_assistant_action": "answered_product_existence",
+                    },
+                )
+                session_memory = ai_engine.get_session_memory(session_id)
+                session = ai_engine.get_session(session_id)
+                if session:
+                    session.add_message("user", user_message)
+                    session.add_message("assistant", response_message)
+                logger.info(
+                    "[Decision] session=%s source=direct_menu_existence hits=%d",
+                    session_id[:8],
+                    len(menu_items),
+                )
+                _record_quality_log(
+                    session_id=session_id,
+                    user_id=request.customer_id,
+                    user_message=user_message,
+                    ai_response=response_message,
+                    recent_history=recent_turns,
+                    session_memory=session_memory,
+                    detected_intent=intent_result.intent.value,
+                    route=conversation_route.kind,
+                    route_reason=conversation_route.reason,
+                    node="direct_menu_existence",
+                    referenced_sources={
+                        "menu_hits": len(menu_items),
+                        "menu_names": [
+                            getattr(item, "name", "") for item in menu_items[:5]
+                        ],
+                    },
+                    latency_ms=_elapsed_ms(started_at),
+                    channel="web",
+                )
+
+                return ChatResponse(
+                    message=response_message,
+                    session_id=session_id,
+                    timestamp=datetime.now().isoformat(),
+                    options=[],
+                    suggestions=None,
+                    image_url=None,
+                    line_reply_messages=None,
+                )
+
             if conversation_route.kind == "latest":
                 session = ai_engine.get_session(session_id)
                 if session:

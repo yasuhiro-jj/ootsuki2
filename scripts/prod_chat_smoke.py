@@ -395,6 +395,11 @@ def main() -> int:
         help="Run customer memory smoke checks after chat smoke cases.",
     )
     parser.add_argument(
+        "--with-customer-id",
+        action="store_true",
+        help="Attach one anonymous customer id to all regular smoke cases.",
+    )
+    parser.add_argument(
         "--admin-api-key",
         default=os.getenv(ADMIN_API_KEY_ENV, ""),
         help=f"Admin API key for customer memory checks. Defaults to ${ADMIN_API_KEY_ENV}.",
@@ -419,10 +424,11 @@ def main() -> int:
     runner = SmokeRunner(str(args.api_url).rstrip("/"), timeout=args.timeout)
     started_at = datetime.now(timezone.utc).isoformat()
     results: List[CaseResult] = []
+    smoke_customer_id = runner.identify_customer() if args.with_customer_id else ""
 
     try:
         for case in selected_cases:
-            results.append(runner.run_case(case))
+            results.append(runner.run_case(case, customer_id=smoke_customer_id))
     except urllib.error.URLError as exc:
         print(f"ERROR: request failed: {exc.reason}", file=sys.stderr)
         return 1
