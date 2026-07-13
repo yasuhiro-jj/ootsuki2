@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 API_URL_ENV = "OOTSUKI_API_URL"
+ADMIN_API_KEY_ENV = "ADMIN_API_KEY"
+ADMIN_API_KEY_HEADER = "X-Admin-API-Key"
 DEFAULT_API_URL = "https://web-production-b22a1.up.railway.app"
 DEFAULT_TIMEOUT_SECONDS = 30
 
@@ -388,6 +390,16 @@ def main() -> int:
         help=f"HTTP timeout seconds. Defaults to {DEFAULT_TIMEOUT_SECONDS}.",
     )
     parser.add_argument(
+        "--customer-memory",
+        action="store_true",
+        help="Run customer memory smoke checks after chat smoke cases.",
+    )
+    parser.add_argument(
+        "--admin-api-key",
+        default=os.getenv(ADMIN_API_KEY_ENV, ""),
+        help=f"Admin API key for customer memory checks. Defaults to ${ADMIN_API_KEY_ENV}.",
+    )
+    parser.add_argument(
         "--list",
         action="store_true",
         help="List smoke case IDs and exit.",
@@ -416,9 +428,22 @@ def main() -> int:
         return 1
 
     print_report(results)
+    customer_memory_result: Optional[Dict[str, Any]] = None
+    if args.customer_memory:
+        customer_memory_result = runner.run_customer_memory_check(args.admin_api_key)
+        print_customer_memory_report(customer_memory_result)
     if args.json_out:
-        write_json_report(args.json_out, args.api_url, started_at, results)
-    return 0 if all(result.passed for result in results) else 1
+        write_json_report(
+            args.json_out,
+            args.api_url,
+            started_at,
+            results,
+            customer_memory_result=customer_memory_result,
+        )
+    all_passed = all(result.passed for result in results)
+    if customer_memory_result is not None:
+        all_passed = all_passed and bool(customer_memory_result.get("passed"))
+    return 0 if all_passed else 1
 
 
 class SmokeRunner:
@@ -426,12 +451,12 @@ class SmokeRunner:
         self.api_url = api_url
         self.timeout = timeout
 
-    def run_case(self, case: SmokeCase) -> CaseResult:
-        session_id = self.create_session()
+    def run_case(self, case: SmokeCase, customer_id: str = "") -> CaseResult:
+        session_id = self.create_session(customer_id=customer_id)
         turns: List[TurnResult] = []
         for index, message in enumerate(case.messages):
             started = time.perf_counter()
-            response = self.chat(session_id, message)
+            response = self.chat(session_id, message, customer_id=customer_id)
             latency_ms = int((time.perf_counter() - started) * 1000)
             expectation = (
                 case.expectations[index]
@@ -455,30 +480,109 @@ class SmokeRunner:
             turns=turns,
         )
 
-    def create_session(self) -> str:
-        response = self._request("POST", "/session", {})
+    def identify_customer(self, customer_id: str = "") -> str:
+        response = self._request(
+            "POST",
+            "/customer-memory/identify",
+            {"anonymous_customer_id": customer_id or None},
+        )
+        anonymous_customer_id = str(response.get("anonymous_customer_id") or "").strip()
+        if not anonymous_customer_id:
+            raise RuntimeError("/customer-memory/identify did not return anonymous_customer_id")
+        return anonymous_customer_id
+
+    def create_session(self, customer_id: str = "") -> str:
+        payload: Dict[str, Any] = {}
+        if customer_id:
+            payload["customer_id"] = customer_id
+        response = self._request("POST", "/session", payload)
         session_id = str(response.get("session_id") or "").strip()
         if not session_id:
             raise RuntimeError("/session did not return session_id")
         return session_id
 
-    def chat(self, session_id: str, message: str) -> str:
+    def chat(self, session_id: str, message: str, customer_id: str = "") -> str:
+        payload: Dict[str, Any] = {
+            "session_id": session_id,
+            "message": message,
+        }
+        if customer_id:
+            payload["customer_id"] = customer_id
         response = self._request(
             "POST",
             "/chat",
-            {
-                "session_id": session_id,
-                "message": message,
-            },
+            payload,
         )
         return str(response.get("message") or "")
 
-    def _request(self, method: str, path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def get_customer_memory(self, customer_id: str, admin_api_key: str) -> Dict[str, Any]:
+        return self._request(
+            "GET",
+            f"/admin/customer-memory/{customer_id}",
+            {},
+            headers={ADMIN_API_KEY_HEADER: admin_api_key},
+        )
+
+    def run_customer_memory_check(self, admin_api_key: str) -> Dict[str, Any]:
+        if not admin_api_key:
+            return {"passed": False, "skipped": True, "reason": "missing_admin_api_key"}
+        customer_id = self.identify_customer()
+        order_case = SmokeCase(
+            case_id="customer_order_memory",
+            messages=("生ビールある？", "じゃあ一つ"),
+        )
+        recommendation_case = SmokeCase(
+            case_id="customer_recommendation_memory",
+            messages=("おすすめを教えて",),
+        )
+        cancel_case = SmokeCase(
+            case_id="customer_order_cancel_memory",
+            messages=("生ビールある？", "じゃあ一つ", "やっぱりやめる"),
+        )
+        cases = [
+            self.run_case(order_case, customer_id=customer_id),
+            self.run_case(recommendation_case, customer_id=customer_id),
+            self.run_case(cancel_case, customer_id=customer_id),
+        ]
+        memory = self.get_customer_memory(customer_id, admin_api_key)
+        last_ordered = memory.get("last_ordered_items") or []
+        last_recommended = memory.get("last_recommended_items") or []
+        avoided = memory.get("avoided_items") or []
+        failures = []
+        if not memory.get("linked_session_count"):
+            failures.append("linked_session_count is empty")
+        if not any("生ビール" in str(item) for item in last_ordered):
+            failures.append("last_ordered_items does not include beer")
+        if not any("刺身定食" in str(item) for item in last_recommended):
+            failures.append("last_recommended_items does not include sashimi set")
+        if any("生ビール" in str(item) for item in avoided):
+            failures.append("cancelled beer was added to avoided_items")
+        return {
+            "passed": not failures and all(case.passed for case in cases),
+            "skipped": False,
+            "anonymous_customer_id": customer_id,
+            "failures": failures,
+            "linked_session_count": memory.get("linked_session_count"),
+            "last_ordered_items": last_ordered,
+            "last_recommended_items": last_recommended,
+            "avoided_items": avoided,
+            "cases": [case.case_id for case in cases],
+        }
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        payload: Dict[str, Any],
+        headers: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        request_headers = {"Content-Type": "application/json; charset=utf-8"}
+        request_headers.update(headers or {})
         request = urllib.request.Request(
             f"{self.api_url}{path}",
-            data=body,
-            headers={"Content-Type": "application/json; charset=utf-8"},
+            data=(body if method != "GET" else None),
+            headers=request_headers,
             method=method,
         )
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
@@ -542,6 +646,24 @@ def print_report(results: Sequence[CaseResult]) -> None:
                 print(f"{result.case_id} | {index} | FAIL |  | {failure} | ")
 
 
+def print_customer_memory_report(result: Dict[str, Any]) -> None:
+    print("")
+    print("customer_memory | result | details")
+    print("--- | --- | ---")
+    if result.get("skipped"):
+        print(f"customer_memory | SKIP | {result.get('reason')}")
+        return
+    status = "OK" if result.get("passed") else "NG"
+    details = {
+        "anonymous_customer_id": result.get("anonymous_customer_id"),
+        "linked_session_count": result.get("linked_session_count"),
+        "last_ordered_items": result.get("last_ordered_items"),
+        "last_recommended_items": result.get("last_recommended_items"),
+        "failures": result.get("failures"),
+    }
+    print(f"customer_memory | {status} | {json.dumps(details, ensure_ascii=False)}")
+
+
 def compact_cell(value: str) -> str:
     return " ".join(str(value).replace("|", "/").split())
 
@@ -554,13 +676,23 @@ def configure_output_encoding() -> None:
 
 
 def write_json_report(
-    path: str, api_url: str, started_at: str, results: Sequence[CaseResult]
+    path: str,
+    api_url: str,
+    started_at: str,
+    results: Sequence[CaseResult],
+    *,
+    customer_memory_result: Optional[Dict[str, Any]] = None,
 ) -> None:
     payload = {
         "api_url": api_url,
         "started_at": started_at,
         "finished_at": datetime.now(timezone.utc).isoformat(),
-        "passed": all(result.passed for result in results),
+        "passed": all(result.passed for result in results)
+        and (
+            customer_memory_result is None
+            or bool(customer_memory_result.get("passed"))
+        ),
+        "customer_memory": customer_memory_result,
         "cases": [
             {
                 "case_id": result.case_id,

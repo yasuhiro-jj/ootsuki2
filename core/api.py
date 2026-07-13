@@ -69,7 +69,12 @@ from .response_compactness import (
     should_append_line_contact_footer,
 )
 from .conversation_quality import ConversationQualityLog, ConversationQualityLogger
-from .customer_memory import CustomerMemoryRepository
+from .customer_memory import (
+    EVENT_ORDER_CANCELLED,
+    EVENT_ORDER_CONFIRMED,
+    EVENT_RECOMMENDATION_SHOWN,
+    CustomerMemoryRepository,
+)
 from .security.admin_auth import require_admin_api_key
 from .integrations.chatbot_ai_manager import (
     ChatbotAIManagerBridge,
@@ -77,6 +82,9 @@ from .integrations.chatbot_ai_manager import (
     SalesStrategyManagementService,
     SalesStrategyRepository,
     SalesStrategyValidationError,
+)
+from .integrations.chatbot_ai_manager.explicit_recommendation import (
+    SKIP_SESSION_LIMIT_REACHED,
 )
 
 logger = logging.getLogger(__name__)
@@ -185,9 +193,14 @@ class CustomerMemoryProfileResponse(BaseModel):
     favorite_items: List[str] = []
     avoided_items: List[str] = []
     last_ordered_items: List[str] = []
+    last_recommended_items: List[str] = []
+    recommendation_history: List[str] = []
     declined_products: List[str] = []
     visit_count: int = 0
     last_visit_at: str = ""
+    last_ordered_at: str = ""
+    last_recommended_at: str = ""
+    memory_updated_at: str = ""
     communication_notes: str = ""
 
 
@@ -601,6 +614,47 @@ def create_app(config: ConfigLoader) -> FastAPI:
     def _customer_memory_response(profile) -> Dict[str, Any]:
         return customer_memory_repository.to_public_dict(profile)
 
+    def _safe_link_customer_session(customer_id: Optional[str], session_id: str) -> None:
+        try:
+            customer_memory_repository.link_session(
+                session_id=session_id,
+                anonymous_customer_id=str(customer_id or ""),
+            )
+        except Exception as exc:
+            logger.warning(
+                "[CustomerMemory] link_session_failed session=%s error=%s",
+                session_id[:8],
+                exc.__class__.__name__,
+            )
+
+    def _safe_record_customer_event(
+        customer_id: Optional[str],
+        session_id: str,
+        event_type: str,
+        *,
+        product_id: str = "",
+        product_name: str = "",
+        quantity: int = 1,
+        strategy_id: str = "",
+    ) -> None:
+        try:
+            customer_memory_repository.record_event(
+                event_type=event_type,
+                anonymous_customer_id=str(customer_id or ""),
+                session_id=session_id,
+                product_id=product_id,
+                product_name=product_name,
+                quantity=quantity,
+                strategy_id=strategy_id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "[CustomerMemory] record_event_failed session=%s event_type=%s error=%s",
+                session_id[:8],
+                event_type,
+                exc.__class__.__name__,
+            )
+
     @app.post(
         "/customer-memory/identify",
         response_model=CustomerMemoryProfileResponse,
@@ -611,6 +665,16 @@ def create_app(config: ConfigLoader) -> FastAPI:
             consent_accepted=bool(payload.consent_accepted),
         )
         return _customer_memory_response(profile)
+
+    @app.get(
+        "/admin/customer-memory/{anonymous_customer_id}",
+        dependencies=[Depends(require_admin_api_key)],
+    )
+    async def get_customer_memory_admin(anonymous_customer_id: str):
+        summary = customer_memory_repository.get_admin_summary(anonymous_customer_id)
+        if not summary:
+            raise HTTPException(status_code=404, detail="customer memory not found")
+        return summary
 
     @app.post(
         "/admin/ai-manager/sales-strategies",
@@ -709,6 +773,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
             # セッション作成または取得
             if not session_id:
                 session_id = ai_engine.create_session(request.customer_id)
+            _safe_link_customer_session(request.customer_id, session_id)
             
             intent_result = intent_classifier.classify(user_message)
             ai_engine.save_memory(
@@ -908,7 +973,15 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 )
 
             if is_cancel_request(user_message, session_memory):
+                cancelled_item_name = get_recent_item_name(session_memory)
                 response_message = format_cancel_request_reply(session_memory)
+                if cancelled_item_name:
+                    _safe_record_customer_event(
+                        request.customer_id,
+                        session_id,
+                        EVENT_ORDER_CANCELLED,
+                        product_name=cancelled_item_name,
+                    )
                 ai_engine.save_memory(
                     session_id,
                     {
@@ -1057,6 +1130,12 @@ def create_app(config: ConfigLoader) -> FastAPI:
             if is_accept_proposal_request(user_message, session_memory):
                 response_message = format_accept_proposal_reply(session_memory)
                 recent_item_name = get_recent_item_name(session_memory)
+                _safe_record_customer_event(
+                    request.customer_id,
+                    session_id,
+                    EVENT_ORDER_CONFIRMED,
+                    product_name=recent_item_name,
+                )
                 ai_engine.save_memory(
                     session_id,
                     {
@@ -1100,6 +1179,12 @@ def create_app(config: ConfigLoader) -> FastAPI:
 
             if is_other_recommendation_request(user_message, session_memory):
                 response_message = format_other_recommendation_reply()
+                _safe_record_customer_event(
+                    request.customer_id,
+                    session_id,
+                    EVENT_RECOMMENDATION_SHOWN,
+                    product_name="唐揚げ",
+                )
                 ai_engine.save_memory(
                     session_id,
                     {
@@ -1303,6 +1388,12 @@ def create_app(config: ConfigLoader) -> FastAPI:
 
             if is_short_order_confirmation(user_message, session_memory):
                 response_message = format_short_order_confirmation(session_memory)
+                _safe_record_customer_event(
+                    request.customer_id,
+                    session_id,
+                    EVENT_ORDER_CONFIRMED,
+                    product_name=get_recent_item_name(session_memory),
+                )
                 ai_engine.save_memory(
                     session_id,
                     {
@@ -1576,6 +1667,18 @@ def create_app(config: ConfigLoader) -> FastAPI:
             if sales_recommendation.has_message:
                 response_message = sales_recommendation.message
                 ai_engine.save_memory(session_id, sales_recommendation.memory_updates or {})
+                if sales_recommendation.skip_reason != SKIP_SESSION_LIMIT_REACHED:
+                    _safe_record_customer_event(
+                        request.customer_id,
+                        session_id,
+                        EVENT_RECOMMENDATION_SHOWN,
+                        product_id=sales_recommendation.selected_product_id,
+                        product_name=str(
+                            (sales_recommendation.memory_updates or {}).get("last_recommended_item")
+                            or ""
+                        ),
+                        strategy_id=sales_recommendation.strategy_id,
+                    )
                 session_memory = ai_engine.get_session_memory(session_id)
                 session = ai_engine.get_session(session_id)
                 if session:
@@ -1953,6 +2056,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
             
             session_customer_id = request.customer_id if request else None
             session_id = ai_engine.create_session(session_customer_id)
+            _safe_link_customer_session(session_customer_id, session_id)
             
             # 常連さまモードは一時保留のため、顧客情報の処理をコメントアウト
             # # 顧客情報をセッションメタデータに保存

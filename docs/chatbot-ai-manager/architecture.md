@@ -101,3 +101,13 @@ ordered items, avoided items, visit patterns, and suggestion reactions.
 Direct personal information such as real name and phone number is outside the
 initial customer memory scope unless a later reservation or explicit consent
 flow requires it.
+
+The current implementation separates three records:
+
+- profile summary: bounded hospitality memory for the anonymous customer
+- session link: `session_id` to `anonymous_customer_id`
+- event log: structured `order_confirmed`, `recommendation_shown`,
+  `recommendation_declined`, and `order_cancelled` events
+
+If customer memory persistence fails, the chatbot still returns the normal
+reply. Customer memory is not currently used to alter production replies.

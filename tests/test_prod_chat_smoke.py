@@ -17,11 +17,11 @@ class FakeSmokeRunner(SmokeRunner):
         self.responses = list(responses)
         self.messages = []
 
-    def create_session(self):
+    def create_session(self, customer_id=""):
         return "smoke-session"
 
-    def chat(self, session_id, message):
-        self.messages.append((session_id, message))
+    def chat(self, session_id, message, customer_id=""):
+        self.messages.append((session_id, message, customer_id))
         return self.responses.pop(0)
 
 
@@ -100,8 +100,8 @@ class ProdChatSmokeTests(unittest.TestCase):
         self.assertEqual(
             runner.messages,
             [
-                ("smoke-session", "生ビールある？"),
-                ("smoke-session", "じゃあ一つ"),
+                ("smoke-session", "生ビールある？", ""),
+                ("smoke-session", "じゃあ一つ", ""),
             ],
         )
 

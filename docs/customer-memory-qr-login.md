@@ -46,6 +46,8 @@ Storage:
 
 ```text
 outputs/customer_memory_profiles.json
+outputs/customer_session_links.json
+outputs/customer_memory_events.jsonl
 ```
 
 Stored profile fields:
@@ -58,11 +60,69 @@ preference_tags
 favorite_items
 avoided_items
 last_ordered_items
+last_recommended_items
+recommendation_history
 declined_products
 visit_count
 last_visit_at
+last_ordered_at
+last_recommended_at
+memory_updated_at
 communication_notes
 ```
+
+## Session Linkage
+
+Each chat session can be linked to one pseudonymous customer id.
+
+Rules:
+
+- one `session_id` is not reassigned to a different `anonymous_customer_id`
+- one `anonymous_customer_id` may have many sessions
+- invalid anonymous ids are ignored for linking
+- link failures do not stop `/chat`
+- direct personal information is not stored in the link table
+
+The admin-only summary endpoint can confirm this linkage:
+
+```text
+GET /admin/customer-memory/{anonymous_customer_id}
+```
+
+This route requires the existing `X-Admin-API-Key` admin authentication.
+
+## Interaction Events
+
+The current event MVP stores only structured interaction events. It does not
+store full user messages or full assistant replies.
+
+Implemented event types:
+
+```text
+order_confirmed
+recommendation_shown
+recommendation_declined
+order_cancelled
+```
+
+The event log is append-only JSONL:
+
+```text
+outputs/customer_memory_events.jsonl
+```
+
+Profile summaries are bounded:
+
+```text
+last_ordered_items: 10
+last_recommended_items: 10
+recommendation_history: 10
+declined_products: 20
+```
+
+`order_cancelled` is intentionally separate from `recommendation_declined`.
+Cancelling an order does not mean the customer dislikes that product, so it is
+not copied into `avoided_items`.
 
 ## Privacy Boundary
 
@@ -94,12 +154,19 @@ consented
 The frontend keeps the consent flag separately in localStorage. The first MVP
 does not turn customer memory into automatic sales suggestions.
 
+While `consent_status` is `unknown`, the system keeps only operational linkage
+and structured event summaries. Those summaries are kept separate from stronger
+preference memory, and the chatbot does not use them to change customer-facing
+replies yet.
+
 ## Current Chatbot Connection
 
 The chatbot already had `customer_id` on `ChatRequest` and session creation.
 This MVP reuses that field and passes the pseudonymous id from the frontend.
 
-The customer memory profile is not yet used to alter production replies.
+The customer memory profile is not yet used to alter production replies. The
+current integration records confirmed orders, shown recommendations, and safe
+cancel/decline events for later review.
 
 ## Out of Scope
 

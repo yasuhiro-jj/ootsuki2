@@ -79,9 +79,14 @@ to store direct personal information.
 - `favorite_items`
 - `avoided_items`
 - `last_ordered_items`
+- `last_recommended_items`
+- `recommendation_history`
 - `declined_products`
 - `visit_count`
 - `last_visit_at`
+- `last_ordered_at`
+- `last_recommended_at`
+- `memory_updated_at`
 - `communication_notes`
 
 Examples:
@@ -115,14 +120,28 @@ Analytics event sent back toward the AI manager.
 - `occurred_at`
 - `metadata`
 
+## Customer Session Links
+
+Session links connect a browser/chat session to a pseudonymous customer profile.
+
+- `session_id`
+- `anonymous_customer_id`
+- `created_at`
+- `updated_at`
+- `last_seen_at`
+
+One `session_id` is kept with its first valid `anonymous_customer_id`. The same
+customer may have multiple sessions.
+
 ## Customer Memory Events
 
-Future event types should update customer memory without storing unnecessary
-identity data.
+Customer memory events update bounded summaries without storing full
+conversation text.
 
-- `ordered_item`
-- `declined_suggestion`
-- `accepted_suggestion`
-- `preference_observed`
-- `avoidance_observed`
-- `visit_detected`
+- `order_confirmed`
+- `recommendation_shown`
+- `recommendation_declined`
+- `order_cancelled`
+
+`order_cancelled` is not copied into `avoided_items`; it only records that a
+pending order was cancelled.

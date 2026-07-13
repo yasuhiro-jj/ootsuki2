@@ -114,9 +114,14 @@ class CustomerMemoryProfile:
     favorite_items: Tuple[str, ...] = ()
     avoided_items: Tuple[str, ...] = ()
     last_ordered_items: Tuple[str, ...] = ()
+    last_recommended_items: Tuple[str, ...] = ()
+    recommendation_history: Tuple[str, ...] = ()
     declined_products: Tuple[str, ...] = ()
     visit_count: int = 0
     last_visit_at: str = ""
+    last_ordered_at: str = ""
+    last_recommended_at: str = ""
+    memory_updated_at: str = ""
     communication_notes: str = ""
 
     def __post_init__(self) -> None:
@@ -124,6 +129,8 @@ class CustomerMemoryProfile:
         object.__setattr__(self, "favorite_items", _as_tuple(self.favorite_items))
         object.__setattr__(self, "avoided_items", _as_tuple(self.avoided_items))
         object.__setattr__(self, "last_ordered_items", _as_tuple(self.last_ordered_items))
+        object.__setattr__(self, "last_recommended_items", _as_tuple(self.last_recommended_items))
+        object.__setattr__(self, "recommendation_history", _as_tuple(self.recommendation_history))
         object.__setattr__(self, "declined_products", _as_tuple(self.declined_products))
 
 

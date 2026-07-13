@@ -25,6 +25,18 @@ Connect QR login sessions to pseudonymous customer profiles. Store preferences,
 ordered items, avoided items, and suggestion reactions without requiring direct
 personal information.
 
+Status: anonymous customer identification and browser localStorage retention are
+complete.
+
+## Phase 2.6: Session Link and Interaction History
+
+Link `session_id` to `anonymous_customer_id`, record bounded structured events
+for confirmed orders, shown recommendations, recommendation declines, and order
+cancellations. Keep event logs separate from stronger preference memory and do
+not use the memory to alter replies yet.
+
+Status: implemented in this phase.
+
 ## Phase 3: Explicit Recommendation Connection
 
 Use conversation state to suggest one priority product only when the customer
