@@ -497,6 +497,16 @@ class SmokeRunner:
             raise RuntimeError("/customer-memory/identify did not return anonymous_customer_id")
         return anonymous_customer_id
 
+    def update_customer_consent(self, customer_id: str, consent_status: str) -> Dict[str, Any]:
+        return self._request(
+            "POST",
+            "/customer-memory/consent",
+            {
+                "anonymous_customer_id": customer_id,
+                "consent_status": consent_status,
+            },
+        )
+
     def create_session(self, customer_id: str = "") -> str:
         payload: Dict[str, Any] = {}
         if customer_id:
@@ -533,6 +543,7 @@ class SmokeRunner:
         if not admin_api_key:
             return {"passed": False, "skipped": True, "reason": "missing_admin_api_key"}
         customer_id = self.identify_customer()
+        self.update_customer_consent(customer_id, "granted")
         order_case = SmokeCase(
             case_id="customer_order_memory",
             messages=("生ビールある？", "じゃあ一つ"),
@@ -550,6 +561,32 @@ class SmokeRunner:
             self.run_case(recommendation_case, customer_id=customer_id),
             self.run_case(cancel_case, customer_id=customer_id),
         ]
+        memory_session_id = self.create_session(customer_id)
+        previous_order_response = self.chat(
+            memory_session_id,
+            "前回何を頼んだ？",
+            customer_id=customer_id,
+        )
+        previous_recommendation_response = self.chat(
+            memory_session_id,
+            "前におすすめされたものは？",
+            customer_id=customer_id,
+        )
+        unknown_customer_id = self.identify_customer()
+        unknown_session_id = self.create_session(unknown_customer_id)
+        unknown_consent_response = self.chat(
+            unknown_session_id,
+            "前回何を頼んだ？",
+            customer_id=unknown_customer_id,
+        )
+        denied_customer_id = self.identify_customer()
+        self.update_customer_consent(denied_customer_id, "denied")
+        denied_session_id = self.create_session(denied_customer_id)
+        denied_consent_response = self.chat(
+            denied_session_id,
+            "前回何を頼んだ？",
+            customer_id=denied_customer_id,
+        )
         memory = self.get_customer_memory(customer_id, admin_api_key)
         last_ordered = memory.get("last_ordered_items") or []
         last_recommended = memory.get("last_recommended_items") or []
@@ -563,15 +600,29 @@ class SmokeRunner:
             failures.append("last_recommended_items does not include sashimi set")
         if any("生ビール" in str(item) for item in avoided):
             failures.append("cancelled beer was added to avoided_items")
+        if "生ビール" not in previous_order_response:
+            failures.append("previous order response does not include beer")
+        if "刺身定食" not in previous_recommendation_response:
+            failures.append("previous recommendation response does not include sashimi set")
+        if "同意" not in unknown_consent_response:
+            failures.append("unknown consent response does not request consent")
+        if "利用していません" not in denied_consent_response:
+            failures.append("denied consent response does not avoid memory use")
         return {
             "passed": not failures and all(case.passed for case in cases),
             "skipped": False,
             "anonymous_customer_id": customer_id,
+            "unknown_customer_id": unknown_customer_id,
+            "denied_customer_id": denied_customer_id,
             "failures": failures,
             "linked_session_count": memory.get("linked_session_count"),
             "last_ordered_items": last_ordered,
             "last_recommended_items": last_recommended,
             "avoided_items": avoided,
+            "previous_order_response": previous_order_response,
+            "previous_recommendation_response": previous_recommendation_response,
+            "unknown_consent_response": unknown_consent_response,
+            "denied_consent_response": denied_consent_response,
             "cases": [case.case_id for case in cases],
         }
 
@@ -665,6 +716,10 @@ def print_customer_memory_report(result: Dict[str, Any]) -> None:
         "linked_session_count": result.get("linked_session_count"),
         "last_ordered_items": result.get("last_ordered_items"),
         "last_recommended_items": result.get("last_recommended_items"),
+        "previous_order_response": result.get("previous_order_response"),
+        "previous_recommendation_response": result.get("previous_recommendation_response"),
+        "unknown_consent_response": result.get("unknown_consent_response"),
+        "denied_consent_response": result.get("denied_consent_response"),
         "failures": result.get("failures"),
     }
     print(f"customer_memory | {status} | {json.dumps(details, ensure_ascii=False)}")

@@ -28,13 +28,19 @@ by this directory alone.
 The chatbot now has a pseudonymous customer memory entry point:
 
 - `POST /customer-memory/identify`
+- `POST /customer-memory/consent`
 - frontend localStorage restore for `anonymous_customer_id`
 - `/session` and `/chat` link that id through `customer_id`
 - default profile storage at `outputs/customer_memory_profiles.json`
 
 This does not collect real names, phone numbers, LINE ids, or full permanent
-conversation transcripts. Customer memory is not yet used for automatic sales
+conversation transcripts. Customer memory is not used for automatic sales
 recommendations.
+
+If `consent_status` is `granted`, the chatbot can use bounded history only when
+the customer explicitly asks about previous orders, previous recommendations,
+usual items, or a different item from last time. FAQ, product existence,
+reservation, order confirmation, and normal chat do not use customer memory.
 
 See `docs/customer-memory-qr-login.md` for the current privacy boundary and
 next-phase plan.

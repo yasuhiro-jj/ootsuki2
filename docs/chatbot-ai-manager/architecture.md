@@ -110,4 +110,21 @@ The current implementation separates three records:
   `recommendation_declined`, and `order_cancelled` events
 
 If customer memory persistence fails, the chatbot still returns the normal
-reply. Customer memory is not currently used to alter production replies.
+reply.
+
+Customer memory may alter production replies only through an explicit
+past-reference path:
+
+```text
+explicit customer memory intent
+  -> anonymous_customer_id exists
+  -> profile exists
+  -> consent_status == granted
+  -> bounded history exists
+  -> short customer-facing reply
+```
+
+This path is intentionally blocked for FAQ, business hours, parking, payment,
+reservation, product existence, order confirmation, and general chat. The
+chatbot must not proactively mention previous orders or use customer memory for
+automatic upsell.

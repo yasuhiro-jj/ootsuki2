@@ -89,6 +89,12 @@ to store direct personal information.
 - `memory_updated_at`
 - `communication_notes`
 
+`consent_status` values:
+
+- `unknown`
+- `granted`
+- `denied`
+
 Examples:
 
 - Likes sashimi and local sake.
@@ -145,3 +151,23 @@ conversation text.
 
 `order_cancelled` is not copied into `avoided_items`; it only records that a
 pending order was cancelled.
+
+## CustomerMemoryContext
+
+Runtime-safe view used for explicit past-reference replies.
+
+- `anonymous_customer_id`
+- `consent_status`
+- `recent_ordered_items`
+- `recent_recommended_items`
+- `declined_product_ids`
+- `declined_product_names`
+- `order_cancelled_product_ids`
+- `order_cancelled_product_names`
+- `order_counts`
+- `visit_count`
+- `memory_available`
+
+This context is used only for explicit memory intents such as
+`previous_order_query`, `previous_recommendation_query`, `usual_item_query`, and
+`different_from_previous_request`.

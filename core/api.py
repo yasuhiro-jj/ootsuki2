@@ -73,8 +73,11 @@ from .customer_memory import (
     EVENT_ORDER_CANCELLED,
     EVENT_ORDER_CONFIRMED,
     EVENT_RECOMMENDATION_SHOWN,
+    CustomerMemoryContext,
     CustomerMemoryRepository,
+    normalize_consent_status,
 )
+from .customer_memory_followups import build_customer_memory_followup_reply
 from .security.admin_auth import require_admin_api_key
 from .integrations.chatbot_ai_manager import (
     ChatbotAIManagerBridge,
@@ -183,6 +186,17 @@ class CustomerMemoryIdentifyRequest(BaseModel):
     anonymous_customer_id: Optional[str] = None
     consent_accepted: Optional[bool] = False
     source: Optional[str] = None
+
+
+class CustomerMemoryConsentRequest(BaseModel):
+    anonymous_customer_id: str
+    consent_status: str
+
+
+class CustomerMemoryConsentResponse(BaseModel):
+    anonymous_customer_id: str
+    consent_status: str
+    updated: bool
 
 
 class CustomerMemoryProfileResponse(BaseModel):
@@ -666,6 +680,26 @@ def create_app(config: ConfigLoader) -> FastAPI:
         )
         return _customer_memory_response(profile)
 
+    @app.post(
+        "/customer-memory/consent",
+        response_model=CustomerMemoryConsentResponse,
+    )
+    async def update_customer_memory_consent(payload: CustomerMemoryConsentRequest):
+        consent_status = normalize_consent_status(payload.consent_status)
+        if consent_status != payload.consent_status:
+            raise HTTPException(status_code=400, detail="invalid consent_status")
+        profile = customer_memory_repository.update_consent(
+            anonymous_customer_id=payload.anonymous_customer_id,
+            consent_status=consent_status,
+        )
+        if not profile:
+            raise HTTPException(status_code=400, detail="invalid anonymous_customer_id")
+        return {
+            "anonymous_customer_id": profile.anonymous_customer_id,
+            "consent_status": profile.consent_status,
+            "updated": True,
+        }
+
     @app.get(
         "/admin/customer-memory/{anonymous_customer_id}",
         dependencies=[Depends(require_admin_api_key)],
@@ -831,6 +865,68 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 conversation_route,
                 current_memory=session_memory,
             )
+            try:
+                customer_memory_context = customer_memory_repository.build_context(
+                    str(request.customer_id or "")
+                )
+            except Exception as exc:
+                logger.warning(
+                    "[CustomerMemory] build_context_failed session=%s error=%s",
+                    session_id[:8],
+                    exc.__class__.__name__,
+                )
+                customer_memory_context = CustomerMemoryContext.unavailable(
+                    str(request.customer_id or "")
+                )
+            if customer_memory_context is not None:
+                memory_followup_reply = build_customer_memory_followup_reply(
+                    user_message,
+                    customer_memory_context,
+                    session_memory=session_memory,
+                )
+            else:
+                memory_followup_reply = None
+            if memory_followup_reply:
+                response_message = memory_followup_reply.message
+                ai_engine.save_memory(
+                    session_id,
+                    {
+                        "active_topic": "customer_memory",
+                        "detected_intent": memory_followup_reply.intent,
+                        "last_assistant_action": "customer_memory_followup",
+                    },
+                )
+                session_memory = ai_engine.get_session_memory(session_id)
+                session = ai_engine.get_session(session_id)
+                if session:
+                    session.add_message("user", request.message)
+                    session.add_message("assistant", response_message)
+                _record_quality_log(
+                    session_id=session_id,
+                    user_id=request.customer_id,
+                    user_message=request.message,
+                    ai_response=response_message,
+                    recent_history=recent_turns,
+                    session_memory=session_memory,
+                    detected_intent=memory_followup_reply.intent,
+                    route=conversation_route.kind,
+                    route_reason=conversation_route.reason,
+                    node="customer_memory_followup",
+                    referenced_sources={
+                        "memory_used": memory_followup_reply.memory_used,
+                    },
+                    latency_ms=_elapsed_ms(started_at),
+                    channel="web",
+                )
+                return ChatResponse(
+                    message=response_message,
+                    session_id=session_id,
+                    timestamp=datetime.now().isoformat(),
+                    options=[],
+                    suggestions=None,
+                    image_url=None,
+                    line_reply_messages=None,
+                )
             defer_memory_updates_for_contextual_followup = (
                 is_previous_price_request(user_message, session_memory)
                 or is_contextual_price_request(user_message, session_memory)

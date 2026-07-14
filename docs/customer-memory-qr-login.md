@@ -42,6 +42,29 @@ Request:
 }
 ```
 
+Consent endpoint:
+
+```text
+POST /customer-memory/consent
+```
+
+Request:
+
+```json
+{
+  "anonymous_customer_id": "anon_existing_id",
+  "consent_status": "granted"
+}
+```
+
+Allowed `consent_status` values:
+
+```text
+unknown
+granted
+denied
+```
+
 Storage:
 
 ```text
@@ -148,25 +171,50 @@ Current values:
 
 ```text
 unknown
-consented
+granted
+denied
 ```
 
-The frontend keeps the consent flag separately in localStorage. The first MVP
-does not turn customer memory into automatic sales suggestions.
+The backend value is the source of truth. The frontend may cache the latest
+choice locally for display, but it must update the backend through
+`POST /customer-memory/consent`.
 
 While `consent_status` is `unknown`, the system keeps only operational linkage
 and structured event summaries. Those summaries are kept separate from stronger
-preference memory, and the chatbot does not use them to change customer-facing
-replies yet.
+preference memory, and the chatbot does not reveal previous orders or
+recommendations in customer-facing replies.
+
+When `consent_status` is `denied`, previous order and recommendation history is
+not used in customer-facing replies.
+
+When `consent_status` is `granted`, customer memory is still used only for
+explicit past-reference questions such as:
+
+```text
+previous_order_query
+previous_recommendation_query
+usual_item_query
+different_from_previous_request
+```
+
+The chatbot does not proactively greet the customer with past orders, does not
+auto-upsell from customer memory, and does not use memory for normal FAQ,
+business-hours, parking, payment, reservation, product-existence, order
+confirmation, or general chat replies.
 
 ## Current Chatbot Connection
 
 The chatbot already had `customer_id` on `ChatRequest` and session creation.
 This MVP reuses that field and passes the pseudonymous id from the frontend.
 
-The customer memory profile is not yet used to alter production replies. The
-current integration records confirmed orders, shown recommendations, and safe
-cancel/decline events for later review.
+The current integration records confirmed orders, shown recommendations, and
+safe cancel/decline events. If and only if the customer has granted consent and
+asks an explicit past-reference question, the chatbot can answer with a short
+summary such as the last one or two ordered items.
+
+`order_cancelled` remains separate from `recommendation_declined`. A cancelled
+order does not become an avoided item and does not permanently block future
+recommendations.
 
 ## Out of Scope
 
@@ -182,8 +230,8 @@ cancel/decline events for later review.
 
 Recommended next steps:
 
-1. Add a small consent UI.
+1. Add admin review tools for customer-memory summaries.
 2. Save explicit favorite and avoided items only after consent.
-3. Add customer-memory summaries from confirmed order events.
-4. Let recommendation rules read `avoided_items` before suggesting products.
-5. Add admin review tools before using memory in customer-facing replies.
+3. Let recommendation rules read consented `avoided_items` before suggesting products.
+4. Add a deletion/export path for customer-memory records.
+5. Connect QR visit analytics without storing direct personal information.

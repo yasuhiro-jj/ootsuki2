@@ -37,6 +37,15 @@ not use the memory to alter replies yet.
 
 Status: implemented in this phase.
 
+## Phase 2.7: Consented Explicit Customer Memory Replies
+
+Use customer memory only when the customer has granted consent and explicitly
+asks about previous orders, previous recommendations, usual items, or something
+different from the previous visit. Do not use customer memory for normal FAQ,
+product-existence, reservation, order-confirmation, or general chat replies.
+
+Status: implemented in this phase.
+
 ## Phase 3: Explicit Recommendation Connection
 
 Use conversation state to suggest one priority product only when the customer

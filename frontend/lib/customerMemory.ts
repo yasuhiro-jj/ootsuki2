@@ -11,12 +11,12 @@ export interface CustomerMemoryIdentity {
 
 export function getStoredCustomerMemoryConsent(): boolean {
   if (typeof window === 'undefined') return false;
-  return window.localStorage.getItem(CONSENT_STORAGE_KEY) === 'accepted';
+  return window.localStorage.getItem(CONSENT_STORAGE_KEY) === 'granted';
 }
 
 export function setStoredCustomerMemoryConsent(accepted: boolean): void {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(CONSENT_STORAGE_KEY, accepted ? 'accepted' : 'unknown');
+  window.localStorage.setItem(CONSENT_STORAGE_KEY, accepted ? 'granted' : 'denied');
 }
 
 export async function resolveCustomerMemoryIdentity(): Promise<CustomerMemoryIdentity> {
@@ -24,7 +24,6 @@ export async function resolveCustomerMemoryIdentity(): Promise<CustomerMemoryIde
     typeof window !== 'undefined'
       ? window.localStorage.getItem(CUSTOMER_ID_STORAGE_KEY)
       : null;
-  const consentAccepted = getStoredCustomerMemoryConsent();
 
   const response = await fetch(`${API_BASE}/customer-memory/identify`, {
     method: 'POST',
@@ -33,7 +32,7 @@ export async function resolveCustomerMemoryIdentity(): Promise<CustomerMemoryIde
     },
     body: JSON.stringify({
       anonymous_customer_id: storedId,
-      consent_accepted: consentAccepted,
+      consent_accepted: false,
       source: 'chat_window',
     }),
   });
@@ -50,4 +49,37 @@ export async function resolveCustomerMemoryIdentity(): Promise<CustomerMemoryIde
     );
   }
   return identity;
+}
+
+export async function updateCustomerMemoryConsent(
+  anonymousCustomerId: string,
+  consentStatus: 'granted' | 'denied'
+): Promise<CustomerMemoryIdentity> {
+  const response = await fetch(`${API_BASE}/customer-memory/consent`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      anonymous_customer_id: anonymousCustomerId,
+      consent_status: consentStatus,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`customer memory consent failed: ${response.status}`);
+  }
+
+  const result = (await response.json()) as Pick<
+    CustomerMemoryIdentity,
+    'anonymous_customer_id' | 'consent_status'
+  >;
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(CONSENT_STORAGE_KEY, result.consent_status);
+  }
+  return {
+    anonymous_customer_id: result.anonymous_customer_id,
+    consent_status: result.consent_status,
+    visit_count: 0,
+  };
 }

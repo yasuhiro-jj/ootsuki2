@@ -5,7 +5,10 @@ import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 import { QuickReplyButtons } from './QuickReplyButtons';
 import { createSession, sendChatMessage, type ChatResponse } from '../lib/api';
-import { resolveCustomerMemoryIdentity } from '../lib/customerMemory';
+import {
+  resolveCustomerMemoryIdentity,
+  updateCustomerMemoryConsent,
+} from '../lib/customerMemory';
 
 interface Message {
   id: string;
@@ -19,6 +22,7 @@ export function ChatWindow() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [customerId, setCustomerId] = useState<string | null>(null);
+  const [customerConsentStatus, setCustomerConsentStatus] = useState<string>('unknown');
   const [loading, setLoading] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -38,6 +42,9 @@ export function ChatWindow() {
       .then((identity) => {
         const anonymousCustomerId = identity?.anonymous_customer_id ?? null;
         if (mounted) setCustomerId(anonymousCustomerId);
+        if (mounted && identity?.consent_status) {
+          setCustomerConsentStatus(identity.consent_status);
+        }
         return createSession(anonymousCustomerId);
       })
       .then((data) => {
@@ -120,6 +127,19 @@ export function ChatWindow() {
     [handleSend]
   );
 
+  const handleCustomerMemoryConsent = useCallback(
+    async (consentStatus: 'granted' | 'denied') => {
+      if (!customerId) return;
+      try {
+        const result = await updateCustomerMemoryConsent(customerId, consentStatus);
+        setCustomerConsentStatus(result.consent_status);
+      } catch {
+        setCustomerConsentStatus('unknown');
+      }
+    },
+    [customerId]
+  );
+
   if (initError) {
     const isDevelopment = typeof window !== 'undefined' && 
       (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
@@ -142,6 +162,27 @@ export function ChatWindow() {
 
   return (
     <div className="flex h-full flex-col bg-gradient-to-b from-slate-950/20 to-slate-900/30">
+      {customerId && customerConsentStatus === 'unknown' && (
+        <div className="border-b border-white/15 bg-slate-950/45 px-4 py-3 text-sm text-white backdrop-blur-xl">
+          <div className="mb-2 font-medium">以前の注文履歴を、今後のご案内に利用してもよいですか？</div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => handleCustomerMemoryConsent('granted')}
+              className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-slate-900"
+            >
+              利用する
+            </button>
+            <button
+              type="button"
+              onClick={() => handleCustomerMemoryConsent('denied')}
+              className="rounded-md border border-white/30 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white"
+            >
+              利用しない
+            </button>
+          </div>
+        </div>
+      )}
       <div className="chat-scrollbar flex-1 overflow-y-auto px-2.5 pb-24 pt-2 md:px-6 md:pb-28 md:pt-5"
         style={{ paddingBottom: 'calc(6rem + env(safe-area-inset-bottom))' }}
       >

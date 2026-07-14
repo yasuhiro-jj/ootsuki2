@@ -4,6 +4,8 @@ from pathlib import Path
 
 from core.customer_memory import (
     CONSENT_ACCEPTED,
+    CONSENT_DENIED,
+    CONSENT_GRANTED,
     CONSENT_UNKNOWN,
     EVENT_ORDER_CANCELLED,
     EVENT_ORDER_CONFIRMED,
@@ -44,6 +46,41 @@ class CustomerMemoryTests(unittest.TestCase):
             self.assertEqual(second.anonymous_customer_id, first.anonymous_customer_id)
             self.assertEqual(second.consent_status, CONSENT_ACCEPTED)
             self.assertEqual(second.visit_count, 2)
+
+    def test_update_consent_accepts_granted_and_denied(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = CustomerMemoryRepository(str(Path(tmp) / "profiles.json"))
+            profile = repository.identify()
+
+            granted = repository.update_consent(
+                anonymous_customer_id=profile.anonymous_customer_id,
+                consent_status=CONSENT_GRANTED,
+            )
+            denied = repository.update_consent(
+                anonymous_customer_id=profile.anonymous_customer_id,
+                consent_status=CONSENT_DENIED,
+            )
+
+            self.assertEqual(granted.consent_status, CONSENT_GRANTED)
+            self.assertEqual(denied.consent_status, CONSENT_DENIED)
+
+    def test_update_consent_rejects_invalid_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = CustomerMemoryRepository(str(Path(tmp) / "profiles.json"))
+            profile = repository.identify()
+
+            self.assertIsNone(
+                repository.update_consent(
+                    anonymous_customer_id=profile.anonymous_customer_id,
+                    consent_status="invalid",
+                )
+            )
+            self.assertIsNone(
+                repository.update_consent(
+                    anonymous_customer_id="not-anonymous",
+                    consent_status=CONSENT_GRANTED,
+                )
+            )
 
     def test_invalid_customer_id_is_not_reused(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -166,6 +203,58 @@ class CustomerMemoryTests(unittest.TestCase):
             )
 
             self.assertIsNone(event)
+
+    def test_build_context_uses_confirmed_orders_and_separates_cancellations(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = CustomerMemoryRepository(str(Path(tmp) / "profiles.json"))
+            profile = repository.identify(consent_accepted=True)
+
+            repository.record_event(
+                event_type=EVENT_ORDER_CONFIRMED,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_001",
+                product_name="中生ビール",
+            )
+            repository.record_event(
+                event_type=EVENT_ORDER_CONFIRMED,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_002",
+                product_name="中生ビール",
+            )
+            repository.record_event(
+                event_type=EVENT_ORDER_CANCELLED,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_003",
+                product_name="刺身定食",
+            )
+            context = repository.build_context(profile.anonymous_customer_id)
+
+            self.assertEqual(context.consent_status, CONSENT_GRANTED)
+            self.assertEqual(context.recent_ordered_items, ("中生ビール",))
+            self.assertEqual(context.order_counts["中生ビール"], 2)
+            self.assertEqual(context.order_cancelled_product_names, ("刺身定食",))
+
+    def test_build_context_tracks_recommendations_and_declines(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = CustomerMemoryRepository(str(Path(tmp) / "profiles.json"))
+            profile = repository.identify(consent_accepted=True)
+
+            repository.record_event(
+                event_type=EVENT_RECOMMENDATION_SHOWN,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_001",
+                product_name="刺身定食",
+            )
+            repository.record_event(
+                event_type=EVENT_RECOMMENDATION_DECLINED,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_001",
+                product_name="刺身定食",
+            )
+            context = repository.build_context(profile.anonymous_customer_id)
+
+            self.assertEqual(context.recent_recommended_items, ("刺身定食",))
+            self.assertEqual(context.declined_product_names, ("刺身定食",))
 
 
 if __name__ == "__main__":
