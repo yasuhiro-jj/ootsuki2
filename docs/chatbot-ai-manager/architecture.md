@@ -182,3 +182,25 @@ Recommendation event product names are normalized at the repository boundary.
 Existing mojibake event names are restored at admin API display time when a safe
 UTF-8 recovery is possible. Counts, filters, conversion matching, and product
 identity continue to use the existing event fields and `product_id` grouping.
+
+## Manual Recommendation Settings Flow
+
+```text
+admin performance review
+  -> recommendation settings API
+  -> RecommendationSettingsService
+  -> RecommendationSettingsRepository
+  -> ChatbotAIManagerBridge
+  -> score_candidate
+  -> one selected product
+```
+
+The settings API is admin-only and uses the same `ADMIN_API_KEY` boundary as
+sales strategy management. Settings can adjust strategy-level priority,
+product-level priority, and scoring weights, but they do not mutate historical
+performance metrics. If settings cannot be loaded, recommendation scoring falls
+back to the existing defaults.
+
+Manual settings never override safety exclusions. Declined products and
+same-session repeated suggestions remain excluded even if a stored setting would
+otherwise favor that product.

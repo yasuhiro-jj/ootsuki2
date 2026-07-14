@@ -10,6 +10,12 @@ from .schemas import (
 )
 from .explicit_recommendation import ExplicitSalesRecommendationConnector
 from .repository import SalesStrategyRepository
+from .recommendation_settings import (
+    RecommendationSettings,
+    RecommendationSettingsRepository,
+    RecommendationSettingsService,
+    RecommendationSettingsValidationError,
+)
 from .service import ChatbotAIManagerBridge
 from .strategy_service import (
     SalesStrategyManagementService,
@@ -22,6 +28,10 @@ __all__ = [
     "CustomerMemoryProfile",
     "ExplicitSalesRecommendationConnector",
     "PriorityProduct",
+    "RecommendationSettings",
+    "RecommendationSettingsRepository",
+    "RecommendationSettingsService",
+    "RecommendationSettingsValidationError",
     "SalesStrategy",
     "SalesStrategyManagementService",
     "SalesStrategyRepository",

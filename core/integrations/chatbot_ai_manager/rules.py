@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
+from .recommendation_settings import RecommendationSettings
 from .schemas import ConversationSalesContext, PriorityProduct, SalesStrategy
 
 
@@ -80,31 +81,56 @@ def trigger_matches(
 def score_candidate(
     product: PriorityProduct,
     context: ConversationSalesContext,
+    settings: RecommendationSettings | None = None,
 ) -> CandidateScore:
-    score = int(product.priority_score or 0)
+    active_settings = settings or RecommendationSettings(strategy_id="_")
+    product_priority_adjustment = int(
+        active_settings.product_priorities.get(
+            product.product_id,
+            active_settings.product_priorities.get(product.name, 0),
+        )
+    )
+    score = (
+        int(product.priority_score or 0)
+        + int(active_settings.strategy_priority or 0)
+        + product_priority_adjustment
+    )
     adjustments: list[str] = [f"base_strategy_priority:{score}"]
 
     if product_matches_any(product, context.last_ordered_items):
-        score += 12
-        adjustments.append("repeat_order_affinity:+12")
+        score += active_settings.weights.repeat_order_affinity
+        adjustments.append(
+            f"repeat_order_affinity:+{active_settings.weights.repeat_order_affinity}"
+        )
     if product_matches_any(product, context.last_recommended_items):
-        score -= 6
-        adjustments.append("recent_recommendation_penalty:-6")
+        score -= active_settings.weights.recently_recommended_penalty
+        adjustments.append(
+            "recent_recommendation_penalty:"
+            f"-{active_settings.weights.recently_recommended_penalty}"
+        )
     if product_matches_any(product, context.recommendation_history):
-        score -= 4
-        adjustments.append("recommendation_history_penalty:-4")
+        score -= active_settings.weights.recommendation_history_penalty
+        adjustments.append(
+            "recommendation_history_penalty:"
+            f"-{active_settings.weights.recommendation_history_penalty}"
+        )
     for item, count in context.order_counts_by_product.items():
         if product_matches_any(product, (item,)) and int(count or 0) > 1:
-            bonus = min(12, 4 * int(count or 0))
+            bonus = min(
+                active_settings.weights.repeat_count_max,
+                active_settings.weights.repeat_count_unit * int(count or 0),
+            )
             score += bonus
             adjustments.append(f"repeat_count_affinity:+{bonus}")
             break
     if context.current_entity and trigger_matches(product, context, SalesStrategy(strategy_id="_")):
-        score += 8
-        adjustments.append("topic_relevance:+8")
+        score += active_settings.weights.topic_relevance
+        adjustments.append(f"topic_relevance:+{active_settings.weights.topic_relevance}")
     if context.different_from_previous_requested:
-        score += 5
-        adjustments.append("different_from_previous_bonus:+5")
+        score += active_settings.weights.different_from_previous
+        adjustments.append(
+            f"different_from_previous_bonus:+{active_settings.weights.different_from_previous}"
+        )
 
     return CandidateScore(
         product=product,
@@ -114,9 +140,12 @@ def score_candidate(
 
 
 def find_eligible_product(
-    context: ConversationSalesContext, strategy: SalesStrategy
+    context: ConversationSalesContext,
+    strategy: SalesStrategy,
+    settings: RecommendationSettings | None = None,
 ) -> Optional[PriorityProduct]:
     scored_products: list[CandidateScore] = []
+    active_settings = settings or RecommendationSettings(strategy_id=strategy.strategy_id)
     for product in strategy.priority_products:
         if context.detected_intent and context.detected_intent in product.excluded_intents:
             continue
@@ -135,7 +164,7 @@ def find_eligible_product(
             continue
         if not trigger_matches(product, context, strategy):
             continue
-        scored_products.append(score_candidate(product, context))
+        scored_products.append(score_candidate(product, context, active_settings))
     if not scored_products:
         return None
     scored_products.sort(

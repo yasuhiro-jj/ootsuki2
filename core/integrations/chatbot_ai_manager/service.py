@@ -10,6 +10,7 @@ from .rules import (
     find_eligible_product,
     score_candidate,
 )
+from .recommendation_settings import RecommendationSettingsService
 from .schemas import (
     ConversationSalesContext,
     SalesStrategy,
@@ -21,8 +22,12 @@ from .schemas import (
 class ChatbotAIManagerBridge:
     """Evaluate sales strategy without changing chatbot runtime behavior."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        recommendation_settings_service: RecommendationSettingsService | None = None,
+    ) -> None:
         self._events: List[SuggestionEvent] = []
+        self.recommendation_settings_service = recommendation_settings_service
 
     def decide_suggestion(
         self, context: ConversationSalesContext, strategy: SalesStrategy
@@ -42,10 +47,19 @@ class ChatbotAIManagerBridge:
         if context.question_only and not context.recommendation_requested:
             return SuggestionDecision(False, reason="pure question should be answered only")
 
-        product = find_eligible_product(context, strategy)
+        settings = None
+        if self.recommendation_settings_service is not None:
+            try:
+                settings = self.recommendation_settings_service.get_effective(
+                    strategy.strategy_id
+                )
+            except Exception:
+                settings = None
+
+        product = find_eligible_product(context, strategy, settings)
         if not product:
             return SuggestionDecision(False, reason="no eligible product matched")
-        candidate_score = score_candidate(product, context)
+        candidate_score = score_candidate(product, context, settings)
 
         return SuggestionDecision(
             True,

@@ -69,10 +69,17 @@ API routes:
 - `PUT /admin/ai-manager/sales-strategies/{strategy_id}`
 - `POST /admin/ai-manager/sales-strategies/{strategy_id}/activate`
 - `POST /admin/ai-manager/sales-strategies/{strategy_id}/deactivate`
+- `GET /admin/ai-manager/recommendation-settings`
+- `PUT /admin/ai-manager/recommendation-settings`
+- `POST /admin/ai-manager/recommendation-settings/reset`
+- `GET /admin/ai-manager/sales-strategies/{strategy_id}/recommendation-settings`
+- `PUT /admin/ai-manager/sales-strategies/{strategy_id}/recommendation-settings`
+- `POST /admin/ai-manager/sales-strategies/{strategy_id}/recommendation-settings/reset`
 
 Default storage:
 
 - `outputs/ai_manager_sales_strategies.json`
+- `outputs/ai_manager_recommendation_settings.json`
 
 CLI helper:
 
@@ -83,6 +90,22 @@ python scripts/manage_sales_strategy.py current
 python scripts/manage_sales_strategy.py create --file .\strategy.json
 python scripts/manage_sales_strategy.py deactivate production_smoke_test_001
 ```
+
+Recommendation settings CLI:
+
+```powershell
+$env:OOTSUKI_API_URL="https://web-production-b22a1.up.railway.app"
+$env:ADMIN_API_KEY="<admin-api-key>"
+python scripts/manage_recommendation_settings.py show
+python scripts/manage_recommendation_settings.py --strategy-id dinner_strategy update --file .\recommendation-settings.json
+python scripts/manage_recommendation_settings.py --strategy-id dinner_strategy performance
+python scripts/manage_recommendation_settings.py --strategy-id dinner_strategy reset
+```
+
+Recommendation settings let an admin adjust scoring weights manually while
+reviewing `shown`, `converted`, `declined`, `cancelled`, `conversion_rate`, and
+`sample_size`. The system does not automatically change weights from conversion
+data.
 
 Generate a local key with:
 

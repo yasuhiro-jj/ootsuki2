@@ -139,3 +139,11 @@ legacy mojibake names at admin API display time where possible. Keep numeric
 aggregation and product identity unchanged.
 
 Status: implemented in this phase.
+
+## Phase 5.2: Manual Recommendation Weight Controls
+
+Let an admin review recommendation performance and manually adjust strategy
+priority, product priority, and scoring weights. Keep conversion data as a
+reference signal only; do not automatically optimize from it.
+
+Status: implemented in this phase.

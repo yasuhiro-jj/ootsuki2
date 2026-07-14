@@ -81,6 +81,9 @@ from .customer_memory_followups import build_customer_memory_followup_reply
 from .security.admin_auth import require_admin_api_key
 from .integrations.chatbot_ai_manager import (
     ChatbotAIManagerBridge,
+    RecommendationSettingsRepository,
+    RecommendationSettingsService,
+    RecommendationSettingsValidationError,
     ExplicitSalesRecommendationConnector,
     SalesStrategyManagementService,
     SalesStrategyRepository,
@@ -269,6 +272,28 @@ class SalesStrategyUpdatePayload(BaseModel):
     generated_by: Optional[str] = None
 
 
+class RecommendationWeightsPayload(BaseModel):
+    topic_relevance: Optional[int] = None
+    repeat_order_affinity: Optional[int] = None
+    repeat_count_unit: Optional[int] = None
+    repeat_count_max: Optional[int] = None
+    different_from_previous: Optional[int] = None
+    recently_recommended_penalty: Optional[int] = None
+    recommendation_history_penalty: Optional[int] = None
+
+
+class RecommendationRulesPayload(BaseModel):
+    exclude_declined_products: Optional[bool] = None
+    exclude_already_suggested_in_session: Optional[bool] = None
+
+
+class RecommendationSettingsPayload(BaseModel):
+    strategy_priority: Optional[int] = None
+    product_priorities: Optional[Dict[str, int]] = None
+    weights: Optional[RecommendationWeightsPayload] = None
+    rules: Optional[RecommendationRulesPayload] = None
+
+
 class ConnectionManager:
     """WebSocket接続管理"""
     
@@ -389,15 +414,23 @@ def create_app(config: ConfigLoader) -> FastAPI:
         path=config.get("conversation_quality.log_path", "outputs/conversation_quality_logs.jsonl"),
         enabled=config.get("features.enable_conversation_quality_logs", True),
     )
-    sales_strategy_service = SalesStrategyManagementService(
-        SalesStrategyRepository(
-            config.get(
-                "ai_manager.sales_strategy_path",
-                "outputs/ai_manager_sales_strategies.json",
-            )
+    sales_strategy_repository = SalesStrategyRepository(
+        config.get(
+            "ai_manager.sales_strategy_path",
+            "outputs/ai_manager_sales_strategies.json",
         )
     )
-    sales_strategy_bridge = ChatbotAIManagerBridge()
+    sales_strategy_service = SalesStrategyManagementService(sales_strategy_repository)
+    recommendation_settings_service = RecommendationSettingsService(
+        RecommendationSettingsRepository(
+            config.get(
+                "ai_manager.recommendation_settings_path",
+                "outputs/ai_manager_recommendation_settings.json",
+            )
+        ),
+        strategy_repository=sales_strategy_repository,
+    )
+    sales_strategy_bridge = ChatbotAIManagerBridge(recommendation_settings_service)
     explicit_sales_recommendation = ExplicitSalesRecommendationConnector(
         sales_strategy_service,
         sales_strategy_bridge,
@@ -625,6 +658,32 @@ def create_app(config: ConfigLoader) -> FastAPI:
             product["priority"] = product.pop("priority_score")
         return payload
 
+    def _recommendation_settings_payload(model: RecommendationSettingsPayload) -> Dict[str, Any]:
+        data = model.dict(exclude_none=True)
+        if "weights" in data and data["weights"] is not None:
+            data["weights"] = {
+                key: value for key, value in data["weights"].items() if value is not None
+            }
+        if "rules" in data and data["rules"] is not None:
+            data["rules"] = {
+                key: value for key, value in data["rules"].items() if value is not None
+            }
+        return data
+
+    def _performance_for_recommendation_settings(strategy_id: str) -> Dict[str, Any]:
+        kwargs = {} if strategy_id == "default" else {"strategy_id": strategy_id}
+        performance = customer_memory_repository.aggregate_performance(**kwargs)
+        for bucket in [
+            performance.get("summary", {}),
+            *performance.get("products", []),
+            *performance.get("strategies", []),
+        ]:
+            bucket["sample_size"] = sum(
+                int(bucket.get(name) or 0)
+                for name in ("shown", "converted", "declined", "cancelled", "expired")
+            )
+        return performance
+
     def _customer_memory_response(profile) -> Dict[str, Any]:
         return customer_memory_repository.to_public_dict(profile)
 
@@ -730,6 +789,92 @@ def create_app(config: ConfigLoader) -> FastAPI:
             product_id=product_id,
             used_customer_memory=used_customer_memory,
         )
+
+    @app.get(
+        "/admin/ai-manager/recommendation-settings",
+        dependencies=[Depends(require_admin_api_key)],
+    )
+    async def get_recommendation_settings():
+        return recommendation_settings_service.get_response(
+            "default",
+            performance_provider=_performance_for_recommendation_settings,
+        )
+
+    @app.put(
+        "/admin/ai-manager/recommendation-settings",
+        dependencies=[Depends(require_admin_api_key)],
+    )
+    async def update_recommendation_settings(payload: RecommendationSettingsPayload):
+        try:
+            settings = recommendation_settings_service.update(
+                "default",
+                _recommendation_settings_payload(payload),
+            )
+            return recommendation_settings_service.get_response(
+                settings.strategy_id,
+                performance_provider=_performance_for_recommendation_settings,
+            )
+        except RecommendationSettingsValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.post(
+        "/admin/ai-manager/recommendation-settings/reset",
+        dependencies=[Depends(require_admin_api_key)],
+    )
+    async def reset_recommendation_settings():
+        settings = recommendation_settings_service.reset("default")
+        return recommendation_settings_service.get_response(
+            settings.strategy_id,
+            performance_provider=_performance_for_recommendation_settings,
+        )
+
+    @app.get(
+        "/admin/ai-manager/sales-strategies/{strategy_id}/recommendation-settings",
+        dependencies=[Depends(require_admin_api_key)],
+    )
+    async def get_strategy_recommendation_settings(strategy_id: str):
+        if not sales_strategy_service.get(strategy_id):
+            raise HTTPException(status_code=404, detail="sales strategy not found")
+        return recommendation_settings_service.get_response(
+            strategy_id,
+            performance_provider=_performance_for_recommendation_settings,
+        )
+
+    @app.put(
+        "/admin/ai-manager/sales-strategies/{strategy_id}/recommendation-settings",
+        dependencies=[Depends(require_admin_api_key)],
+    )
+    async def update_strategy_recommendation_settings(
+        strategy_id: str,
+        payload: RecommendationSettingsPayload,
+    ):
+        try:
+            settings = recommendation_settings_service.update(
+                strategy_id,
+                _recommendation_settings_payload(payload),
+            )
+            return recommendation_settings_service.get_response(
+                settings.strategy_id,
+                performance_provider=_performance_for_recommendation_settings,
+            )
+        except KeyError:
+            raise HTTPException(status_code=404, detail="sales strategy not found")
+        except RecommendationSettingsValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.post(
+        "/admin/ai-manager/sales-strategies/{strategy_id}/recommendation-settings/reset",
+        dependencies=[Depends(require_admin_api_key)],
+    )
+    async def reset_strategy_recommendation_settings(strategy_id: str):
+        try:
+            settings = recommendation_settings_service.reset(strategy_id)
+            return recommendation_settings_service.get_response(
+                settings.strategy_id,
+                performance_provider=_performance_for_recommendation_settings,
+            )
+        except KeyError:
+            raise HTTPException(status_code=404, detail="sales strategy not found")
 
     @app.post(
         "/admin/ai-manager/sales-strategies",

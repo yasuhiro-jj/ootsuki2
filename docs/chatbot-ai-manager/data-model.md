@@ -137,6 +137,38 @@ Analytics event sent back toward the AI manager.
 - `occurred_at`
 - `metadata`
 
+## RecommendationSettings
+
+Manual scoring controls for explicit recommendation selection.
+
+- `strategy_id`
+- `strategy_priority`
+- `product_priorities`
+- `weights.topic_relevance`
+- `weights.repeat_order_affinity`
+- `weights.repeat_count_unit`
+- `weights.repeat_count_max`
+- `weights.different_from_previous`
+- `weights.recently_recommended_penalty`
+- `weights.recommendation_history_penalty`
+- `rules.exclude_declined_products`
+- `rules.exclude_already_suggested_in_session`
+- `updated_at`
+- `updated_by`
+
+Settings are advisory scoring controls. Safety exclusions for declined products
+and same-session repeat suggestions remain required.
+
+## RecommendationSettingsAuditEntry
+
+Minimal audit trail for manual scoring changes.
+
+- `strategy_id`
+- `before`
+- `after`
+- `updated_at`
+- `updated_by`
+
 ## Customer Session Links
 
 Session links connect a browser/chat session to a pseudonymous customer profile.
