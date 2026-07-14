@@ -215,3 +215,9 @@ Conversion metadata:
 - `recommendation_source`
 
 Duplicate conversion records are prevented per source recommendation event.
+
+Product names in recommendation events are treated as UTF-8 Python `str` values.
+New events normalize `product_name` before storage, and the admin performance
+API normalizes legacy mojibake names at display time where possible. Aggregation
+identity remains based on `product_id` first; display names are not used as a
+replacement for stable product identifiers.

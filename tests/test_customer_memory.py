@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,6 +16,7 @@ from core.customer_memory import (
     CustomerMemoryRepository,
     generate_anonymous_customer_id,
     is_valid_anonymous_customer_id,
+    normalize_product_name,
 )
 
 
@@ -437,6 +439,84 @@ class CustomerMemoryTests(unittest.TestCase):
             self.assertEqual(with_memory["products"][0]["product_id"], "sashimi_set")
             self.assertEqual(without_memory["summary"]["shown"], 1)
             self.assertEqual(without_memory["products"][0]["product_id"], "karaage_set")
+
+
+    def test_normalize_product_name_keeps_valid_values(self):
+        sashimi_set = "\u523a\u8eab\u5b9a\u98df"
+        beer = "\u4e2d\u751f\u30d3\u30fc\u30eb"
+
+        self.assertEqual(normalize_product_name(sashimi_set), sashimi_set)
+        self.assertEqual(normalize_product_name(beer), beer)
+        self.assertEqual(normalize_product_name("Sashimi Set"), "Sashimi Set")
+        self.assertEqual(normalize_product_name(None), "")
+        self.assertEqual(normalize_product_name(""), "")
+
+    def test_normalize_product_name_repairs_latin1_mojibake(self):
+        sashimi_set = "\u523a\u8eab\u5b9a\u98df"
+        beer = "\u4e2d\u751f\u30d3\u30fc\u30eb"
+
+        self.assertEqual(
+            normalize_product_name(sashimi_set.encode("utf-8").decode("latin-1")),
+            sashimi_set,
+        )
+        self.assertEqual(
+            normalize_product_name(beer.encode("utf-8").decode("latin-1")),
+            beer,
+        )
+
+    def test_record_event_normalizes_product_name_before_save(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = CustomerMemoryRepository(str(Path(tmp) / "profiles.json"))
+            profile = repository.identify(consent_accepted=True)
+            sashimi_set = "\u523a\u8eab\u5b9a\u98df"
+            broken_name = sashimi_set.encode("utf-8").decode("latin-1")
+
+            event = repository.record_event(
+                event_type=EVENT_RECOMMENDATION_SHOWN,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_001",
+                product_id="sashimi_set",
+                product_name=broken_name,
+            )
+            updated = repository.get(profile.anonymous_customer_id)
+            events = repository._load_events(profile.anonymous_customer_id)
+
+            self.assertIsNotNone(event)
+            self.assertEqual(event.product_name, sashimi_set)
+            self.assertEqual(events[0].product_name, sashimi_set)
+            self.assertEqual(updated.last_recommended_items, (sashimi_set,))
+
+    def test_aggregate_performance_normalizes_existing_mojibake_display(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = CustomerMemoryRepository(str(Path(tmp) / "profiles.json"))
+            profile = repository.identify(consent_accepted=True)
+            beer = "\u4e2d\u751f\u30d3\u30fc\u30eb"
+            broken_name = beer.encode("utf-8").decode("latin-1")
+            event = {
+                "event_type": EVENT_ORDER_CANCELLED,
+                "anonymous_customer_id": profile.anonymous_customer_id,
+                "session_id": "session_001",
+                "product_id": "beer_001",
+                "product_name": broken_name,
+                "quantity": 1,
+                "strategy_id": "strategy_001",
+                "occurred_at": "2026-07-14T00:00:00+00:00",
+                "event_id": "event_001",
+                "metadata": {},
+            }
+            repository.events_path.parent.mkdir(parents=True, exist_ok=True)
+            repository.events_path.write_text(
+                json.dumps(event, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+
+            performance = repository.aggregate_performance()
+
+            self.assertEqual(performance["summary"]["cancelled"], 1)
+            self.assertEqual(performance["summary"]["shown"], 0)
+            self.assertEqual(performance["products"][0]["product_id"], "beer_001")
+            self.assertEqual(performance["products"][0]["product_name"], beer)
+            self.assertEqual(performance["products"][0]["cancelled"], 1)
 
 
 if __name__ == "__main__":

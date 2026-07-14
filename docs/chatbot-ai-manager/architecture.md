@@ -177,3 +177,8 @@ Supported filters:
 
 The first MVP measures performance only. It does not automatically change
 recommendation weights.
+
+Recommendation event product names are normalized at the repository boundary.
+Existing mojibake event names are restored at admin API display time when a safe
+UTF-8 recovery is possible. Counts, filters, conversion matching, and product
+identity continue to use the existing event fields and `product_id` grouping.

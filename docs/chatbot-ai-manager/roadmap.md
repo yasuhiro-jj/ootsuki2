@@ -131,3 +131,11 @@ The current phase records `recommendation_shown` and
 `recommendation_converted` metrics, then exposes aggregated performance through
 an admin-only API. Automatic score updates from conversion data are intentionally
 out of scope.
+
+## Phase 5.1: Product Name Normalization for Recommendation Metrics
+
+Normalize recommendation event `product_name` values before storage and restore
+legacy mojibake names at admin API display time where possible. Keep numeric
+aggregation and product identity unchanged.
+
+Status: implemented in this phase.

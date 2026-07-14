@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import secrets
+import unicodedata
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -94,6 +95,19 @@ def normalize_consent_status(value: str) -> str:
     if status in CONSENT_VALUES:
         return status
     return CONSENT_UNKNOWN
+
+
+def normalize_product_name(value: Optional[str]) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    candidates = {raw, unicodedata.normalize("NFKC", raw)}
+    for source in list(candidates):
+        try:
+            candidates.add(source.encode("latin-1").decode("utf-8"))
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            pass
+    return max(candidates, key=_product_name_quality_score)
 
 
 class CustomerMemoryRepository:
@@ -255,7 +269,7 @@ class CustomerMemoryRepository:
             anonymous_customer_id=safe_customer_id,
             session_id=safe_session_id,
             product_id=str(product_id or "")[:120],
-            product_name=str(product_name or "")[:120],
+            product_name=normalize_product_name(product_name)[:120],
             quantity=max(1, int(quantity or 1)),
             strategy_id=str(strategy_id or "")[:120],
             occurred_at=now,
@@ -321,7 +335,7 @@ class CustomerMemoryRepository:
                 event.product_id or event.product_name or "unknown",
                 _empty_performance_bucket(
                     product_id=event.product_id,
-                    product_name=event.product_name,
+                    product_name=normalize_product_name(event.product_name),
                 ),
             )
             _increment_performance_bucket(product_bucket, bucket_name)
@@ -546,7 +560,7 @@ class CustomerMemoryRepository:
             anonymous_customer_id=customer_id,
             session_id=str(value.get("session_id") or ""),
             product_id=str(value.get("product_id") or ""),
-            product_name=str(value.get("product_name") or ""),
+            product_name=normalize_product_name(value.get("product_name")),
             quantity=max(1, quantity),
             strategy_id=str(value.get("strategy_id") or ""),
             occurred_at=str(value.get("occurred_at") or ""),
@@ -599,7 +613,9 @@ class CustomerMemoryRepository:
                 anonymous_customer_id=order_event.anonymous_customer_id,
                 session_id=order_event.session_id,
                 product_id=order_event.product_id or candidate.product_id,
-                product_name=order_event.product_name or candidate.product_name,
+                product_name=normalize_product_name(
+                    order_event.product_name or candidate.product_name
+                ),
                 quantity=order_event.quantity,
                 strategy_id=order_event.strategy_id or candidate.strategy_id,
                 occurred_at=order_event.occurred_at,
@@ -753,7 +769,7 @@ def _product_keys(event: CustomerMemoryEvent) -> set[str]:
         key
         for key in {
             _normalize_key(event.product_id),
-            _normalize_key(event.product_name),
+            _normalize_key(normalize_product_name(event.product_name)),
         }
         if key
     }
@@ -765,6 +781,29 @@ def _events_match_product(left: CustomerMemoryEvent, right: CustomerMemoryEvent)
 
 def _normalize_key(value: str) -> str:
     return str(value or "").strip().casefold()
+
+
+def _product_name_quality_score(value: str) -> int:
+    score = 0
+    for char in value:
+        codepoint = ord(char)
+        category = unicodedata.category(char)
+        if (
+            0x3040 <= codepoint <= 0x30FF
+            or 0x3400 <= codepoint <= 0x9FFF
+            or 0xFF66 <= codepoint <= 0xFF9D
+        ):
+            score += 4
+        elif char.isascii() and (char.isalnum() or char.isspace() or char in "-_()"):
+            score += 1
+        elif category.startswith("P") or category.startswith("S"):
+            score += 0
+        else:
+            score -= 1
+    for marker in ("Ã", "Â", "ã", "å", "ä", "æ", "ç", "è", "é", "ﾃ", "ﾂ", "�"):
+        if marker in value:
+            score -= 8
+    return score
 
 
 def _performance_bucket_name(event_type: str) -> str:
