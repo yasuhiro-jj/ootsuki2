@@ -147,3 +147,33 @@ all of the following are true:
 When these conditions are not met, the chatbot uses the normal sales strategy
 or short recommendation fallback. `recommendation_declined` is a hard exclusion;
 `order_cancelled` is recorded but is not treated as dislike.
+## Recommendation Feedback Flow
+
+The chatbot records recommendation outcomes without changing the customer-facing
+reply flow.
+
+```text
+explicit recommendation request
+  -> recommendation_shown
+  -> order_confirmed for the same product in the same session
+  -> recommendation_converted
+  -> admin performance API
+  -> AI manager review
+```
+
+The performance API is admin-only:
+
+```text
+GET /admin/ai-manager/recommendation-performance
+```
+
+Supported filters:
+
+- `from`
+- `to`
+- `strategy_id`
+- `product_id`
+- `used_customer_memory`
+
+The first MVP measures performance only. It does not automatically change
+recommendation weights.

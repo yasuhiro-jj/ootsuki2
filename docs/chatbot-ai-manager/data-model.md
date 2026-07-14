@@ -186,3 +186,32 @@ This context is used only for explicit memory intents such as
 For explicit recommendation requests, the same context can provide bounded
 ranking signals to `ConversationSalesContext` when consent is granted. The
 runtime passes only summary fields, not full conversation text.
+## Recommendation Performance Events
+
+The recommendation feedback MVP stores structured events only. It does not store
+full conversation text, names, phone numbers, addresses, or admin API keys.
+
+Event types:
+
+- `recommendation_shown`
+- `recommendation_accepted`
+- `recommendation_converted`
+- `recommendation_declined`
+- `recommendation_expired`
+- `order_confirmed`
+- `order_cancelled`
+
+`recommendation_converted` is created when an `order_confirmed` event matches a
+previous `recommendation_shown` event in the same `session_id`, for the same
+`product_id` or product name, within `RECOMMENDATION_CONVERSION_WINDOW_SECONDS`.
+
+Conversion metadata:
+
+- `source_recommendation_event_id`
+- `order_event_id`
+- `conversion_type`
+- `conversion_delay_seconds`
+- `used_customer_memory`
+- `recommendation_source`
+
+Duplicate conversion records are prevented per source recommendation event.

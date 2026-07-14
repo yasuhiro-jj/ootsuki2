@@ -539,6 +539,14 @@ class SmokeRunner:
             headers={ADMIN_API_KEY_HEADER: admin_api_key},
         )
 
+    def get_recommendation_performance(self, admin_api_key: str) -> Dict[str, Any]:
+        return self._request(
+            "GET",
+            "/admin/ai-manager/recommendation-performance",
+            {},
+            headers={ADMIN_API_KEY_HEADER: admin_api_key},
+        )
+
     def run_customer_memory_check(self, admin_api_key: str) -> Dict[str, Any]:
         if not admin_api_key:
             return {"passed": False, "skipped": True, "reason": "missing_admin_api_key"}
@@ -556,10 +564,15 @@ class SmokeRunner:
             case_id="customer_order_cancel_memory",
             messages=("生ビールある？", "じゃあ一つ", "やっぱりやめる"),
         )
+        conversion_case = next(
+            case for case in DEFAULT_CASES if case.case_id == "accept_proposal"
+        )
+        performance_before = self.get_recommendation_performance(admin_api_key)
         cases = [
             self.run_case(order_case, customer_id=customer_id),
             self.run_case(recommendation_case, customer_id=customer_id),
             self.run_case(cancel_case, customer_id=customer_id),
+            self.run_case(conversion_case, customer_id=customer_id),
         ]
         memory_session_id = self.create_session(customer_id)
         previous_order_response = self.chat(
@@ -588,9 +601,12 @@ class SmokeRunner:
             customer_id=denied_customer_id,
         )
         memory = self.get_customer_memory(customer_id, admin_api_key)
+        performance_after = self.get_recommendation_performance(admin_api_key)
         last_ordered = memory.get("last_ordered_items") or []
         last_recommended = memory.get("last_recommended_items") or []
         avoided = memory.get("avoided_items") or []
+        converted_before = int((performance_before.get("summary") or {}).get("converted") or 0)
+        converted_after = int((performance_after.get("summary") or {}).get("converted") or 0)
         failures = []
         if not memory.get("linked_session_count"):
             failures.append("linked_session_count is empty")
@@ -608,6 +624,8 @@ class SmokeRunner:
             failures.append("unknown consent response does not request consent")
         if "利用していません" not in denied_consent_response:
             failures.append("denied consent response does not avoid memory use")
+        if converted_after <= converted_before:
+            failures.append("recommendation performance converted count did not increase")
         return {
             "passed": not failures and all(case.passed for case in cases),
             "skipped": False,
@@ -623,6 +641,9 @@ class SmokeRunner:
             "previous_recommendation_response": previous_recommendation_response,
             "unknown_consent_response": unknown_consent_response,
             "denied_consent_response": denied_consent_response,
+            "performance_summary": performance_after.get("summary") or {},
+            "performance_converted_before": converted_before,
+            "performance_converted_after": converted_after,
             "cases": [case.case_id for case in cases],
         }
 

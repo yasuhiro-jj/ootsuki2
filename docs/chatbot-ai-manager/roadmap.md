@@ -114,3 +114,20 @@ slot, and goals.
 
 Connect suggestion results to conversation quality review and AI manager
 analytics so that both sales performance and customer experience improve.
+## Current Roadmap Update
+
+```text
+顧客記憶を使ったおすすめ順位調整
+完了
+
+推薦表示・注文成果の計測
+今回実装
+
+実績を見た重み付け調整
+次フェーズ
+```
+
+The current phase records `recommendation_shown` and
+`recommendation_converted` metrics, then exposes aggregated performance through
+an admin-only API. Automatic score updates from conversion data are intentionally
+out of scope.

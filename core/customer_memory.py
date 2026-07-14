@@ -23,10 +23,14 @@ LEGACY_CONSENT_ACCEPTED = "consented"
 CONSENT_VALUES = frozenset({CONSENT_UNKNOWN, CONSENT_GRANTED, CONSENT_DENIED})
 EVENT_ORDER_CONFIRMED = "order_confirmed"
 EVENT_RECOMMENDATION_SHOWN = "recommendation_shown"
+EVENT_RECOMMENDATION_ACCEPTED = "recommendation_accepted"
+EVENT_RECOMMENDATION_CONVERTED = "recommendation_converted"
 EVENT_RECOMMENDATION_DECLINED = "recommendation_declined"
+EVENT_RECOMMENDATION_EXPIRED = "recommendation_expired"
 EVENT_ORDER_CANCELLED = "order_cancelled"
 PROFILE_ITEM_LIMIT = 10
 PROFILE_DECLINED_LIMIT = 20
+RECOMMENDATION_CONVERSION_WINDOW_SECONDS = 30 * 60
 
 
 @dataclass(frozen=True)
@@ -49,6 +53,7 @@ class CustomerMemoryEvent:
     strategy_id: str = ""
     occurred_at: str = ""
     event_id: str = field(default_factory=lambda: secrets.token_urlsafe(12))
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -226,6 +231,7 @@ class CustomerMemoryRepository:
         product_name: str = "",
         quantity: int = 1,
         strategy_id: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[CustomerMemoryEvent]:
         safe_customer_id = str(anonymous_customer_id or "").strip()
         safe_session_id = str(session_id or "").strip()
@@ -234,11 +240,15 @@ class CustomerMemoryRepository:
         if event_type not in {
             EVENT_ORDER_CONFIRMED,
             EVENT_RECOMMENDATION_SHOWN,
+            EVENT_RECOMMENDATION_ACCEPTED,
+            EVENT_RECOMMENDATION_CONVERTED,
             EVENT_RECOMMENDATION_DECLINED,
+            EVENT_RECOMMENDATION_EXPIRED,
             EVENT_ORDER_CANCELLED,
         }:
             return None
 
+        previous_events = self._load_events(safe_customer_id)
         now = datetime.now(timezone.utc).isoformat()
         event = CustomerMemoryEvent(
             event_type=event_type,
@@ -249,9 +259,13 @@ class CustomerMemoryRepository:
             quantity=max(1, int(quantity or 1)),
             strategy_id=str(strategy_id or "")[:120],
             occurred_at=now,
+            metadata=self._safe_metadata(metadata),
         )
         self._append_event(event)
         self._apply_event_to_profile(event)
+        conversion_event = self._conversion_event_for_order(event, previous_events)
+        if conversion_event is not None:
+            self._append_event(conversion_event)
         return event
 
     def get_admin_summary(self, anonymous_customer_id: str) -> Optional[Dict[str, Any]]:
@@ -267,6 +281,68 @@ class CustomerMemoryRepository:
         data["linked_session_count"] = len(links)
         data["linked_sessions"] = links[-10:]
         return data
+
+    def aggregate_performance(
+        self,
+        *,
+        from_at: Optional[str] = None,
+        to_at: Optional[str] = None,
+        strategy_id: Optional[str] = None,
+        product_id: Optional[str] = None,
+        used_customer_memory: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        from_dt = _parse_datetime(from_at)
+        to_dt = _parse_datetime(to_at)
+        events = [
+            event
+            for event in self._load_all_events()
+            if _event_in_range(event, from_dt, to_dt)
+        ]
+        if strategy_id:
+            events = [event for event in events if event.strategy_id == strategy_id]
+        if product_id:
+            events = [event for event in events if event.product_id == product_id]
+        if used_customer_memory is not None:
+            events = [
+                event
+                for event in events
+                if _event_used_customer_memory(event) == used_customer_memory
+            ]
+
+        summary = _empty_performance_bucket()
+        products: Dict[str, Dict[str, Any]] = {}
+        strategies: Dict[str, Dict[str, Any]] = {}
+        for event in events:
+            bucket_name = _performance_bucket_name(event.event_type)
+            if not bucket_name:
+                continue
+            _increment_performance_bucket(summary, bucket_name)
+            product_bucket = products.setdefault(
+                event.product_id or event.product_name or "unknown",
+                _empty_performance_bucket(
+                    product_id=event.product_id,
+                    product_name=event.product_name,
+                ),
+            )
+            _increment_performance_bucket(product_bucket, bucket_name)
+            strategy_bucket = strategies.setdefault(
+                event.strategy_id or "none",
+                _empty_performance_bucket(strategy_id=event.strategy_id),
+            )
+            _increment_performance_bucket(strategy_bucket, bucket_name)
+
+        _finalize_performance_bucket(summary)
+        product_rows = list(products.values())
+        strategy_rows = list(strategies.values())
+        for row in [*product_rows, *strategy_rows]:
+            _finalize_performance_bucket(row)
+        product_rows.sort(key=lambda row: (-int(row["shown"]), row.get("product_name") or row.get("product_id") or ""))
+        strategy_rows.sort(key=lambda row: (-int(row["shown"]), row.get("strategy_id") or ""))
+        return {
+            "summary": summary,
+            "products": product_rows,
+            "strategies": strategy_rows,
+        }
 
     def build_context(self, anonymous_customer_id: str) -> CustomerMemoryContext:
         profile = self.get(anonymous_customer_id)
@@ -415,6 +491,20 @@ class CustomerMemoryRepository:
         with self.events_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(asdict(event), ensure_ascii=False) + "\n")
 
+    def _load_all_events(self) -> List[CustomerMemoryEvent]:
+        if not self.events_path.exists():
+            return []
+        events: List[CustomerMemoryEvent] = []
+        try:
+            lines = self.events_path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return []
+        for line in lines:
+            event = self._event_from_line(line)
+            if event is not None:
+                events.append(event)
+        return events
+
     def _load_events(self, anonymous_customer_id: str) -> List[CustomerMemoryEvent]:
         if not self.events_path.exists() or not is_valid_anonymous_customer_id(anonymous_customer_id):
             return []
@@ -424,30 +514,118 @@ class CustomerMemoryRepository:
         except OSError:
             return []
         for line in lines:
-            if not line.strip():
+            event = self._event_from_line(line)
+            if event is None:
                 continue
-            try:
-                value = json.loads(line)
-            except json.JSONDecodeError:
+            if event.anonymous_customer_id != anonymous_customer_id:
                 continue
-            if not isinstance(value, dict):
-                continue
-            if value.get("anonymous_customer_id") != anonymous_customer_id:
-                continue
-            events.append(
-                CustomerMemoryEvent(
-                    event_type=str(value.get("event_type") or ""),
-                    anonymous_customer_id=anonymous_customer_id,
-                    session_id=str(value.get("session_id") or ""),
-                    product_id=str(value.get("product_id") or ""),
-                    product_name=str(value.get("product_name") or ""),
-                    quantity=int(value.get("quantity") or 1),
-                    strategy_id=str(value.get("strategy_id") or ""),
-                    occurred_at=str(value.get("occurred_at") or ""),
-                    event_id=str(value.get("event_id") or ""),
-                )
-            )
+            events.append(event)
         return events
+
+    def _event_from_line(self, line: str) -> Optional[CustomerMemoryEvent]:
+        if not line.strip():
+            return None
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(value, dict):
+            return None
+        customer_id = str(value.get("anonymous_customer_id") or "")
+        if not is_valid_anonymous_customer_id(customer_id):
+            return None
+        metadata = value.get("metadata") or {}
+        if not isinstance(metadata, dict):
+            metadata = {}
+        try:
+            quantity = int(value.get("quantity") or 1)
+        except (TypeError, ValueError):
+            quantity = 1
+        return CustomerMemoryEvent(
+            event_type=str(value.get("event_type") or ""),
+            anonymous_customer_id=customer_id,
+            session_id=str(value.get("session_id") or ""),
+            product_id=str(value.get("product_id") or ""),
+            product_name=str(value.get("product_name") or ""),
+            quantity=max(1, quantity),
+            strategy_id=str(value.get("strategy_id") or ""),
+            occurred_at=str(value.get("occurred_at") or ""),
+            event_id=str(value.get("event_id") or ""),
+            metadata=self._safe_metadata(metadata),
+        )
+
+    def _conversion_event_for_order(
+        self,
+        order_event: CustomerMemoryEvent,
+        previous_events: List[CustomerMemoryEvent],
+    ) -> Optional[CustomerMemoryEvent]:
+        if order_event.event_type != EVENT_ORDER_CONFIRMED:
+            return None
+        if not _product_keys(order_event):
+            return None
+        existing_conversion_source_ids = {
+            str(event.metadata.get("source_recommendation_event_id") or "")
+            for event in previous_events
+            if event.event_type == EVENT_RECOMMENDATION_CONVERTED
+        }
+        order_dt = _parse_datetime(order_event.occurred_at)
+        if order_dt is None:
+            return None
+        for candidate in reversed(previous_events):
+            if candidate.event_type != EVENT_RECOMMENDATION_SHOWN:
+                continue
+            if candidate.session_id != order_event.session_id:
+                continue
+            if candidate.event_id in existing_conversion_source_ids:
+                continue
+            if not _events_match_product(candidate, order_event):
+                continue
+            shown_dt = _parse_datetime(candidate.occurred_at)
+            if shown_dt is None:
+                continue
+            delay_seconds = int((order_dt - shown_dt).total_seconds())
+            if delay_seconds < 0 or delay_seconds > RECOMMENDATION_CONVERSION_WINDOW_SECONDS:
+                continue
+            metadata = {
+                "source_recommendation_event_id": candidate.event_id,
+                "order_event_id": order_event.event_id,
+                "conversion_type": EVENT_ORDER_CONFIRMED,
+                "conversion_delay_seconds": delay_seconds,
+                "used_customer_memory": _event_used_customer_memory(candidate),
+                "recommendation_source": candidate.metadata.get("recommendation_source", ""),
+            }
+            return CustomerMemoryEvent(
+                event_type=EVENT_RECOMMENDATION_CONVERTED,
+                anonymous_customer_id=order_event.anonymous_customer_id,
+                session_id=order_event.session_id,
+                product_id=order_event.product_id or candidate.product_id,
+                product_name=order_event.product_name or candidate.product_name,
+                quantity=order_event.quantity,
+                strategy_id=order_event.strategy_id or candidate.strategy_id,
+                occurred_at=order_event.occurred_at,
+                metadata=metadata,
+            )
+        return None
+
+    def _safe_metadata(self, metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        if not isinstance(metadata, dict):
+            return {}
+        safe: Dict[str, Any] = {}
+        for key, value in metadata.items():
+            safe_key = str(key or "")[:80]
+            if not safe_key:
+                continue
+            if isinstance(value, (str, int, float, bool)) or value is None:
+                safe[safe_key] = value
+            elif isinstance(value, (list, tuple)):
+                safe[safe_key] = [
+                    item
+                    for item in value[:20]
+                    if isinstance(item, (str, int, float, bool)) or item is None
+                ]
+            else:
+                safe[safe_key] = str(value)[:240]
+        return safe
 
     def _apply_event_to_profile(self, event: CustomerMemoryEvent) -> None:
         profiles = self._load_profiles()
@@ -531,3 +709,92 @@ def _recent_unique(values: List[str], limit: int) -> List[str]:
         if len(result) >= limit:
             break
     return result
+
+
+def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _event_in_range(
+    event: CustomerMemoryEvent,
+    from_dt: Optional[datetime],
+    to_dt: Optional[datetime],
+) -> bool:
+    occurred_at = _parse_datetime(event.occurred_at)
+    if occurred_at is None:
+        return False
+    if from_dt is not None and occurred_at < from_dt:
+        return False
+    if to_dt is not None and occurred_at > to_dt:
+        return False
+    return True
+
+
+def _event_used_customer_memory(event: CustomerMemoryEvent) -> bool:
+    value = event.metadata.get("used_customer_memory")
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.lower() == "true"
+    return False
+
+
+def _product_keys(event: CustomerMemoryEvent) -> set[str]:
+    return {
+        key
+        for key in {
+            _normalize_key(event.product_id),
+            _normalize_key(event.product_name),
+        }
+        if key
+    }
+
+
+def _events_match_product(left: CustomerMemoryEvent, right: CustomerMemoryEvent) -> bool:
+    return bool(_product_keys(left) & _product_keys(right))
+
+
+def _normalize_key(value: str) -> str:
+    return str(value or "").strip().casefold()
+
+
+def _performance_bucket_name(event_type: str) -> str:
+    return {
+        EVENT_RECOMMENDATION_SHOWN: "shown",
+        EVENT_RECOMMENDATION_CONVERTED: "converted",
+        EVENT_RECOMMENDATION_DECLINED: "declined",
+        EVENT_RECOMMENDATION_EXPIRED: "expired",
+        EVENT_ORDER_CANCELLED: "cancelled",
+    }.get(event_type, "")
+
+
+def _empty_performance_bucket(**extra: Any) -> Dict[str, Any]:
+    bucket: Dict[str, Any] = {
+        "shown": 0,
+        "converted": 0,
+        "declined": 0,
+        "cancelled": 0,
+        "expired": 0,
+        "conversion_rate": 0.0,
+    }
+    bucket.update(extra)
+    return bucket
+
+
+def _increment_performance_bucket(bucket: Dict[str, Any], name: str) -> None:
+    bucket[name] = int(bucket.get(name) or 0) + 1
+
+
+def _finalize_performance_bucket(bucket: Dict[str, Any]) -> None:
+    shown = int(bucket.get("shown") or 0)
+    converted = int(bucket.get("converted") or 0)
+    bucket["conversion_rate"] = converted / shown if shown else 0.0

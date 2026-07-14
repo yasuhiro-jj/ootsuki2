@@ -10,7 +10,7 @@ import time
 from dataclasses import asdict
 from typing import Optional, Dict, Any, Set, List
 from datetime import datetime
-from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import JSONResponse
@@ -650,6 +650,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
         product_name: str = "",
         quantity: int = 1,
         strategy_id: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         try:
             customer_memory_repository.record_event(
@@ -660,6 +661,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 product_name=product_name,
                 quantity=quantity,
                 strategy_id=strategy_id,
+                metadata=metadata,
             )
         except Exception as exc:
             logger.warning(
@@ -709,6 +711,25 @@ def create_app(config: ConfigLoader) -> FastAPI:
         if not summary:
             raise HTTPException(status_code=404, detail="customer memory not found")
         return summary
+
+    @app.get(
+        "/admin/ai-manager/recommendation-performance",
+        dependencies=[Depends(require_admin_api_key)],
+    )
+    async def get_recommendation_performance(
+        from_: Optional[str] = Query(default=None, alias="from"),
+        to: Optional[str] = None,
+        strategy_id: Optional[str] = None,
+        product_id: Optional[str] = None,
+        used_customer_memory: Optional[bool] = None,
+    ):
+        return customer_memory_repository.aggregate_performance(
+            from_at=from_,
+            to_at=to,
+            strategy_id=strategy_id,
+            product_id=product_id,
+            used_customer_memory=used_customer_memory,
+        )
 
     @app.post(
         "/admin/ai-manager/sales-strategies",
@@ -1841,6 +1862,25 @@ def create_app(config: ConfigLoader) -> FastAPI:
                             or ""
                         ),
                         strategy_id=sales_recommendation.strategy_id,
+                        metadata={
+                            "recommendation_source": (
+                                "personalized_strategy"
+                                if (
+                                    sales_recommendation.event
+                                    and sales_recommendation.event.metadata.get("used_customer_memory")
+                                )
+                                else "sales_strategy"
+                            ),
+                            "used_customer_memory": bool(
+                                sales_recommendation.event
+                                and sales_recommendation.event.metadata.get("used_customer_memory")
+                            ),
+                            "source_suggestion_event_id": (
+                                sales_recommendation.event.event_id
+                                if sales_recommendation.event
+                                else ""
+                            ),
+                        },
                     )
                 session_memory = ai_engine.get_session_memory(session_id)
                 session = ai_engine.get_session(session_id)

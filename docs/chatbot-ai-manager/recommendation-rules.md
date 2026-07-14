@@ -107,3 +107,29 @@ Tracked adjustment labels include:
 
 Customer-facing replies should still mention only the selected product in one
 or two short sentences.
+## Performance Measurement Rules
+
+Recommendation performance is measured only for structured recommendation
+events.
+
+Conversion rule:
+
+- same `session_id`
+- same `product_id`, or same normalized product name when `product_id` is absent
+- `order_confirmed` happens after `recommendation_shown`
+- conversion happens within `RECOMMENDATION_CONVERSION_WINDOW_SECONDS`
+
+Not counted as conversion:
+
+- order happened before the recommendation
+- different product ordered
+- product existence check only
+- price check only
+- order cancelled after confirmation
+- order in a different session
+
+`order_cancelled` is tracked separately and is not treated as
+`recommendation_declined`.
+
+The current phase does not automatically feed conversion rate back into the
+recommendation score. Humans should inspect the admin performance API first.

@@ -9,6 +9,7 @@ from core.customer_memory import (
     CONSENT_UNKNOWN,
     EVENT_ORDER_CANCELLED,
     EVENT_ORDER_CONFIRMED,
+    EVENT_RECOMMENDATION_CONVERTED,
     EVENT_RECOMMENDATION_DECLINED,
     EVENT_RECOMMENDATION_SHOWN,
     CustomerMemoryRepository,
@@ -255,6 +256,187 @@ class CustomerMemoryTests(unittest.TestCase):
 
             self.assertEqual(context.recent_recommended_items, ("刺身定食",))
             self.assertEqual(context.declined_product_names, ("刺身定食",))
+
+    def test_order_after_recommendation_records_conversion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = CustomerMemoryRepository(str(Path(tmp) / "profiles.json"))
+            profile = repository.identify(consent_accepted=True)
+
+            shown = repository.record_event(
+                event_type=EVENT_RECOMMENDATION_SHOWN,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_001",
+                product_id="sashimi_set",
+                product_name="Sashimi set",
+                strategy_id="strategy_001",
+                metadata={
+                    "recommendation_source": "personalized_strategy",
+                    "used_customer_memory": True,
+                },
+            )
+            order = repository.record_event(
+                event_type=EVENT_ORDER_CONFIRMED,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_001",
+                product_id="sashimi_set",
+                product_name="Sashimi set",
+                strategy_id="strategy_001",
+            )
+            events = repository._load_events(profile.anonymous_customer_id)
+            conversions = [
+                event
+                for event in events
+                if event.event_type == EVENT_RECOMMENDATION_CONVERTED
+            ]
+
+            self.assertIsNotNone(shown)
+            self.assertIsNotNone(order)
+            self.assertEqual(len(conversions), 1)
+            self.assertEqual(
+                conversions[0].metadata["source_recommendation_event_id"],
+                shown.event_id,
+            )
+            self.assertEqual(conversions[0].metadata["conversion_type"], EVENT_ORDER_CONFIRMED)
+            self.assertTrue(conversions[0].metadata["used_customer_memory"])
+
+    def test_order_for_different_product_does_not_convert_recommendation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = CustomerMemoryRepository(str(Path(tmp) / "profiles.json"))
+            profile = repository.identify(consent_accepted=True)
+
+            repository.record_event(
+                event_type=EVENT_RECOMMENDATION_SHOWN,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_001",
+                product_id="sashimi_set",
+                product_name="Sashimi set",
+            )
+            repository.record_event(
+                event_type=EVENT_ORDER_CONFIRMED,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_001",
+                product_id="karaage_set",
+                product_name="Karaage set",
+            )
+            performance = repository.aggregate_performance()
+
+            self.assertEqual(performance["summary"]["shown"], 1)
+            self.assertEqual(performance["summary"]["converted"], 0)
+            self.assertEqual(performance["summary"]["conversion_rate"], 0.0)
+
+    def test_order_with_product_name_only_converts_matching_recommendation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = CustomerMemoryRepository(str(Path(tmp) / "profiles.json"))
+            profile = repository.identify(consent_accepted=True)
+
+            repository.record_event(
+                event_type=EVENT_RECOMMENDATION_SHOWN,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_001",
+                product_id="sashimi_set",
+                product_name="Sashimi set",
+            )
+            repository.record_event(
+                event_type=EVENT_ORDER_CONFIRMED,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_001",
+                product_name="Sashimi set",
+            )
+            performance = repository.aggregate_performance()
+
+            self.assertEqual(performance["summary"]["shown"], 1)
+            self.assertEqual(performance["summary"]["converted"], 1)
+
+    def test_recommendation_conversion_is_not_duplicated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = CustomerMemoryRepository(str(Path(tmp) / "profiles.json"))
+            profile = repository.identify(consent_accepted=True)
+
+            repository.record_event(
+                event_type=EVENT_RECOMMENDATION_SHOWN,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_001",
+                product_id="sashimi_set",
+                product_name="Sashimi set",
+            )
+            repository.record_event(
+                event_type=EVENT_ORDER_CONFIRMED,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_001",
+                product_id="sashimi_set",
+                product_name="Sashimi set",
+            )
+            repository.record_event(
+                event_type=EVENT_ORDER_CONFIRMED,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_001",
+                product_id="sashimi_set",
+                product_name="Sashimi set",
+            )
+            performance = repository.aggregate_performance()
+
+            self.assertEqual(performance["summary"]["shown"], 1)
+            self.assertEqual(performance["summary"]["converted"], 1)
+
+    def test_aggregate_performance_groups_by_product_and_strategy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = CustomerMemoryRepository(str(Path(tmp) / "profiles.json"))
+            profile = repository.identify(consent_accepted=True)
+
+            repository.record_event(
+                event_type=EVENT_RECOMMENDATION_SHOWN,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_001",
+                product_id="sashimi_set",
+                product_name="Sashimi set",
+                strategy_id="strategy_001",
+            )
+            repository.record_event(
+                event_type=EVENT_ORDER_CONFIRMED,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_001",
+                product_id="sashimi_set",
+                product_name="Sashimi set",
+                strategy_id="strategy_001",
+            )
+            performance = repository.aggregate_performance(strategy_id="strategy_001")
+
+            self.assertEqual(performance["summary"]["shown"], 1)
+            self.assertEqual(performance["summary"]["converted"], 1)
+            self.assertEqual(performance["summary"]["conversion_rate"], 1.0)
+            self.assertEqual(performance["products"][0]["product_id"], "sashimi_set")
+            self.assertEqual(performance["products"][0]["converted"], 1)
+            self.assertEqual(performance["strategies"][0]["strategy_id"], "strategy_001")
+
+    def test_aggregate_performance_filters_used_customer_memory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = CustomerMemoryRepository(str(Path(tmp) / "profiles.json"))
+            profile = repository.identify(consent_accepted=True)
+
+            repository.record_event(
+                event_type=EVENT_RECOMMENDATION_SHOWN,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_001",
+                product_id="sashimi_set",
+                product_name="Sashimi set",
+                metadata={"used_customer_memory": True},
+            )
+            repository.record_event(
+                event_type=EVENT_RECOMMENDATION_SHOWN,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_002",
+                product_id="karaage_set",
+                product_name="Karaage set",
+                metadata={"used_customer_memory": False},
+            )
+
+            with_memory = repository.aggregate_performance(used_customer_memory=True)
+            without_memory = repository.aggregate_performance(used_customer_memory=False)
+
+            self.assertEqual(with_memory["summary"]["shown"], 1)
+            self.assertEqual(with_memory["products"][0]["product_id"], "sashimi_set")
+            self.assertEqual(without_memory["summary"]["shown"], 1)
+            self.assertEqual(without_memory["products"][0]["product_id"], "karaage_set")
 
 
 if __name__ == "__main__":

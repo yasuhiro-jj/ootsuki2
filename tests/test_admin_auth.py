@@ -120,6 +120,7 @@ class AdminAuthTests(unittest.TestCase):
             "/admin/ai-manager/sales-strategies/{strategy_id}",
             "/admin/ai-manager/sales-strategies/{strategy_id}/activate",
             "/admin/ai-manager/sales-strategies/{strategy_id}/deactivate",
+            "/admin/ai-manager/recommendation-performance",
             "/admin/customer-memory/{anonymous_customer_id}",
         }
         found_paths = {}
