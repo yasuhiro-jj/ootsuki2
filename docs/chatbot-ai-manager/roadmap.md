@@ -46,6 +46,15 @@ product-existence, reservation, order-confirmation, or general chat replies.
 
 Status: implemented in this phase.
 
+## Phase 2.8: Consented Customer Memory Recommendation Ranking
+
+Use consented customer memory to adjust explicit recommendation candidate
+ranking. Keep the scope narrow: no automatic upsell, no post-order sales push,
+no direct personal information, and no customer-facing exposure of internal
+scores or sales goals.
+
+Status: implemented in this phase.
+
 ## Phase 3: Explicit Recommendation Connection
 
 Use conversation state to suggest one priority product only when the customer

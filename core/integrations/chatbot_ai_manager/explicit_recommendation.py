@@ -69,6 +69,7 @@ class ExplicitSalesRecommendationConnector:
         intent_value: str,
         route_kind: str,
         session_memory: Dict[str, Any],
+        customer_memory_context: Optional[Any] = None,
     ) -> ExplicitRecommendationResult:
         if not self._is_recommendation_request(intent_value, route_kind, session_memory):
             return self._skipped(session_id, SKIP_NOT_RECOMMENDATION_REQUEST)
@@ -98,6 +99,7 @@ class ExplicitSalesRecommendationConnector:
             user_message=user_message,
             intent_value=intent_value,
             session_memory=session_memory,
+            customer_memory_context=customer_memory_context,
         )
         decision = self.bridge.decide_suggestion(context, strategy)
         if not decision.allowed or not decision.product:
@@ -120,6 +122,10 @@ class ExplicitSalesRecommendationConnector:
             result="suggestion_shown",
             metadata={
                 "selected_product_id": decision.product.product_id,
+                "selected_product_name": decision.product.name,
+                "used_customer_memory": decision.used_customer_memory,
+                "memory_adjustment_summary": list(decision.memory_adjustments),
+                "final_score": decision.final_score,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
         )
@@ -171,7 +177,30 @@ class ExplicitSalesRecommendationConnector:
         user_message: str,
         intent_value: str,
         session_memory: Dict[str, Any],
+        customer_memory_context: Optional[Any] = None,
     ) -> ConversationSalesContext:
+        memory_available = bool(
+            customer_memory_context
+            and customer_memory_context.memory_available
+            and customer_memory_context.consent_status == "granted"
+        )
+        memory_declined = ()
+        memory_recent_orders = ()
+        memory_recent_recommendations = ()
+        memory_cancelled = ()
+        memory_order_counts: Dict[str, int] = {}
+        if memory_available and customer_memory_context:
+            memory_declined = (
+                *customer_memory_context.declined_product_ids,
+                *customer_memory_context.declined_product_names,
+            )
+            memory_recent_orders = customer_memory_context.recent_ordered_items
+            memory_recent_recommendations = customer_memory_context.recent_recommended_items
+            memory_cancelled = (
+                *customer_memory_context.order_cancelled_product_ids,
+                *customer_memory_context.order_cancelled_product_names,
+            )
+            memory_order_counts = dict(customer_memory_context.order_counts)
         return ConversationSalesContext(
             session_id=session_id,
             message=user_message,
@@ -182,11 +211,47 @@ class ExplicitSalesRecommendationConnector:
             last_assistant_action=str(session_memory.get("last_assistant_action") or ""),
             suggestion_count=int(session_memory.get("suggestion_count") or 0),
             proposed_items=tuple(session_memory.get("suggested_product_ids") or ()),
-            declined_products=tuple(session_memory.get("declined_product_ids") or ()),
+            declined_products=tuple(
+                session_memory.get("declined_product_ids") or ()
+            )
+            + tuple(memory_declined),
             ordered_items=tuple(session_memory.get("ordered_items") or ()),
             avoided_items=tuple(session_memory.get("avoided_items") or ()),
+            last_ordered_items=tuple(memory_recent_orders),
+            last_recommended_items=tuple(memory_recent_recommendations),
+            recommendation_history=tuple(memory_recent_recommendations),
+            customer_memory_declined_products=tuple(memory_declined),
+            order_cancelled_items=tuple(memory_cancelled),
+            order_counts_by_product=memory_order_counts,
+            customer_memory_available=memory_available,
+            customer_memory_consent_status=(
+                customer_memory_context.consent_status
+                if customer_memory_context
+                else "unknown"
+            ),
+            different_from_previous_requested=self._is_different_from_previous_request(
+                user_message,
+                session_memory,
+            ),
             recommendation_requested=intent_value == "proposal",
             question_only=False,
+        )
+
+    def _is_different_from_previous_request(
+        self, user_message: str, session_memory: Dict[str, Any]
+    ) -> bool:
+        text = str(user_message or "").strip()
+        if session_memory.get("last_assistant_action") == "other_recommendation":
+            return True
+        return any(
+            term in text
+            for term in (
+                "前とは違う",
+                "前回とは別",
+                "前と違う",
+                "別のおすすめ",
+                "他には",
+            )
         )
 
     def _render_customer_message(

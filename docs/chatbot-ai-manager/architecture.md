@@ -41,6 +41,7 @@ Existing intent router
   -> Existing direct answer guards
   -> ExplicitSalesRecommendationConnector
   -> Current SalesStrategy
+  -> Consented CustomerMemoryContext, when available
   -> ChatbotAIManagerBridge.decide_suggestion
   -> One customer-facing recommendation or existing fallback
 ```
@@ -48,6 +49,11 @@ Existing intent router
 The connector is used only after product existence checks and order-confirmation
 guards have already had a chance to respond. It records `suggestion_shown` and
 `suggestion_skipped` events in the bridge event buffer.
+
+Customer memory enters this flow only as a bounded runtime context. It can
+adjust ranking and exclusions, but it does not allow automatic upsell and it
+does not expose internal scoring, gross margin, sales goals, or memory
+adjustments to the customer.
 
 ## Responsibilities
 
@@ -128,3 +134,16 @@ This path is intentionally blocked for FAQ, business hours, parking, payment,
 reservation, product existence, order confirmation, and general chat. The
 chatbot must not proactively mention previous orders or use customer memory for
 automatic upsell.
+
+Customer memory may also adjust explicit recommendation candidate ranking when
+all of the following are true:
+
+- the current intent is an explicit recommendation request
+- `anonymous_customer_id` exists
+- a customer profile exists
+- `consent_status == granted`
+- the memory context can be loaded safely
+
+When these conditions are not met, the chatbot uses the normal sales strategy
+or short recommendation fallback. `recommendation_declined` is a hard exclusion;
+`order_cancelled` is recorded but is not treated as dislike.

@@ -62,6 +62,14 @@ Chatbot-side state used to decide whether a sales suggestion is natural.
 - `favorite_items`
 - `avoided_items`
 - `last_ordered_items`
+- `last_recommended_items`
+- `recommendation_history`
+- `customer_memory_declined_products`
+- `order_cancelled_items`
+- `order_counts_by_product`
+- `customer_memory_available`
+- `customer_memory_consent_status`
+- `different_from_previous_requested`
 - `recommendation_requested`
 - `list_requested`
 - `question_only`
@@ -112,6 +120,9 @@ Result returned to the chatbot.
 - `reason`
 - `rule`
 - `strategy_id`
+- `final_score`
+- `memory_adjustments`
+- `used_customer_memory`
 
 ## SuggestionEvent
 
@@ -171,3 +182,7 @@ Runtime-safe view used for explicit past-reference replies.
 This context is used only for explicit memory intents such as
 `previous_order_query`, `previous_recommendation_query`, `usual_item_query`, and
 `different_from_previous_request`.
+
+For explicit recommendation requests, the same context can provide bounded
+ranking signals to `ConversationSalesContext` when consent is granted. The
+runtime passes only summary fields, not full conversation text.

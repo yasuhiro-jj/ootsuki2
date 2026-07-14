@@ -46,6 +46,8 @@ guidance.
   `suggestion_shown` event.
 - Declined products: do not suggest again in the same session.
 - Avoided products: do not suggest.
+- Consented customer-memory declines: do not suggest again.
+- `order_cancelled` is not treated as dislike or permanent exclusion.
 
 ## Production Smoke Test Strategy
 
@@ -77,8 +79,31 @@ the smoke-test strategy active after verification.
 
 ## Customer Memory Usage
 
-- Use favorite items to personalize only when it feels natural.
-- Use avoided items to prevent bad recommendations.
-- Use last ordered items to understand phrases such as "same as last time".
+- Use customer memory only when `consent_status` is `granted`.
+- Do not use customer memory when consent is `unknown` or `denied`.
+- Use recent ordered items as a small affinity boost for explicit recommendation
+  requests.
+- Use recommendation declines as hard exclusions.
+- Use already suggested items as session-level exclusions.
+- Use "different from previous" requests to exclude recent ordered and recent
+  recommended items.
+- Do not exclude `order_cancelled` items by itself.
 - Do not say "your database says" or expose internal profile details.
 - Do not use customer memory to repeatedly push high-margin items.
+
+## Scoring
+
+The scoring model is internal and must not be shown to customers.
+
+Tracked adjustment labels include:
+
+- `base_strategy_priority`
+- `repeat_order_affinity`
+- `repeat_count_affinity`
+- `recent_recommendation_penalty`
+- `recommendation_history_penalty`
+- `topic_relevance`
+- `different_from_previous_bonus`
+
+Customer-facing replies should still mention only the selected product in one
+or two short sentences.

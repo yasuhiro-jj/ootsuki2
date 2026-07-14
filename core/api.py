@@ -1825,6 +1825,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 intent_value=intent_result.intent.value,
                 route_kind=conversation_route.kind,
                 session_memory=session_memory,
+                customer_memory_context=customer_memory_context,
             )
             if sales_recommendation.has_message:
                 response_message = sales_recommendation.message

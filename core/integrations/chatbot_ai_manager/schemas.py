@@ -90,6 +90,14 @@ class ConversationSalesContext:
     favorite_items: Tuple[str, ...] = ()
     avoided_items: Tuple[str, ...] = ()
     last_ordered_items: Tuple[str, ...] = ()
+    last_recommended_items: Tuple[str, ...] = ()
+    recommendation_history: Tuple[str, ...] = ()
+    customer_memory_declined_products: Tuple[str, ...] = ()
+    order_cancelled_items: Tuple[str, ...] = ()
+    order_counts_by_product: Dict[str, int] = field(default_factory=dict)
+    customer_memory_available: bool = False
+    customer_memory_consent_status: str = "unknown"
+    different_from_previous_requested: bool = False
     recommendation_requested: bool = False
     list_requested: bool = False
     question_only: bool = True
@@ -141,6 +149,9 @@ class SuggestionDecision:
     reason: str = ""
     rule: str = ""
     strategy_id: Optional[str] = None
+    final_score: int = 0
+    memory_adjustments: Tuple[str, ...] = ()
+    used_customer_memory: bool = False
 
 
 @dataclass(frozen=True)

@@ -1,5 +1,6 @@
 import unittest
 
+from core.customer_memory import CONSENT_DENIED, CONSENT_GRANTED, CONSENT_UNKNOWN, CustomerMemoryContext
 from core.integrations.chatbot_ai_manager import ChatbotAIManagerBridge
 from core.integrations.chatbot_ai_manager.explicit_recommendation import (
     SKIP_INTEGRATION_ERROR,
@@ -332,6 +333,217 @@ class ExplicitSalesRecommendationTests(unittest.TestCase):
         self.assertTrue(result.has_message)
         self.assertEqual(result.selected_product_id, "high")
         self.assertEqual(result.memory_updates["suggested_product_ids"], ["high"])
+
+    def test_granted_customer_memory_boosts_repeat_order_candidate(self):
+        connector, bridge = make_connector(
+            make_strategy(
+                PriorityProduct(
+                    product_id="sashimi",
+                    name="Sashimi set",
+                    priority_score=82,
+                    suggest_when=("product_recommendation",),
+                ),
+                PriorityProduct(
+                    product_id="beer",
+                    name="Beer",
+                    priority_score=74,
+                    suggest_when=("product_recommendation",),
+                ),
+                max_suggestions_per_session=2,
+            )
+        )
+
+        result = connector.try_recommend(
+            session_id="s1",
+            user_message="recommend",
+            intent_value="proposal",
+            route_kind="store",
+            session_memory={},
+            customer_memory_context=CustomerMemoryContext(
+                consent_status=CONSENT_GRANTED,
+                recent_ordered_items=("Beer",),
+                order_counts={"Beer": 2},
+                memory_available=True,
+            ),
+        )
+
+        self.assertTrue(result.has_message)
+        self.assertEqual(result.selected_product_id, "beer")
+        event = bridge.list_recorded_events()[0]
+        self.assertTrue(event.metadata["used_customer_memory"])
+        self.assertIn("repeat_order_affinity", " ".join(event.metadata["memory_adjustment_summary"]))
+
+    def test_unknown_customer_memory_does_not_adjust_strategy_order(self):
+        connector, _ = make_connector(
+            make_strategy(
+                PriorityProduct(
+                    product_id="sashimi",
+                    name="Sashimi set",
+                    priority_score=82,
+                    suggest_when=("product_recommendation",),
+                ),
+                PriorityProduct(
+                    product_id="beer",
+                    name="Beer",
+                    priority_score=74,
+                    suggest_when=("product_recommendation",),
+                ),
+                max_suggestions_per_session=2,
+            )
+        )
+
+        result = connector.try_recommend(
+            session_id="s1",
+            user_message="recommend",
+            intent_value="proposal",
+            route_kind="store",
+            session_memory={},
+            customer_memory_context=CustomerMemoryContext(
+                consent_status=CONSENT_UNKNOWN,
+                recent_ordered_items=("Beer",),
+                order_counts={"Beer": 3},
+                memory_available=True,
+            ),
+        )
+
+        self.assertTrue(result.has_message)
+        self.assertEqual(result.selected_product_id, "sashimi")
+
+    def test_denied_customer_memory_does_not_adjust_strategy_order(self):
+        connector, _ = make_connector(
+            make_strategy(
+                PriorityProduct(
+                    product_id="sashimi",
+                    name="Sashimi set",
+                    priority_score=82,
+                    suggest_when=("product_recommendation",),
+                ),
+                PriorityProduct(
+                    product_id="beer",
+                    name="Beer",
+                    priority_score=74,
+                    suggest_when=("product_recommendation",),
+                ),
+                max_suggestions_per_session=2,
+            )
+        )
+
+        result = connector.try_recommend(
+            session_id="s1",
+            user_message="recommend",
+            intent_value="proposal",
+            route_kind="store",
+            session_memory={},
+            customer_memory_context=CustomerMemoryContext(
+                consent_status=CONSENT_DENIED,
+                recent_ordered_items=("Beer",),
+                order_counts={"Beer": 3},
+                memory_available=True,
+            ),
+        )
+
+        self.assertTrue(result.has_message)
+        self.assertEqual(result.selected_product_id, "sashimi")
+
+    def test_customer_memory_declined_product_is_excluded(self):
+        connector, _ = make_connector(
+            make_strategy(
+                PriorityProduct(
+                    product_id="sashimi",
+                    name="Sashimi set",
+                    priority_score=95,
+                    suggest_when=("product_recommendation",),
+                ),
+                PriorityProduct(
+                    product_id="grilled",
+                    name="Grilled fish",
+                    priority_score=70,
+                    suggest_when=("product_recommendation",),
+                ),
+                max_suggestions_per_session=2,
+            )
+        )
+
+        result = connector.try_recommend(
+            session_id="s1",
+            user_message="recommend",
+            intent_value="proposal",
+            route_kind="store",
+            session_memory={},
+            customer_memory_context=CustomerMemoryContext(
+                consent_status=CONSENT_GRANTED,
+                declined_product_names=("Sashimi set",),
+                memory_available=True,
+            ),
+        )
+
+        self.assertTrue(result.has_message)
+        self.assertEqual(result.selected_product_id, "grilled")
+
+    def test_order_cancelled_product_is_not_excluded(self):
+        connector, _ = make_connector(
+            make_strategy(
+                PriorityProduct(
+                    product_id="beer",
+                    name="Beer",
+                    priority_score=90,
+                    suggest_when=("product_recommendation",),
+                ),
+                max_suggestions_per_session=2,
+            )
+        )
+
+        result = connector.try_recommend(
+            session_id="s1",
+            user_message="recommend",
+            intent_value="proposal",
+            route_kind="store",
+            session_memory={},
+            customer_memory_context=CustomerMemoryContext(
+                consent_status=CONSENT_GRANTED,
+                order_cancelled_product_names=("Beer",),
+                memory_available=True,
+            ),
+        )
+
+        self.assertTrue(result.has_message)
+        self.assertEqual(result.selected_product_id, "beer")
+
+    def test_different_from_previous_excludes_recent_memory_items(self):
+        connector, _ = make_connector(
+            make_strategy(
+                PriorityProduct(
+                    product_id="sashimi",
+                    name="Sashimi set",
+                    priority_score=95,
+                    suggest_when=("product_recommendation",),
+                ),
+                PriorityProduct(
+                    product_id="karaage",
+                    name="Karaage set",
+                    priority_score=80,
+                    suggest_when=("product_recommendation",),
+                ),
+                max_suggestions_per_session=2,
+            )
+        )
+
+        result = connector.try_recommend(
+            session_id="s1",
+            user_message="前とは違うおすすめ",
+            intent_value="proposal",
+            route_kind="store",
+            session_memory={},
+            customer_memory_context=CustomerMemoryContext(
+                consent_status=CONSENT_GRANTED,
+                recent_ordered_items=("Sashimi set",),
+                recent_recommended_items=("Sashimi set",),
+                memory_available=True,
+            ),
+        )
+
+        self.assertTrue(result.has_message)
+        self.assertEqual(result.selected_product_id, "karaage")
 
 
 if __name__ == "__main__":

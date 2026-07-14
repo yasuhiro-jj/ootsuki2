@@ -8,6 +8,7 @@ from .rules import (
     BLOCKED_ASSISTANT_ACTIONS,
     BLOCKED_PENDING_FLOWS,
     find_eligible_product,
+    score_candidate,
 )
 from .schemas import (
     ConversationSalesContext,
@@ -44,6 +45,7 @@ class ChatbotAIManagerBridge:
         product = find_eligible_product(context, strategy)
         if not product:
             return SuggestionDecision(False, reason="no eligible product matched")
+        candidate_score = score_candidate(product, context)
 
         return SuggestionDecision(
             True,
@@ -51,6 +53,12 @@ class ChatbotAIManagerBridge:
             reason=product.reason,
             rule="single_safe_priority_product",
             strategy_id=strategy.strategy_id,
+            final_score=candidate_score.final_score,
+            memory_adjustments=candidate_score.adjustments,
+            used_customer_memory=(
+                context.customer_memory_available
+                and context.customer_memory_consent_status == "granted"
+            ),
         )
 
     def record_suggestion_result(self, event: SuggestionEvent) -> None:
