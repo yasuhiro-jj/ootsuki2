@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import secrets
@@ -15,6 +16,7 @@ from .integrations.chatbot_ai_manager.schemas import CustomerMemoryProfile
 
 
 ANONYMOUS_CUSTOMER_ID_PREFIX = "anon_"
+SESSION_EVENT_CUSTOMER_ID_PREFIX = "anon_session_"
 ANONYMOUS_CUSTOMER_ID_PATTERN = re.compile(r"^anon_[a-zA-Z0-9_-]{16,64}$")
 CONSENT_UNKNOWN = "unknown"
 CONSENT_GRANTED = "granted"
@@ -86,6 +88,11 @@ def generate_anonymous_customer_id() -> str:
 
 def is_valid_anonymous_customer_id(value: str) -> bool:
     return bool(ANONYMOUS_CUSTOMER_ID_PATTERN.fullmatch(str(value or "").strip()))
+
+
+def session_event_customer_id(session_id: str) -> str:
+    digest = hashlib.sha256(str(session_id or "").encode("utf-8")).hexdigest()
+    return f"{SESSION_EVENT_CUSTOMER_ID_PREFIX}{digest[:32]}"
 
 
 def normalize_consent_status(value: str) -> str:
@@ -246,11 +253,16 @@ class CustomerMemoryRepository:
         quantity: int = 1,
         strategy_id: str = "",
         metadata: Optional[Dict[str, Any]] = None,
+        allow_session_fallback: bool = False,
     ) -> Optional[CustomerMemoryEvent]:
         safe_customer_id = str(anonymous_customer_id or "").strip()
         safe_session_id = str(session_id or "").strip()
-        if not safe_session_id or not is_valid_anonymous_customer_id(safe_customer_id):
+        if not safe_session_id:
             return None
+        if not is_valid_anonymous_customer_id(safe_customer_id):
+            if not allow_session_fallback:
+                return None
+            safe_customer_id = session_event_customer_id(safe_session_id)
         if event_type not in {
             EVENT_ORDER_CONFIRMED,
             EVENT_RECOMMENDATION_SHOWN,
@@ -281,6 +293,21 @@ class CustomerMemoryRepository:
         if conversion_event is not None:
             self._append_event(conversion_event)
         return event
+
+    def diagnostics(self) -> Dict[str, Any]:
+        events = self._load_all_events()
+        latest_event = events[-1] if events else None
+        return {
+            "repository_type": "jsonl",
+            "storage_configured": True,
+            "event_count": len(events),
+            "latest_event_type": latest_event.event_type if latest_event else "",
+            "latest_product_id": latest_event.product_id if latest_event else "",
+            "latest_created_at": latest_event.occurred_at if latest_event else "",
+            "persistence_path_configured": bool(self.events_path),
+            "storage_backend": "jsonl",
+            "storage_path": self.events_path.name,
+        }
 
     def get_admin_summary(self, anonymous_customer_id: str) -> Optional[Dict[str, Any]]:
         profile = self.get(anonymous_customer_id)

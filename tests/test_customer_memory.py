@@ -17,6 +17,7 @@ from core.customer_memory import (
     generate_anonymous_customer_id,
     is_valid_anonymous_customer_id,
     normalize_product_name,
+    session_event_customer_id,
 )
 
 
@@ -206,6 +207,76 @@ class CustomerMemoryTests(unittest.TestCase):
             )
 
             self.assertIsNone(event)
+
+    def test_session_fallback_records_recommendation_event_without_customer_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = CustomerMemoryRepository(str(Path(tmp) / "profiles.json"))
+
+            event = repository.record_event(
+                event_type=EVENT_RECOMMENDATION_SHOWN,
+                anonymous_customer_id="",
+                session_id="session_001",
+                product_id="sashimi_set",
+                product_name="Sashimi set",
+                strategy_id="strategy_001",
+                allow_session_fallback=True,
+            )
+            performance = repository.aggregate_performance()
+            fallback_id = session_event_customer_id("session_001")
+            profile = repository.get(fallback_id)
+
+            self.assertIsNotNone(event)
+            self.assertEqual(event.anonymous_customer_id, fallback_id)
+            self.assertIsNotNone(profile)
+            self.assertEqual(performance["summary"]["shown"], 1)
+            self.assertEqual(performance["products"][0]["product_id"], "sashimi_set")
+
+    def test_session_fallback_converts_same_session_order(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = CustomerMemoryRepository(str(Path(tmp) / "profiles.json"))
+
+            repository.record_event(
+                event_type=EVENT_RECOMMENDATION_SHOWN,
+                anonymous_customer_id="",
+                session_id="session_001",
+                product_id="sashimi_set",
+                product_name="Sashimi set",
+                strategy_id="strategy_001",
+                allow_session_fallback=True,
+            )
+            repository.record_event(
+                event_type=EVENT_ORDER_CONFIRMED,
+                anonymous_customer_id="",
+                session_id="session_001",
+                product_id="sashimi_set",
+                product_name="Sashimi set",
+                strategy_id="strategy_001",
+                allow_session_fallback=True,
+            )
+            performance = repository.aggregate_performance()
+
+            self.assertEqual(performance["summary"]["shown"], 1)
+            self.assertEqual(performance["summary"]["converted"], 1)
+
+    def test_diagnostics_reports_event_storage_summary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = CustomerMemoryRepository(str(Path(tmp) / "profiles.json"))
+
+            repository.record_event(
+                event_type=EVENT_RECOMMENDATION_SHOWN,
+                anonymous_customer_id="",
+                session_id="session_001",
+                product_id="sashimi_set",
+                product_name="Sashimi set",
+                allow_session_fallback=True,
+            )
+            diagnostics = repository.diagnostics()
+
+            self.assertEqual(diagnostics["repository_type"], "jsonl")
+            self.assertEqual(diagnostics["event_count"], 1)
+            self.assertEqual(diagnostics["latest_event_type"], EVENT_RECOMMENDATION_SHOWN)
+            self.assertEqual(diagnostics["latest_product_id"], "sashimi_set")
+            self.assertTrue(diagnostics["persistence_path_configured"])
 
     def test_build_context_uses_confirmed_orders_and_separates_cancellations(self):
         with tempfile.TemporaryDirectory() as tmp:

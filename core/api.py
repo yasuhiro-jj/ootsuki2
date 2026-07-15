@@ -6,6 +6,7 @@ FastAPIベースの汎用APIフレームワーク
 
 import logging
 import asyncio
+import os
 import time
 from dataclasses import asdict
 from typing import Optional, Dict, Any, Set, List
@@ -436,10 +437,13 @@ def create_app(config: ConfigLoader) -> FastAPI:
         sales_strategy_bridge,
     )
     customer_memory_repository = CustomerMemoryRepository(
-        config.get(
+        os.getenv("CUSTOMER_MEMORY_PROFILE_PATH")
+        or config.get(
             "customer_memory.profile_path",
             "outputs/customer_memory_profiles.json",
-        )
+        ),
+        session_links_path=os.getenv("CUSTOMER_MEMORY_SESSION_LINKS_PATH"),
+        events_path=os.getenv("CUSTOMER_MEMORY_EVENTS_PATH"),
     )
     
     # 不明キーワード検索サービス初期化
@@ -721,6 +725,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 quantity=quantity,
                 strategy_id=strategy_id,
                 metadata=metadata,
+                allow_session_fallback=True,
             )
         except Exception as exc:
             logger.warning(
@@ -789,6 +794,13 @@ def create_app(config: ConfigLoader) -> FastAPI:
             product_id=product_id,
             used_customer_memory=used_customer_memory,
         )
+
+    @app.get(
+        "/admin/ai-manager/recommendation-events/diagnostics",
+        dependencies=[Depends(require_admin_api_key)],
+    )
+    async def get_recommendation_event_diagnostics():
+        return customer_memory_repository.diagnostics()
 
     @app.get(
         "/admin/ai-manager/recommendation-settings",
