@@ -76,6 +76,7 @@ from .customer_memory import (
     EVENT_RECOMMENDATION_SHOWN,
     CustomerMemoryContext,
     CustomerMemoryRepository,
+    STRATEGY_ID_FALLBACK,
     normalize_consent_status,
 )
 from .customer_memory_followups import build_customer_memory_followup_reply
@@ -1255,6 +1256,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
                         session_id,
                         EVENT_ORDER_CANCELLED,
                         product_name=cancelled_item_name,
+                        strategy_id=str(session_memory.get("last_suggestion_strategy_id") or ""),
                     )
                 ai_engine.save_memory(
                     session_id,
@@ -1409,6 +1411,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     session_id,
                     EVENT_ORDER_CONFIRMED,
                     product_name=recent_item_name,
+                    strategy_id=str(session_memory.get("last_suggestion_strategy_id") or ""),
                 )
                 ai_engine.save_memory(
                     session_id,
@@ -1667,6 +1670,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     session_id,
                     EVENT_ORDER_CONFIRMED,
                     product_name=get_recent_item_name(session_memory),
+                    strategy_id=str(session_memory.get("last_suggestion_strategy_id") or ""),
                 )
                 ai_engine.save_memory(
                     session_id,
@@ -2018,7 +2022,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
                             (sales_recommendation.memory_updates or {}).get("last_recommended_item")
                             or ""
                         ),
-                        strategy_id=sales_recommendation.strategy_id,
+                        strategy_id=sales_recommendation.strategy_id or STRATEGY_ID_FALLBACK,
                         metadata={
                             "recommendation_source": (
                                 "personalized_strategy"
@@ -2026,7 +2030,11 @@ def create_app(config: ConfigLoader) -> FastAPI:
                                     sales_recommendation.event
                                     and sales_recommendation.event.metadata.get("used_customer_memory")
                                 )
-                                else "sales_strategy"
+                                else (
+                                    "sales_strategy"
+                                    if sales_recommendation.strategy_id
+                                    else "short_fallback"
+                                )
                             ),
                             "used_customer_memory": bool(
                                 sales_recommendation.event
@@ -2985,6 +2993,41 @@ def create_app(config: ConfigLoader) -> FastAPI:
                                     session_id,
                                     sales_recommendation.memory_updates or {},
                                 )
+                                if sales_recommendation.skip_reason != SKIP_SESSION_LIMIT_REACHED:
+                                    _safe_record_customer_event(
+                                        None,
+                                        session_id,
+                                        EVENT_RECOMMENDATION_SHOWN,
+                                        product_id=sales_recommendation.selected_product_id,
+                                        product_name=str(
+                                            (sales_recommendation.memory_updates or {}).get("last_recommended_item")
+                                            or ""
+                                        ),
+                                        strategy_id=sales_recommendation.strategy_id or STRATEGY_ID_FALLBACK,
+                                        metadata={
+                                            "recommendation_source": (
+                                                "personalized_strategy"
+                                                if (
+                                                    sales_recommendation.event
+                                                    and sales_recommendation.event.metadata.get("used_customer_memory")
+                                                )
+                                                else (
+                                                    "sales_strategy"
+                                                    if sales_recommendation.strategy_id
+                                                    else "short_fallback"
+                                                )
+                                            ),
+                                            "used_customer_memory": bool(
+                                                sales_recommendation.event
+                                                and sales_recommendation.event.metadata.get("used_customer_memory")
+                                            ),
+                                            "source_suggestion_event_id": (
+                                                sales_recommendation.event.event_id
+                                                if sales_recommendation.event
+                                                else ""
+                                            ),
+                                        },
+                                    )
                                 result = {
                                     **state,
                                     "intent": "product_recommendation",

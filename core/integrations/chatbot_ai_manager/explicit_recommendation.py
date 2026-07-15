@@ -142,6 +142,7 @@ class ExplicitSalesRecommendationConnector:
             "suggested_product_ids": suggested_product_ids,
             "last_suggestion_at": datetime.now(timezone.utc).isoformat(),
             "last_suggestion_product_id": decision.product.product_id,
+            "last_suggestion_strategy_id": strategy.strategy_id,
             "last_assistant_action": "sales_strategy_recommendation",
         }
         return ExplicitRecommendationResult(
@@ -302,6 +303,7 @@ class ExplicitSalesRecommendationConnector:
             "detected_intent": "product_recommendation",
             "current_entity": SHORT_FALLBACK_PRODUCT_NAME,
             "last_recommended_item": SHORT_FALLBACK_PRODUCT_NAME,
+            "last_suggestion_strategy_id": "fallback",
             "last_assistant_action": (
                 "repeated_short_recommendation_fallback"
                 if repeated
@@ -338,6 +340,7 @@ class ExplicitSalesRecommendationConnector:
             "last_recommended_item": product_name,
             "suggestion_count": context.suggestion_count,
             "suggested_product_ids": list(context.proposed_items),
+            "last_suggestion_strategy_id": strategy.strategy_id,
             "last_assistant_action": "repeated_recommendation_limit",
         }
         return ExplicitRecommendationResult(

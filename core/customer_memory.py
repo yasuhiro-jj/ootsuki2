@@ -34,6 +34,8 @@ EVENT_ORDER_CANCELLED = "order_cancelled"
 PROFILE_ITEM_LIMIT = 10
 PROFILE_DECLINED_LIMIT = 20
 RECOMMENDATION_CONVERSION_WINDOW_SECONDS = 30 * 60
+STRATEGY_ID_FALLBACK = "fallback"
+STRATEGY_ID_UNATTRIBUTED = "unattributed"
 
 
 @dataclass(frozen=True)
@@ -115,6 +117,22 @@ def normalize_product_name(value: Optional[str]) -> str:
         except (UnicodeEncodeError, UnicodeDecodeError):
             pass
     return max(candidates, key=_product_name_quality_score)
+
+
+def _normalize_strategy_id(
+    value: Optional[str],
+    metadata: Optional[Dict[str, Any]] = None,
+) -> str:
+    strategy_id = str(value or "").strip()
+    if strategy_id:
+        return strategy_id[:120]
+    safe_metadata = metadata if isinstance(metadata, dict) else {}
+    source = str(safe_metadata.get("recommendation_source") or "").strip()
+    if source in {"sales_strategy", "personalized_strategy"}:
+        return STRATEGY_ID_FALLBACK
+    if source in {"short_fallback", "fallback"}:
+        return STRATEGY_ID_FALLBACK
+    return STRATEGY_ID_UNATTRIBUTED
 
 
 class CustomerMemoryRepository:
@@ -283,7 +301,7 @@ class CustomerMemoryRepository:
             product_id=str(product_id or "")[:120],
             product_name=normalize_product_name(product_name)[:120],
             quantity=max(1, int(quantity or 1)),
-            strategy_id=str(strategy_id or "")[:120],
+            strategy_id=_normalize_strategy_id(strategy_id, metadata)[:120],
             occurred_at=now,
             metadata=self._safe_metadata(metadata),
         )
@@ -340,7 +358,10 @@ class CustomerMemoryRepository:
             if _event_in_range(event, from_dt, to_dt)
         ]
         if strategy_id:
-            events = [event for event in events if event.strategy_id == strategy_id]
+            safe_strategy_id = _normalize_strategy_id(strategy_id)
+            events = [
+                event for event in events if _normalize_strategy_id(event.strategy_id) == safe_strategy_id
+            ]
         if product_id:
             events = [event for event in events if event.product_id == product_id]
         if used_customer_memory is not None:
@@ -367,8 +388,8 @@ class CustomerMemoryRepository:
             )
             _increment_performance_bucket(product_bucket, bucket_name)
             strategy_bucket = strategies.setdefault(
-                event.strategy_id or "none",
-                _empty_performance_bucket(strategy_id=event.strategy_id),
+                _normalize_strategy_id(event.strategy_id),
+                _empty_performance_bucket(strategy_id=_normalize_strategy_id(event.strategy_id)),
             )
             _increment_performance_bucket(strategy_bucket, bucket_name)
 
@@ -589,7 +610,7 @@ class CustomerMemoryRepository:
             product_id=str(value.get("product_id") or ""),
             product_name=normalize_product_name(value.get("product_name")),
             quantity=max(1, quantity),
-            strategy_id=str(value.get("strategy_id") or ""),
+            strategy_id=_normalize_strategy_id(value.get("strategy_id"), metadata),
             occurred_at=str(value.get("occurred_at") or ""),
             event_id=str(value.get("event_id") or ""),
             metadata=self._safe_metadata(metadata),
@@ -644,7 +665,7 @@ class CustomerMemoryRepository:
                     order_event.product_name or candidate.product_name
                 ),
                 quantity=order_event.quantity,
-                strategy_id=order_event.strategy_id or candidate.strategy_id,
+                strategy_id=_normalize_strategy_id(candidate.strategy_id or order_event.strategy_id),
                 occurred_at=order_event.occurred_at,
                 metadata=metadata,
             )

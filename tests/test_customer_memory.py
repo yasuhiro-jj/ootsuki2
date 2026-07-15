@@ -13,6 +13,8 @@ from core.customer_memory import (
     EVENT_RECOMMENDATION_CONVERTED,
     EVENT_RECOMMENDATION_DECLINED,
     EVENT_RECOMMENDATION_SHOWN,
+    STRATEGY_ID_FALLBACK,
+    STRATEGY_ID_UNATTRIBUTED,
     CustomerMemoryRepository,
     generate_anonymous_customer_id,
     is_valid_anonymous_customer_id,
@@ -257,6 +259,106 @@ class CustomerMemoryTests(unittest.TestCase):
 
             self.assertEqual(performance["summary"]["shown"], 1)
             self.assertEqual(performance["summary"]["converted"], 1)
+
+    def test_fallback_recommendation_uses_non_empty_strategy_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = CustomerMemoryRepository(str(Path(tmp) / "profiles.json"))
+            profile = repository.identify(consent_accepted=True)
+
+            event = repository.record_event(
+                event_type=EVENT_RECOMMENDATION_SHOWN,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_001",
+                product_id="sashimi_set",
+                product_name="Sashimi set",
+                metadata={"recommendation_source": "short_fallback"},
+            )
+            performance = repository.aggregate_performance()
+
+            self.assertIsNotNone(event)
+            self.assertEqual(event.strategy_id, STRATEGY_ID_FALLBACK)
+            self.assertEqual(performance["strategies"][0]["strategy_id"], STRATEGY_ID_FALLBACK)
+
+    def test_missing_strategy_id_is_grouped_as_unattributed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = CustomerMemoryRepository(str(Path(tmp) / "profiles.json"))
+            profile = repository.identify(consent_accepted=True)
+
+            event = repository.record_event(
+                event_type=EVENT_ORDER_CANCELLED,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_001",
+                product_name="Beer",
+            )
+            performance = repository.aggregate_performance()
+
+            self.assertIsNotNone(event)
+            self.assertEqual(event.strategy_id, STRATEGY_ID_UNATTRIBUTED)
+            self.assertEqual(performance["strategies"][0]["strategy_id"], STRATEGY_ID_UNATTRIBUTED)
+
+    def test_conversion_inherits_strategy_id_from_shown_event(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = CustomerMemoryRepository(str(Path(tmp) / "profiles.json"))
+            profile = repository.identify(consent_accepted=True)
+
+            shown = repository.record_event(
+                event_type=EVENT_RECOMMENDATION_SHOWN,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_001",
+                product_id="sashimi_set",
+                product_name="Sashimi set",
+                strategy_id="strategy_original",
+            )
+            repository.record_event(
+                event_type=EVENT_ORDER_CONFIRMED,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_001",
+                product_id="sashimi_set",
+                product_name="Sashimi set",
+                strategy_id="strategy_current",
+            )
+            events = repository._load_events(profile.anonymous_customer_id)
+            conversions = [
+                event
+                for event in events
+                if event.event_type == EVENT_RECOMMENDATION_CONVERTED
+            ]
+            performance = repository.aggregate_performance(strategy_id="strategy_original")
+
+            self.assertEqual(conversions[0].strategy_id, "strategy_original")
+            self.assertEqual(
+                conversions[0].metadata["source_recommendation_event_id"],
+                shown.event_id,
+            )
+            self.assertEqual(performance["summary"]["shown"], 1)
+            self.assertEqual(performance["summary"]["converted"], 1)
+
+    def test_declined_and_cancelled_strategy_groups_are_non_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = CustomerMemoryRepository(str(Path(tmp) / "profiles.json"))
+            profile = repository.identify(consent_accepted=True)
+
+            repository.record_event(
+                event_type=EVENT_RECOMMENDATION_DECLINED,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_001",
+                product_id="sashimi_set",
+                product_name="Sashimi set",
+                strategy_id="strategy_001",
+            )
+            repository.record_event(
+                event_type=EVENT_ORDER_CANCELLED,
+                anonymous_customer_id=profile.anonymous_customer_id,
+                session_id="session_001",
+                product_id="sashimi_set",
+                product_name="Sashimi set",
+                strategy_id="strategy_001",
+            )
+            performance = repository.aggregate_performance(strategy_id="strategy_001")
+
+            self.assertEqual(performance["summary"]["declined"], 1)
+            self.assertEqual(performance["summary"]["cancelled"], 1)
+            self.assertEqual(performance["strategies"][0]["strategy_id"], "strategy_001")
 
     def test_diagnostics_reports_event_storage_summary(self):
         with tempfile.TemporaryDirectory() as tmp:
