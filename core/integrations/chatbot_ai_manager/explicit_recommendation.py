@@ -94,64 +94,77 @@ class ExplicitSalesRecommendationConnector:
                 session_memory=session_memory,
             )
 
-        context = self._build_context(
-            session_id=session_id,
-            user_message=user_message,
-            intent_value=intent_value,
-            session_memory=session_memory,
-            customer_memory_context=customer_memory_context,
-        )
-        decision = self.bridge.decide_suggestion(context, strategy)
-        if not decision.allowed or not decision.product:
-            skip_reason = self._skip_reason_from_decision(
-                decision.reason, strategy, context
+        try:
+            context = self._build_context(
+                session_id=session_id,
+                user_message=user_message,
+                intent_value=intent_value,
+                session_memory=session_memory,
+                customer_memory_context=customer_memory_context,
             )
-            if skip_reason == SKIP_SESSION_LIMIT_REACHED:
-                return self._repeated_recommendation(
-                    session_id=session_id,
-                    strategy=strategy,
-                    context=context,
+            decision = self.bridge.decide_suggestion(context, strategy)
+            if not decision.allowed or not decision.product:
+                skip_reason = self._skip_reason_from_decision(
+                    decision.reason, strategy, context
                 )
-            return self._skipped(session_id, skip_reason, strategy_id=strategy.strategy_id)
+                if skip_reason == SKIP_SESSION_LIMIT_REACHED:
+                    return self._repeated_recommendation(
+                        session_id=session_id,
+                        strategy=strategy,
+                        context=context,
+                    )
+                return self._skipped(session_id, skip_reason, strategy_id=strategy.strategy_id)
 
-        message = self._render_customer_message(decision.product, context)
-        event = suggestion_event(
-            session_id=session_id,
-            strategy_id=strategy.strategy_id,
-            product_id=decision.product.product_id,
-            result="suggestion_shown",
-            metadata={
-                "selected_product_id": decision.product.product_id,
-                "selected_product_name": decision.product.name,
-                "used_customer_memory": decision.used_customer_memory,
-                "memory_adjustment_summary": list(decision.memory_adjustments),
-                "final_score": decision.final_score,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            },
-        )
-        self.bridge.record_suggestion_result(event)
+            message = self._render_customer_message(decision.product, context)
+            event = suggestion_event(
+                session_id=session_id,
+                strategy_id=strategy.strategy_id,
+                product_id=decision.product.product_id,
+                result="suggestion_shown",
+                metadata={
+                    "selected_product_id": decision.product.product_id,
+                    "selected_product_name": decision.product.name,
+                    "used_customer_memory": decision.used_customer_memory,
+                    "memory_adjustment_summary": list(decision.memory_adjustments),
+                    "final_score": decision.final_score,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+            self.bridge.record_suggestion_result(event)
 
-        suggested_product_ids = list(context.proposed_items)
-        suggested_product_ids.append(decision.product.product_id)
-        memory_updates = {
-            "active_topic": "recommendation",
-            "detected_intent": "product_recommendation",
-            "current_entity": decision.product.name,
-            "last_recommended_item": decision.product.name,
-            "suggestion_count": context.suggestion_count + 1,
-            "suggested_product_ids": suggested_product_ids,
-            "last_suggestion_at": datetime.now(timezone.utc).isoformat(),
-            "last_suggestion_product_id": decision.product.product_id,
-            "last_suggestion_strategy_id": strategy.strategy_id,
-            "last_assistant_action": "sales_strategy_recommendation",
-        }
-        return ExplicitRecommendationResult(
-            message=message,
-            selected_product_id=decision.product.product_id,
-            strategy_id=strategy.strategy_id,
-            memory_updates=memory_updates,
-            event=event,
-        )
+            suggested_product_ids = list(context.proposed_items)
+            suggested_product_ids.append(decision.product.product_id)
+            memory_updates = {
+                "active_topic": "recommendation",
+                "detected_intent": "product_recommendation",
+                "current_entity": decision.product.name,
+                "last_recommended_item": decision.product.name,
+                "suggestion_count": context.suggestion_count + 1,
+                "suggested_product_ids": suggested_product_ids,
+                "last_suggestion_at": datetime.now(timezone.utc).isoformat(),
+                "last_suggestion_product_id": decision.product.product_id,
+                "last_suggestion_strategy_id": strategy.strategy_id,
+                "last_assistant_action": "sales_strategy_recommendation",
+            }
+            return ExplicitRecommendationResult(
+                message=message,
+                selected_product_id=decision.product.product_id,
+                strategy_id=strategy.strategy_id,
+                memory_updates=memory_updates,
+                event=event,
+            )
+        except Exception as exc:
+            logger.warning(
+                "[SalesStrategy] recommendation failed session=%s strategy_id=%s error=%s",
+                session_id[:8],
+                strategy.strategy_id,
+                exc.__class__.__name__,
+            )
+            return self._short_fallback(
+                session_id,
+                SKIP_INTEGRATION_ERROR,
+                session_memory=session_memory,
+            )
 
     def _is_recommendation_request(
         self, intent_value: str, route_kind: str, session_memory: Dict[str, Any]
@@ -374,5 +387,17 @@ class ExplicitSalesRecommendationConnector:
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
         )
-        self.bridge.record_suggestion_result(event)
-        return ExplicitRecommendationResult(skip_reason=skip_reason, event=event)
+        try:
+            self.bridge.record_suggestion_result(event)
+        except Exception as exc:
+            logger.warning(
+                "[SalesStrategy] suggestion event record failed session=%s strategy_id=%s error=%s",
+                session_id[:8],
+                strategy_id,
+                exc.__class__.__name__,
+            )
+        return ExplicitRecommendationResult(
+            skip_reason=skip_reason,
+            strategy_id=strategy_id,
+            event=event,
+        )

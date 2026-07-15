@@ -27,6 +27,14 @@ class StaticStrategyService:
         return self.strategy
 
 
+class BrokenBridge:
+    def decide_suggestion(self, context, strategy):
+        raise RuntimeError("active strategy decision failed")
+
+    def record_suggestion_result(self, event):
+        raise RuntimeError("should not record after decision failure")
+
+
 def make_strategy(*products, max_suggestions_per_session=1):
     return SalesStrategy(
         strategy_id="strategy_now",
@@ -76,6 +84,63 @@ class ExplicitSalesRecommendationTests(unittest.TestCase):
         self.assertEqual(result.memory_updates["last_recommended_item"], "Fuji sake")
         self.assertEqual(result.memory_updates["last_suggestion_strategy_id"], "strategy_now")
         self.assertEqual(bridge.list_recorded_events()[0].result, "suggestion_shown")
+
+    def test_production_smoke_strategy_preserves_strategy_id(self):
+        connector, bridge = make_connector(
+            SalesStrategy(
+                strategy_id="production_smoke_test_001",
+                name="Production smoke strategy",
+                active=True,
+                priority_products=(
+                    PriorityProduct(
+                        product_id="262e9a7e-e5b7-81d6-980b-eca518b63e27",
+                        name="Sashimi set",
+                        priority_score=100,
+                    ),
+                ),
+                max_suggestions_per_session=1,
+            )
+        )
+
+        result = connector.try_recommend(
+            session_id="s1",
+            user_message="recommend food",
+            intent_value="proposal",
+            route_kind="store",
+            session_memory={},
+        )
+
+        self.assertTrue(result.has_message)
+        self.assertEqual(result.strategy_id, "production_smoke_test_001")
+        self.assertEqual(
+            result.memory_updates["last_suggestion_strategy_id"],
+            "production_smoke_test_001",
+        )
+        self.assertEqual(len(bridge.list_recorded_events()), 1)
+        self.assertEqual(
+            bridge.list_recorded_events()[0].strategy_id,
+            "production_smoke_test_001",
+        )
+
+    def test_active_strategy_exception_falls_back_without_raising(self):
+        strategy = make_strategy()
+        connector = ExplicitSalesRecommendationConnector(
+            StaticStrategyService(strategy=strategy),
+            BrokenBridge(),
+        )
+
+        result = connector.try_recommend(
+            session_id="s1",
+            user_message="recommend food",
+            intent_value="proposal",
+            route_kind="store",
+            session_memory={},
+        )
+
+        self.assertTrue(result.has_message)
+        self.assertEqual(result.skip_reason, SKIP_INTEGRATION_ERROR)
+        self.assertEqual(result.selected_product_id, SHORT_FALLBACK_PRODUCT_ID)
+        self.assertEqual(result.memory_updates["last_suggestion_strategy_id"], "fallback")
 
     def test_product_existence_does_not_return_suggestion(self):
         connector, _ = make_connector(make_strategy())

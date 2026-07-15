@@ -113,7 +113,7 @@ def _require_api_key() -> str:
 
 
 def _load_json(path: str) -> Dict[str, Any]:
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+    return json.loads(Path(path).read_text(encoding="utf-8-sig"))
 
 
 def _request(
@@ -157,4 +157,3 @@ def _print_http_error(exc: urllib.error.HTTPError) -> None:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
