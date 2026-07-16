@@ -402,7 +402,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
     notion_client = NotionClient()
     intent_classifier = IntentClassifier()
 
-    from .menu_service import MenuService
+    from .menu_service import MenuService, score_menu_item_match
     from .menu_image_resolve import attach_line_messages_if_image, resolve_menu_image_for_chat
 
     _menu_db_id = config.get("notion.database_ids.menu_db")
@@ -1351,10 +1351,16 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 exact_menu_items = [
                     item
                     for item in menu_items
-                    if getattr(item, "name", "") == recent_item_name
+                    if score_menu_item_match(
+                        getattr(item, "name", ""),
+                        [recent_item_name],
+                    )[0]
+                    <= 3
                 ]
                 if exact_menu_items:
                     menu_items = exact_menu_items
+                else:
+                    menu_items = []
                 response_message = format_contextual_price_reply(
                     recent_item_name,
                     menu_items,
@@ -1800,8 +1806,15 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     limit=5,
                 )
                 response_message = format_direct_menu_existence_answer(menu_items)
+                matched_product = menu_items[0] if menu_items else None
+                has_exact_product_match = bool(
+                    matched_product
+                    and int(getattr(matched_product, "match_rank", 99) or 99) <= 3
+                )
                 current_entity = (
-                    getattr(menu_items[0], "name", "") if menu_items else user_message
+                    getattr(matched_product, "name", "")
+                    if has_exact_product_match
+                    else getattr(matched_product, "requested_name", "") or user_message
                 )
                 ai_engine.save_memory(
                     session_id,
@@ -1813,7 +1826,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
                         "order_intent_level": "none",
                         "answered_facts": {
                             "product_existence": current_entity,
-                            "exists": bool(menu_items),
+                            "exists": has_exact_product_match,
                         },
                         "previous_question": user_message,
                         "last_assistant_action": "answered_product_existence",
@@ -1940,8 +1953,15 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     limit=5,
                 )
                 response_message = format_direct_menu_existence_answer(menu_items)
+                matched_product = menu_items[0] if menu_items else None
+                has_exact_product_match = bool(
+                    matched_product
+                    and int(getattr(matched_product, "match_rank", 99) or 99) <= 3
+                )
                 current_entity = (
-                    getattr(menu_items[0], "name", "") if menu_items else user_message
+                    getattr(matched_product, "name", "")
+                    if has_exact_product_match
+                    else getattr(matched_product, "requested_name", "") or user_message
                 )
                 ai_engine.save_memory(
                     session_id,
@@ -1953,7 +1973,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
                         "order_intent_level": "none",
                         "answered_facts": {
                             "product_existence": current_entity,
-                            "exists": bool(menu_items),
+                            "exists": has_exact_product_match,
                         },
                         "previous_question": user_message,
                         "last_assistant_action": "answered_product_existence",
@@ -2723,10 +2743,16 @@ def create_app(config: ConfigLoader) -> FastAPI:
                             exact_menu_items = [
                                 item
                                 for item in menu_items
-                                if getattr(item, "name", "") == recent_item_name
+                                if score_menu_item_match(
+                                    getattr(item, "name", ""),
+                                    [recent_item_name],
+                                )[0]
+                                <= 3
                             ]
                             if exact_menu_items:
                                 menu_items = exact_menu_items
+                            else:
+                                menu_items = []
                             direct_response = format_contextual_price_reply(
                                 recent_item_name,
                                 menu_items,
@@ -2922,8 +2948,15 @@ def create_app(config: ConfigLoader) -> FastAPI:
                                 limit=5,
                             )
                             direct_response = format_direct_menu_existence_answer(menu_items)
+                            matched_product = menu_items[0] if menu_items else None
+                            has_exact_product_match = bool(
+                                matched_product
+                                and int(getattr(matched_product, "match_rank", 99) or 99) <= 3
+                            )
                             current_entity = (
-                                getattr(menu_items[0], "name", "") if menu_items else message
+                                getattr(matched_product, "name", "")
+                                if has_exact_product_match
+                                else getattr(matched_product, "requested_name", "") or message
                             )
                             ai_engine.save_memory(
                                 session_id,
@@ -2935,7 +2968,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
                                     "order_intent_level": "none",
                                     "answered_facts": {
                                         "product_existence": current_entity,
-                                        "exists": bool(menu_items),
+                                        "exists": has_exact_product_match,
                                     },
                                     "previous_question": message,
                                     "last_assistant_action": "answered_product_existence",

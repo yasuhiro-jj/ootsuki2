@@ -7,6 +7,7 @@ NotionメニューDBから情報を取得して表示用に整形する
 import os
 import re
 import logging
+import unicodedata
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
@@ -25,6 +26,88 @@ class MenuItemView:
     recommendation: Optional[str] = None  # おすすめ理由
     page_id: Optional[str] = None  # Notion page id
     image_url: Optional[str] = None  # メイン画像URL優先、なければ Image URL（生値）
+    match_rank: int = 99
+    match_type: str = ""
+    requested_name: str = ""
+
+
+REGISTERED_MENU_ALIASES = {
+    "生": ["生ビール", "中生ビール"],
+    "生ビール": ["中生ビール", "大生ビール", "小生ビール"],
+    "ビール": ["中生ビール", "大生ビール", "小生ビール", "瓶ビール"],
+    "レモンサワー": ["レモン酎ハイ"],
+    "サワー": ["レモン酎ハイ", "酎ハイ"],
+    "チューハイ": ["酎ハイ"],
+    "刺身盛合": ["刺身盛り合わせ"],
+}
+
+
+def normalize_menu_match_text(value: str) -> str:
+    """Normalize menu names for deterministic matching without merging products."""
+    text = unicodedata.normalize("NFKC", value or "").strip().lower()
+    text = re.sub(r"\s+", "", text)
+    chars = []
+    for char in text:
+        code = ord(char)
+        if 0x3041 <= code <= 0x3096:
+            chars.append(chr(code + 0x60))
+        else:
+            chars.append(char)
+    text = "".join(chars)
+    replacements = (
+        ("刺し身", "刺身"),
+        ("唐揚げ", "唐揚"),
+        ("唐揚", "唐揚"),
+        ("盛り合わせ", "盛合"),
+        ("盛合わせ", "盛合"),
+    )
+    for before, after in replacements:
+        text = text.replace(before, after)
+    return text
+
+
+def _normalized_alias_targets(candidate: str) -> set[str]:
+    normalized_candidate = normalize_menu_match_text(candidate)
+    targets = set()
+    for alias, names in REGISTERED_MENU_ALIASES.items():
+        if normalize_menu_match_text(alias) == normalized_candidate:
+            targets.update(normalize_menu_match_text(name) for name in names)
+    return targets
+
+
+def score_menu_item_match(item_name: str, requested_names: List[str]) -> tuple[int, str, str]:
+    """Return rank, match type, and requested name using the configured priority order."""
+    if not item_name:
+        return 99, "no_name", ""
+
+    item_raw = item_name.strip()
+    item_normalized = normalize_menu_match_text(item_raw)
+    best = (99, "semantic", "")
+
+    for requested in requested_names:
+        requested_raw = (requested or "").strip()
+        if not requested_raw:
+            continue
+        requested_normalized = normalize_menu_match_text(requested_raw)
+        alias_targets = _normalized_alias_targets(requested_raw)
+
+        if item_raw == requested_raw:
+            candidate = (1, "exact_name", requested_raw)
+        elif item_normalized == requested_normalized:
+            candidate = (2, "normalized_exact_name", requested_raw)
+        elif item_normalized in alias_targets:
+            candidate = (3, "alias_exact_name", requested_raw)
+        elif item_normalized.startswith(requested_normalized):
+            candidate = (4, "name_prefix", requested_raw)
+        elif requested_normalized in item_normalized:
+            candidate = (5, "name_partial", requested_raw)
+        else:
+            candidate = (6, "semantic", requested_raw)
+
+        if candidate[0] < best[0]:
+            best = candidate
+
+    return best
 
 
 class MenuService:
@@ -498,11 +581,23 @@ class MenuService:
         for candidate in candidates:
             for item in self.fetch_menu_items(candidate, limit=limit):
                 if item.name and item.name not in seen_names:
+                    rank, match_type, requested_name = score_menu_item_match(
+                        item.name,
+                        candidates,
+                    )
+                    item.match_rank = rank
+                    item.match_type = match_type
+                    item.requested_name = requested_name
                     found.append(item)
                     seen_names.add(item.name)
-            if len(found) >= limit:
-                break
 
+        if not found:
+            return []
+
+        found.sort(key=lambda item: (item.match_rank, item.price or 999999, item.name))
+        best_rank = found[0].match_rank
+        if best_rank <= 3:
+            found = [item for item in found if item.match_rank == best_rank]
         return found[:limit]
 
     def extract_menu_name_candidates(self, query: str) -> List[str]:
@@ -540,7 +635,6 @@ class MenuService:
             "レモンサワー": ["レモン酎ハイ"],
             "サワー": ["レモン酎ハイ", "酎ハイ"],
             "チューハイ": ["酎ハイ"],
-            "刺身": ["刺身盛り合わせ", "刺身定食", "本日のお刺身３点盛り"],
             "刺身盛合": ["刺身盛り合わせ", "本日のお刺身３点盛り"],
         }
 
@@ -581,7 +675,7 @@ class MenuService:
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
 
         if len(cleaned) >= 2:
-            candidates.append(cleaned)
+            candidates.insert(0, cleaned)
 
         unique: List[str] = []
         for candidate in candidates:

@@ -1,4 +1,30 @@
 import { NextResponse } from 'next/server';
+import { detectChatDomain } from '@/lib/conversation/domainRouter';
+import { parseUserMessage } from '@/lib/conversation/intentDetector';
+import { shouldUseNotionAugmentation } from '@/lib/conversation/augmentationRouter';
+import { loadConversationNodes } from '@/lib/conversation/nodeRepository';
+import { chooseNodeForRecommend } from '@/lib/conversation/nodeSelector';
+import { recommendMenus } from '@/lib/conversation/recommendationEngine';
+import { resolveMenuReference } from '@/lib/conversation/referenceResolver';
+import {
+  buildAvailabilityReply,
+  buildDetailReply,
+  buildOrderReply,
+  buildPriceReply,
+  buildRecommendReply,
+} from '@/lib/conversation/replyBuilder';
+import { getSessionContext, saveSessionContext } from '@/lib/conversation/sessionContext';
+import { extractFarmItemName } from '@/lib/farm/farmMatcher';
+import {
+  buildFarmDetailReply,
+  buildFarmPriceReply,
+  buildFarmRecommendReply,
+  buildFarmSeasonReply,
+  buildFarmStockReply,
+} from '@/lib/farm/farmReplyBuilder';
+import { getFarmItemByExactName, getRecommendedFarmItems } from '@/lib/farm/farmRepository';
+import { scoreFarmItem } from '@/lib/farm/farmScorer';
+import { getMenuByExactName } from '@/lib/menu/menuRepository';
 import { fetchNotionContext, notionContextToText } from '@/lib/notion-agent/notion-db-client';
 import { generateReply, type ChatMessage } from '@/lib/notion-agent/openai-chat';
 import type { AgentChatErrorResponse, AgentChatRequestBody } from '@/types/chat';
@@ -361,12 +387,12 @@ export async function POST(request: Request) {
     process.env.NOTION_API_TOKEN?.trim() || process.env.NOTION_API_KEY?.trim();
   const openaiKey = process.env.OPENAI_API_KEY?.trim();
 
-  if (!notionToken || !openaiKey) {
+  if (!notionToken) {
     return NextResponse.json(
       {
         ok: false,
         error: 'missing_config',
-        message: 'NOTION_API_TOKEN（or KEY）と OPENAI_API_KEY をサーバー環境に設定してください。',
+        message: 'NOTION_API_TOKEN をサーバー環境に設定してください。',
       } satisfies AgentChatErrorResponse,
       { status: 503 }
     );
@@ -379,6 +405,271 @@ export async function POST(request: Request) {
   );
 
   try {
+    const parsed = parseUserMessage(message);
+    const conversationContext = getSessionContext(sessionId);
+    const resolved = resolveMenuReference(parsed, conversationContext);
+    const shouldAugment = shouldUseNotionAugmentation(parsed);
+    const domain = detectChatDomain(message);
+
+    if (domain === 'farm') {
+      try {
+        const farmName = extractFarmItemName(message);
+        const farmItem = farmName ? await getFarmItemByExactName(farmName) : null;
+
+        if (farmItem && parsed.intent === 'price_check') {
+          const reply = buildFarmPriceReply(farmItem);
+          history.push({ role: 'user', content: message });
+          history.push({ role: 'assistant', content: reply });
+
+          return NextResponse.json({
+            ok: true,
+            source: 'notion-farm-db',
+            sessionId,
+            intent: 'price_check',
+            farm: farmItem,
+            reply,
+            fallbackUsed: false,
+          });
+        }
+
+        if (farmItem && (parsed.intent === 'availability_check' || parsed.asksAvailability)) {
+          const reply = buildFarmStockReply(farmItem);
+          history.push({ role: 'user', content: message });
+          history.push({ role: 'assistant', content: reply });
+
+          return NextResponse.json({
+            ok: true,
+            source: 'notion-farm-db',
+            sessionId,
+            intent: 'availability_check',
+            farm: farmItem,
+            reply,
+            fallbackUsed: false,
+          });
+        }
+
+        if (farmItem && (parsed.intent === 'detail_followup' || parsed.asksDetail)) {
+          const reply = /旬|収穫/.test(message) ? buildFarmSeasonReply(farmItem) : buildFarmDetailReply(farmItem);
+          history.push({ role: 'user', content: message });
+          history.push({ role: 'assistant', content: reply });
+
+          return NextResponse.json({
+            ok: true,
+            source: 'notion-farm-db',
+            sessionId,
+            intent: parsed.intent,
+            farm: farmItem,
+            reply,
+            fallbackUsed: false,
+          });
+        }
+
+        if (parsed.intent === 'recommend' || /旬|今採れる|野菜/.test(message)) {
+          const items = await getRecommendedFarmItems();
+          const ranked = items.sort((a, b) => scoreFarmItem(b, parsed) - scoreFarmItem(a, parsed));
+          const top = ranked[0];
+
+          if (top) {
+            const reply = /旬|収穫/.test(message) ? buildFarmSeasonReply(top) : buildFarmRecommendReply(top);
+            history.push({ role: 'user', content: message });
+            history.push({ role: 'assistant', content: reply });
+
+            return NextResponse.json({
+              ok: true,
+              source: 'notion-farm-db',
+              sessionId,
+              intent: 'recommend',
+              farm: top,
+              reply,
+              debug: {
+                candidateCount: ranked.length,
+                domain,
+              },
+              fallbackUsed: false,
+            });
+          }
+        }
+      } catch (error) {
+        console.error('[agent-chat] notion farm lookup failed', error);
+      }
+    }
+
+    if (shouldAugment && parsed.intent === 'price_check' && resolved.menuName) {
+      try {
+        const menu = await getMenuByExactName(resolved.menuName);
+
+        if (menu) {
+          const reply = buildPriceReply(menu);
+          conversationContext.lastMentionedMenuId = menu.id;
+          conversationContext.lastMentionedMenuName = menu.name;
+          conversationContext.lastQuotedMenuId = menu.id;
+          conversationContext.lastQuotedMenuName = menu.name;
+          saveSessionContext(conversationContext);
+          history.push({ role: 'user', content: message });
+          history.push({ role: 'assistant', content: reply });
+          sessionMetaStore.set(sessionId, { activeTopic: 'menu' });
+
+          return NextResponse.json({
+            ok: true,
+            source: 'notion-menu-db',
+            sessionId,
+            intent: 'price_check',
+            resolvedBy: resolved.resolvedBy,
+            menu: {
+              id: menu.id,
+              name: menu.name,
+              price: menu.price,
+              available: menu.available,
+              visible: menu.visible,
+            },
+            reply,
+            fallbackUsed: false,
+          });
+        }
+      } catch (error) {
+        console.error('[agent-chat] notion menu price lookup failed', error);
+      }
+    }
+
+    if (
+      shouldAugment &&
+      (parsed.intent === 'detail_followup' || parsed.intent === 'availability_check') &&
+      resolved.menuName
+    ) {
+      try {
+        const menu = await getMenuByExactName(resolved.menuName);
+
+        if (menu) {
+          const reply =
+            parsed.intent === 'availability_check' || parsed.asksAvailability
+              ? buildAvailabilityReply(menu)
+              : buildDetailReply(menu);
+          conversationContext.lastMentionedMenuId = menu.id;
+          conversationContext.lastMentionedMenuName = menu.name;
+          saveSessionContext(conversationContext);
+          history.push({ role: 'user', content: message });
+          history.push({ role: 'assistant', content: reply });
+          sessionMetaStore.set(sessionId, { activeTopic: 'menu' });
+
+          return NextResponse.json({
+            ok: true,
+            source: 'notion-menu-db',
+            sessionId,
+            intent: parsed.intent,
+            resolvedBy: resolved.resolvedBy,
+            menu: {
+              id: menu.id,
+              name: menu.name,
+              price: menu.price,
+              available: menu.available,
+              visible: menu.visible,
+              inStock: menu.inStock,
+              stockStatus: menu.stockStatus,
+            },
+            reply,
+            fallbackUsed: false,
+          });
+        }
+      } catch (error) {
+        console.error('[agent-chat] notion menu detail lookup failed', error);
+      }
+    }
+
+    if (shouldAugment && parsed.intent === 'order' && resolved.menuName) {
+      try {
+        const menu = await getMenuByExactName(resolved.menuName);
+
+        if (menu) {
+          const quantity = parsed.quantity ?? 1;
+          const reply = buildOrderReply(menu, quantity);
+          conversationContext.lastMentionedMenuId = menu.id;
+          conversationContext.lastMentionedMenuName = menu.name;
+          conversationContext.lastOrderedMenuId = menu.id;
+          conversationContext.lastOrderedMenuName = menu.name;
+          saveSessionContext(conversationContext);
+          history.push({ role: 'user', content: message });
+          history.push({ role: 'assistant', content: reply });
+          sessionMetaStore.set(sessionId, { activeTopic: 'order', pendingFlow: 'order' });
+
+          return NextResponse.json({
+            ok: true,
+            source: 'notion-menu-db',
+            sessionId,
+            intent: 'order',
+            resolvedBy: resolved.resolvedBy,
+            order: {
+              menuId: menu.id,
+              menuName: menu.name,
+              quantity,
+            },
+            reply,
+            fallbackUsed: false,
+          });
+        }
+      } catch (error) {
+        console.error('[agent-chat] notion menu order lookup failed', error);
+      }
+    }
+
+    if (shouldAugment && parsed.intent === 'recommend') {
+      try {
+        const nodes = await loadConversationNodes();
+        const node = chooseNodeForRecommend(message, nodes, parsed);
+        const recommendations = await recommendMenus(parsed, node);
+        const top = recommendations[0];
+
+        if (top) {
+          const reply = buildRecommendReply(top, node, parsed.drinkContext);
+          conversationContext.lastMentionedMenuId = top.id;
+          conversationContext.lastMentionedMenuName = top.name;
+          conversationContext.lastRecommendedMenuId = top.id;
+          conversationContext.lastRecommendedMenuName = top.name;
+          saveSessionContext(conversationContext);
+          history.push({ role: 'user', content: message });
+          history.push({ role: 'assistant', content: reply });
+          sessionMetaStore.set(sessionId, { activeTopic: 'recommendation' });
+
+          return NextResponse.json({
+            ok: true,
+            source: 'notion-node-and-menu-db',
+            sessionId,
+            intent: 'recommend',
+            node: node
+              ? {
+                  nodeName: node.nodeName,
+                  purpose: node.purpose,
+                  category: node.category,
+                  contextType: node.contextType,
+                }
+              : null,
+            menu: {
+              id: top.id,
+              name: top.name,
+              price: top.price,
+              reason: top.recommendationReason,
+            },
+            reply,
+            fallbackUsed: false,
+          });
+        }
+      } catch (error) {
+        console.error('[agent-chat] notion recommendation lookup failed', error);
+      }
+    }
+
+    if (parsed.explicitMenuName) {
+      try {
+        const menu = await getMenuByExactName(parsed.explicitMenuName);
+        if (menu) {
+          conversationContext.lastMentionedMenuId = menu.id;
+          conversationContext.lastMentionedMenuName = menu.name;
+          saveSessionContext(conversationContext);
+        }
+      } catch (error) {
+        console.error('[agent-chat] notion mention lookup failed', error);
+      }
+    }
+
     const route = classifyRoute(message, sessionMetaStore.get(sessionId));
     updateSessionMeta(sessionId, message, route);
     let contextText = '';
@@ -397,6 +688,17 @@ export async function POST(request: Request) {
         source: 'latest-unavailable',
         fallbackUsed: false,
       });
+    }
+
+    if (!openaiKey) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'missing_config',
+          message: 'OPENAI_API_KEY をサーバー環境に設定してください。',
+        } satisfies AgentChatErrorResponse,
+        { status: 503 }
+      );
     }
 
     const reply = await generateReply({

@@ -47,6 +47,13 @@ MENU_PRODUCT_TERMS = [
     "お刺身",
     "刺身盛り合わせ",
     "刺身盛合",
+    "刺身定食",
+    "唐揚",
+    "唐揚げ",
+    "唐揚げ定食",
+    "定食",
+    "せんべろセット",
+    "せんべろセットA",
 ]
 
 
@@ -73,11 +80,13 @@ def format_direct_menu_existence_answer(items: List[Any]) -> str:
     name = getattr(first, "name", "") or "そのメニュー"
     price = getattr(first, "price", None)
     price_text = f"（{int(price):,}円）" if isinstance(price, (int, float)) and price > 0 else ""
+    match_rank = int(getattr(first, "match_rank", 1) or 1)
+    requested_name = str(getattr(first, "requested_name", "") or "").strip()
 
-    if len(items) == 1:
+    if match_rank <= 3 and len(items) == 1:
         return f"はい、{name}{price_text}ありますよ。"
 
-    if name:
+    if match_rank <= 3 and name:
         return f"はい、{name}{price_text}ありますよ。"
 
     names = []
@@ -87,5 +96,10 @@ def format_direct_menu_existence_answer(items: List[Any]) -> str:
         if item_name:
             suffix = f"（{int(item_price):,}円）" if isinstance(item_price, (int, float)) and item_price > 0 else ""
             names.append(f"{item_name}{suffix}")
+
+    if names:
+        if requested_name:
+            return f"{requested_name}という商品は確認できませんでした。関連する商品では、" + "、".join(names) + "があります。"
+        return "完全一致する商品は確認できませんでした。関連する商品では、" + "、".join(names) + "があります。"
 
     return "はい、ございます。" + "、".join(names) + " があります。"
