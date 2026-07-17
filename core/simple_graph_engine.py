@@ -20,6 +20,101 @@ from .menu_existence import is_direct_menu_existence_question
 
 logger = logging.getLogger(__name__)
 
+STATIC_NOTION_FLOWS: Dict[str, Dict[str, Any]] = {
+    "takeout_bento_flow_v1": {
+        "route": "bento_flow",
+        "start": "takeout_start",
+        "steps": {
+            "takeout_start": {"message": "テイクアウト弁当ですね。唐揚げ弁当、しゅうまい弁当、その他の持ち帰り一品をご案内できます。", "options": ["唐揚げ弁当を見る", "しゅうまい弁当を見る", "その他の持ち帰りを見る", "案内を終了する"], "keywords": ["テイクアウト", "持ち帰り", "お持ち帰り", "弁当", "お弁当", "べんとう"]},
+            "takeout_karaage_category": {"message": "唐揚げ弁当でしたら、並・小・大・特大や、豚唐揚げ弁当などをご案内できます。", "options": ["唐揚げ弁当 並", "唐揚げ弁当 小", "唐揚げ弁当 大", "唐揚げ弁当 特大", "豚唐揚げ弁当", "他カテゴリへ戻る"], "keywords": ["唐揚げ弁当を見る", "唐揚げ弁当", "唐揚げ", "からあげ", "カラアゲ"]},
+            "takeout_shumai_category": {"message": "しゅうまい弁当でしたら、並・小・大や、しゅうまい餃子ミックス弁当をご案内できます。", "options": ["並しゅうまい弁当", "小しゅうまい弁当", "大しゅうまい弁当", "しゅうまい餃子ミックス弁当", "他カテゴリへ戻る"], "keywords": ["しゅうまい弁当を見る", "しゅうまい", "シュウマイ", "しゅうまい弁当"]},
+            "takeout_other_category": {"message": "その他の持ち帰りなら、天丼、海老天丼、焼餃子、白ごはんなどもご案内できます。", "options": ["天丼", "海老天丼", "焼餃子5個", "白ごはん並", "他カテゴリへ戻る"], "keywords": ["その他の持ち帰りを見る", "その他", "一品", "持ち帰り一品", "テイクアウト一品"]},
+            "takeout_karaage_regular": {"message": "唐揚げ弁当 並をご案内できます。テイクアウト弁当の定番としておすすめです。", "options": ["他の弁当を見る", "案内を終了する"], "keywords": ["唐揚げ弁当 並", "並 唐揚げ弁当"]},
+            "takeout_karaage_small": {"message": "持帰 小 唐揚げ弁当をご案内できます。軽めに食べたい方におすすめです。", "options": ["他の弁当を見る", "案内を終了する"], "keywords": ["唐揚げ弁当 小", "小 唐揚げ弁当"]},
+            "takeout_karaage_large": {"message": "持帰 大 唐揚げ弁当をご案内できます。しっかり食べたい方におすすめです。", "options": ["他の弁当を見る", "案内を終了する"], "keywords": ["唐揚げ弁当 大", "大 唐揚げ弁当"]},
+            "takeout_karaage_xlarge": {"message": "持帰 特大 唐揚げ弁当をご案内できます。ボリューム重視の方におすすめです。", "options": ["他の弁当を見る", "案内を終了する"], "keywords": ["唐揚げ弁当 特大", "特大 唐揚げ弁当"]},
+            "takeout_pork_karaage": {"message": "持帰 豚唐揚げ弁当をご案内できます。豚唐揚げが好きな方におすすめです。", "options": ["他の弁当を見る", "案内を終了する"], "keywords": ["豚唐揚げ弁当", "豚唐揚げ"]},
+            "takeout_shumai_regular": {"message": "並しゅうまい弁当をご案内できます。しゅうまい弁当の標準サイズとしておすすめです。", "options": ["他の弁当を見る", "案内を終了する"], "keywords": ["並しゅうまい弁当", "しゅうまい弁当 並"]},
+            "takeout_shumai_small": {"message": "小しゅうまい弁当をご案内できます。軽めに食べたい方におすすめです。", "options": ["他の弁当を見る", "案内を終了する"], "keywords": ["小しゅうまい弁当", "しゅうまい弁当 小"]},
+            "takeout_shumai_large": {"message": "大しゅうまい弁当をご案内できます。しっかり食べたい方におすすめです。", "options": ["他の弁当を見る", "案内を終了する"], "keywords": ["大しゅうまい弁当", "しゅうまい弁当 大"]},
+            "takeout_shumai_mix": {"message": "しゅうまい餃子ミックス弁当をご案内できます。しゅうまいと餃子の両方を楽しみたい方におすすめです。", "options": ["他の弁当を見る", "案内を終了する"], "keywords": ["しゅうまい餃子ミックス弁当", "ミックス弁当"]},
+            "takeout_other_items": {"message": "テイクアウト一品として、天丼・海老天丼・焼餃子5個・白ごはん並などをご案内できます。", "options": ["他の持ち帰りを見る", "案内を終了する"], "keywords": ["天丼", "海老天丼", "えび天丼", "焼餃子", "餃子", "焼餃子5個", "白ごはん", "ごはん", "ご飯", "白ごはん並"]},
+            "takeout_flow_complete": {"message": "テイクアウト弁当・持ち帰り一品は、選択いただいたような商品をご案内できます。必要でしたら、唐揚げ弁当・しゅうまい弁当・その他一品から再度ご案内できます。", "options": ["完了", "他の持ち帰りを見る"], "keywords": ["案内を終了する", "案内終了", "大丈夫", "参考にする", "終了"]},
+        },
+        "return_options": ["他カテゴリへ戻る", "他の弁当を見る", "他の持ち帰りを見る"],
+    },
+    "reservation_consult_flow_v1": {
+        "route": "banquet_flow",
+        "start": "reservation_start",
+        "steps": {
+            "reservation_start": {"message": "予約のご希望ですね。通常の席予約ですか？それとも宴会・団体予約ですか？", "options": ["通常の席予約", "宴会・団体予約", "LINEで相談", "案内を終了する"], "keywords": ["予約", "予約したい", "席予約", "宴会予約", "忘年会", "団体予約"]},
+            "seat_reservation_start": {"message": "通常の席予約ですね。人数・ご希望日時・お名前を順番に確認します。", "options": ["人数を伝える", "希望日時を伝える", "名前を伝える", "LINEで相談"], "keywords": ["通常の席予約", "席予約", "テーブル予約", "2名予約", "3名予約", "4名予約"]},
+            "banquet_reservation_start": {"message": "宴会・団体予約ですね。人数、希望日時、コース、飲み放題の有無を確認します。", "options": ["人数を伝える", "希望日時を伝える", "コースを相談する", "飲み放題を相談する", "LINEで相談"], "keywords": ["宴会・団体予約", "宴会", "団体", "忘年会", "飲み放題", "コース", "10名", "大人数"]},
+            "reservation_line_guide": {"message": "予約相談はLINEでも受付しています。人数・希望日時・お名前を送っていただくと確認しやすいです。LINEはこちら：https://j2vwf7ca.autosns.app/addfriend/s/rrgjaO8SXk/@241usmjy", "options": ["案内を終了する", "最初に戻る"], "keywords": ["LINEで相談", "LINE", "ライン", "相談", "急ぎ", "連絡"]},
+            "seat_people_check": {"message": "通常の席予約ですね。まず人数を教えてください。例：2名です。", "options": ["希望日時を伝える", "名前を伝える", "LINEで相談"], "keywords": ["人数を伝える", "人数", "2名", "3名", "4名", "何人"]},
+            "seat_datetime_check": {"message": "ご希望の日時を教えてください。例：8月15日の18時、今日の夜など。", "options": ["人数を伝える", "名前を伝える", "LINEで相談"], "keywords": ["希望日時を伝える", "日時", "時間", "今日", "明日", "18時", "19時", "希望時間"]},
+            "seat_name_check": {"message": "確認用のお名前を教えてください。いただいた内容は予約相談としてLINEまたはお店側確認につなげる案内になります。", "options": ["LINEで相談", "案内を終了する", "最初に戻る"], "keywords": ["名前を伝える", "名前", "氏名", "名乗る"]},
+            "banquet_course_check": {"message": "宴会コースについての相談ですね。お料理のみ、または飲み放題付きでの相談ができます。正式な確定はLINEで確認する形が安全です。", "options": ["飲み放題を相談する", "人数を伝える", "希望日時を伝える", "LINEで相談"], "keywords": ["コースを相談する", "コース", "料理", "料理のみ", "宴会コース"]},
+            "banquet_drinkplan_check": {"message": "飲み放題についてご案内します。アルコール飲み放題、ソフトドリンク飲み放題、お料理のみから相談できます。正式な内容はLINEで確認する形が安全です。", "options": ["アルコール飲み放題", "ソフトドリンク飲み放題", "お料理のみ", "LINEで相談"], "keywords": ["飲み放題を相談する", "飲み放題", "アルコール", "ソフトドリンク", "ドリンク付き", "ドリンク別"]},
+            "reservation_flow_complete": {"message": "予約相談は、通常の席予約または宴会・団体予約として、人数・希望日時・お名前を整理してLINEでご相談いただく形が安全です。", "options": ["完了", "最初に戻る", "LINEで相談"], "keywords": ["案内を終了する", "案内終了", "大丈夫", "参考にする", "終了"]},
+        },
+        "return_options": ["最初に戻る"],
+    },
+    "tempura_menu_flow_v1": {
+        "route": "food_flow",
+        "start": "tempura_start",
+        "steps": {
+            "tempura_start": {"message": "天ぷらメニューですね。野菜天ぷら、海鮮天ぷら、かき揚げ、季節の天ぷら、盛り合わせをご案内できます。", "options": ["野菜天ぷら", "海鮮天ぷら", "かき揚げ", "季節の天ぷら", "盛り合わせ"], "keywords": ["天ぷら", "てんぷら", "天ぷらメニュー", "揚げ物"]},
+            "tempura_veg": {"message": "野菜天ぷらなら、人参、なす、ピーマン、かぼちゃなどがおすすめです。", "options": ["他の天ぷらを見る", "案内を終了する"], "keywords": ["野菜天ぷら", "野菜", "人参", "なす", "ピーマン", "かぼちゃ"]},
+            "tempura_seafood": {"message": "海鮮天ぷらなら海老・あじ・いか・白身魚、いろいろ楽しむなら天ぷら盛り合せもおすすめです。", "options": ["他の天ぷらを見る", "案内を終了する"], "keywords": ["海鮮天ぷら", "海鮮", "海老天", "あじ天", "いか天", "白身魚", "かき揚げ", "盛り合わせ", "季節の天ぷら"]},
+            "tempura_complete": {"message": "天ぷらは、野菜・海鮮・かき揚げ・季節もの・盛り合わせから選ぶ形がおすすめです。", "options": ["完了", "最初に戻る"], "keywords": ["案内を終了する", "案内終了", "終了", "大丈夫", "参考にする"]},
+        },
+        "return_options": ["他の天ぷらを見る"],
+    },
+    "yakitori_menu_flow_v1": {
+        "route": "food_flow",
+        "start": "yakitori_start",
+        "steps": {
+            "yakitori_start": {"message": "焼き鳥メニューですね。盛り合わせ、とりもも、ねぎま、味付けをご案内できます。", "options": ["焼き鳥盛り合わせ", "とりもも", "ねぎま", "たれ・塩を知りたい", "案内終了"], "keywords": ["焼き鳥", "鳥", "串焼き", "焼き鳥メニュー"]},
+            "yakitori_assort": {"message": "焼き鳥盛り合わせは、いろいろな種類を少しずつ楽しみたい方におすすめです。", "options": ["他の焼き鳥を見る", "案内を終了する"], "keywords": ["焼き鳥盛り合わせ", "盛り合わせ", "セット"]},
+            "yakitori_thigh_negima": {"message": "とりもも・ねぎまは、たれと塩から選ぶ案内ができます。お好みに合わせておすすめできます。", "options": ["他の焼き鳥を見る", "案内を終了する"], "keywords": ["とりもも", "もも肉", "ねぎま", "たれ", "塩", "味付け", "たれ・塩を知りたい"]},
+            "yakitori_complete": {"message": "焼き鳥は、盛り合わせ・とりもも・ねぎま・たれ塩の好みで選ぶ形がおすすめです。", "options": ["完了", "最初に戻る"], "keywords": ["案内終了", "案内を終了する", "終了", "大丈夫", "参考にする"]},
+        },
+        "return_options": ["他の焼き鳥を見る"],
+    },
+    "tonight_recommend_flow_v1": {
+        "route": "food_flow",
+        "start": "tonight_start",
+        "steps": {
+            "tonight_start": {"message": "今晩のおすすめ一品ですね。鶏唐揚げ系、肉料理系、馬肉料理系をご案内できます。", "options": ["鶏唐揚げ系", "肉料理系", "馬肉料理系", "案内終了"], "keywords": ["今晩", "夜のおすすめ", "ディナー", "一品", "今晩おすすめ"]},
+            "tonight_recommend_categories": {"message": "今晩は、元祖鶏唐揚げ、酢豚、豚肉ブルコギ焼肉、馬刺し赤身などがおすすめです。", "options": ["他のおすすめを見る", "案内を終了する"], "keywords": ["鶏唐揚げ系", "肉料理系", "馬肉料理系", "唐揚げ", "肉料理", "馬肉", "馬刺し", "酢豚", "ブルコギ"]},
+            "tonight_complete": {"message": "今晩のおすすめは、唐揚げ系・肉料理系・馬肉料理系から選ぶ形がおすすめです。", "options": ["完了", "最初に戻る"], "keywords": ["案内終了", "案内を終了する", "終了", "大丈夫", "参考にする"]},
+        },
+        "return_options": ["他のおすすめを見る"],
+    },
+    "store_faq_flow_v1": {
+        "route": "food_flow",
+        "start": "faq_start",
+        "steps": {
+            "faq_start": {"message": "店舗情報ですね。営業時間・定休日・駐車場・支払い方法・ランチ時間をご案内できます。", "options": ["営業時間", "定休日", "駐車場", "支払い方法", "ランチ時間"], "keywords": ["営業時間", "定休日", "駐車場", "支払い", "カード", "決済", "ランチ時間"]},
+            "faq_hours_holiday": {"message": "営業時間は 11時〜14時 / 17時〜21時30分です。定休日は火曜日です。臨時休業はLINE等で確認する案内が安全です。", "options": ["駐車場を見る", "支払い方法を見る", "案内を終了する"], "keywords": ["営業時間", "定休日", "何時", "営業日", "休み", "休業日", "ランチ時間"]},
+            "faq_parking_payment": {"message": "駐車場はございます。お支払いは、現金・クレジットカード・交通系IC・QR決済・電子マネーに対応しています。", "options": ["営業時間を見る", "ランチ時間を見る", "案内を終了する"], "keywords": ["駐車場", "車", "カード", "クレジットカード", "支払い方法", "支払い", "決済", "電子マネー", "QR決済"]},
+            "faq_complete": {"message": "店舗情報は、営業時間・定休日・駐車場・支払い方法・ランチ時間を確認できます。", "options": ["完了", "最初に戻る"], "keywords": ["案内を終了する", "終了", "大丈夫", "参考にする"]},
+        },
+        "return_options": ["営業時間を見る", "駐車場を見る", "支払い方法を見る", "ランチ時間を見る"],
+    },
+    "teishoku_recommend_flow_v1": {
+        "route": "food_flow",
+        "start": "teishoku_start",
+        "steps": {
+            "teishoku_start": {"message": "定食メニューですね。看板系、揚げ物系、焼き物・炒め物系をご案内できます。", "options": ["看板定食", "揚げ物定食", "焼き物・炒め物定食", "案内終了"], "keywords": ["定食", "定食おすすめ", "ご飯", "がっつり", "食事"]},
+            "teishoku_recommend_categories": {"message": "がっつりなら煮込みカツ定食・元祖おおつき焼肉定食・豚にら炒め定食、揚げ物なら天ぷら定食・とんかつ定食もおすすめです。", "options": ["他の定食を見る", "案内を終了する"], "keywords": ["看板定食", "揚げ物定食", "焼き物・炒め物定食", "煮込みカツ", "焼肉定食", "豚にら", "生姜焼き", "天ぷら", "とんかつ"]},
+            "teishoku_complete": {"message": "定食は、看板系・揚げ物系・焼き物/炒め物系から選ぶ形がおすすめです。", "options": ["完了", "最初に戻る"], "keywords": ["案内終了", "案内を終了する", "終了", "大丈夫", "参考にする"]},
+        },
+        "return_options": ["他の定食を見る"],
+    },
+}
+
 LATEST_INFO_UNAVAILABLE_MESSAGE = (
     "現在のリアルタイム情報にはまだ接続されていないため、"
     "今日の天気・ニュース・試合結果などを正確には確認できません。"
@@ -156,6 +251,62 @@ class SimpleGraphEngine:
         """必要に応じてクロスリフレクションエンジンを初期化"""
         return self._initialize_cross_reflection_engine()
     
+    def _match_static_notion_flow(self, message: str, context: Optional[Dict[str, Any]] = None) -> Optional[Tuple[str, str]]:
+        text = (message or "").strip()
+        if not text:
+            return None
+
+        context = context or {}
+        current_flow_id = context.get("flow_id")
+        if current_flow_id in STATIC_NOTION_FLOWS:
+            flow = STATIC_NOTION_FLOWS[current_flow_id]
+            if text in ["案内を終了する", "案内終了", "終了", "大丈夫", "参考にする"]:
+                for step_id in flow["steps"]:
+                    if step_id.endswith("_complete"):
+                        return current_flow_id, step_id
+            if text in flow.get("return_options", []) or text == "最初に戻る":
+                return current_flow_id, flow["start"]
+
+        flow_order = [
+            "store_faq_flow_v1",
+            "takeout_bento_flow_v1",
+            "tempura_menu_flow_v1",
+            "yakitori_menu_flow_v1",
+            "tonight_recommend_flow_v1",
+            "teishoku_recommend_flow_v1",
+            "reservation_consult_flow_v1",
+        ]
+        for flow_id in flow_order:
+            flow = STATIC_NOTION_FLOWS[flow_id]
+            if text in flow.get("return_options", []):
+                return flow_id, flow["start"]
+            for step_id, step in flow["steps"].items():
+                if text in step.get("options", []):
+                    return flow_id, step_id
+                for keyword in step.get("keywords", []):
+                    if keyword and keyword in text:
+                        return flow_id, step_id
+        return None
+
+    def _apply_static_notion_flow(self, state: State, route_name: str) -> bool:
+        messages = state.get("messages", [])
+        last_message = messages[-1] if messages else ""
+        match = self._match_static_notion_flow(last_message, state.get("context", {}))
+        if not match:
+            return False
+
+        flow_id, step_id = match
+        flow = STATIC_NOTION_FLOWS[flow_id]
+        if flow.get("route") != route_name:
+            return False
+
+        step = flow["steps"][step_id]
+        state["response"] = step["message"]
+        state["options"] = step["options"]
+        state["context"] = {**state.get("context", {}), "flow_id": flow_id, "flow_step_id": step_id}
+        logger.info(f"[StaticNotionFlow] matched: {flow_id}/{step_id}")
+        return True
+
     def greeting(self, state: State) -> State:
         """挨拶ノード（人間味のある接客・時間帯対応）"""
         logger.info("[Node] greeting")
@@ -304,6 +455,8 @@ class SimpleGraphEngine:
     def food_flow(self, state: State) -> State:
         """食事案内ノード"""
         logger.info("[Node] food_flow")
+        if self._apply_static_notion_flow(state, "food_flow"):
+            return state
         
         # コンテキストを再収集（時間帯判定を最新にする）
         context = self._update_time_context(state)
@@ -531,6 +684,8 @@ class SimpleGraphEngine:
     def bento_flow(self, state: State) -> State:
         """弁当案内ノード"""
         logger.info("[Node] bento_flow")
+        if self._apply_static_notion_flow(state, "bento_flow"):
+            return state
         
         # ユーザーの質問内容に応じて柔軟なレスポンス
         messages = state.get("messages", [])
@@ -1136,6 +1291,8 @@ class SimpleGraphEngine:
     def banquet_flow(self, state: State) -> State:
         """宴会案内ノード（banquet_entry等）"""
         logger.info("[Node] banquet_flow")
+        if self._apply_static_notion_flow(state, "banquet_flow"):
+            return state
         
         # コンテキストからノードIDを取得
         context = state.get("context", {})
@@ -4930,6 +5087,14 @@ class SimpleGraphEngine:
         
         # 正規化したメッセージを作成（キーワードマッチング用）
         normalized_last_message = self._normalize_text(last_message)
+
+        static_flow_match = self._match_static_notion_flow(last_message, state.get("context", {}))
+        if static_flow_match:
+            flow_id, step_id = static_flow_match
+            route_name = STATIC_NOTION_FLOWS[flow_id].get("route")
+            if route_name:
+                logger.info(f"[Route] static Notion flow matched: {flow_id}/{step_id} -> {route_name}")
+                return route_name
         
         # 「（続きを見る）」と「（続きはこちら）」を含むメッセージは最優先でoption_clickにルーティング
         if "（続きを見る）" in last_message or "（続きはこちら）" in last_message:
