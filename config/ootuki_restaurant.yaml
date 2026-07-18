@@ -16,6 +16,13 @@ notion:
     conversation_db: "700563e396c84f8f89adafb90c51ca3f"  # 会話ノードDB
     conversation_history_db: "262e9a7ee5b780939967d01fe7f9fe9e"  # 会話履歴DB（新）
     unknown_keywords_db: "6cccf26b198645f2b08d71fb9b1d01f0"  # 不明キーワード記録DB
+  chatbot_sync:
+    store_knowledge_db: ${NOTION_CHATBOT_STORE_KNOWLEDGE_DB_ID}
+    menu_db: ${NOTION_CHATBOT_MENU_DB_ID}
+    conversation_eval_db: ${NOTION_CHATBOT_CONVERSATION_EVAL_DB_ID}
+    improvement_tasks_db: ${NOTION_CHATBOT_IMPROVEMENT_TASKS_DB_ID}
+    cache_dir: ${NOTION_SYNC_CACHE_DIR}
+    report_path: ${NOTION_SYNC_REPORT_PATH}
 
 knowledge_base:
   path: "./apps/ootuki_restaurant/knowledge/"
@@ -60,6 +67,7 @@ features:
   enable_agent_executor: false # AgentExecutorによる自動ツール呼び出しを有効化
   save_conversation: true   # 会話履歴の保存（Notionデータベースに保存されます）
   enable_conversation_quality_logs: true # 会話改善AI用の安全な評価ログを保存
+  enable_autonomous_conversation_orchestrator: true # Phase 1: 状態/意図/ツール選択のみ。応答は既存処理へフォールバック
 
 langgraph:
   flow_type: "restaurant"   # 会話フロータイプ（restaurant, insurance, legal, generic）

@@ -31,6 +31,7 @@ from .conversation_router import (
     infer_memory_updates,
     should_search_standard_answer,
 )
+from .conversation_orchestrator import AutonomousConversationOrchestrator
 from .menu_existence import (
     format_direct_menu_existence_answer,
     is_direct_menu_existence_question,
@@ -411,6 +412,11 @@ def create_app(config: ConfigLoader) -> FastAPI:
         notion_client=notion_client,
         config=config,
         menu_service=shared_menu_service,
+    )
+    autonomous_orchestrator = (
+        AutonomousConversationOrchestrator()
+        if config.get("features.enable_autonomous_conversation_orchestrator", True)
+        else None
     )
     quality_logger = ConversationQualityLogger(
         path=config.get("conversation_quality.log_path", "outputs/conversation_quality_logs.jsonl"),
@@ -1020,6 +1026,27 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 for turn in recent_turns
                 if turn.get("content")
             ]
+            if autonomous_orchestrator:
+                orchestration_decision = autonomous_orchestrator.inspect(
+                    user_message,
+                    session_id=session_id,
+                    customer_id=request.customer_id or "",
+                    session_memory=session_memory,
+                    recent_messages=recent_messages,
+                )
+                plan = orchestration_decision.plan
+                tools = orchestration_decision.tools
+                logger.info(
+                    "[AutonomousConversation] session=%s handled=%s fallback=%s intent=%s topic=%s tools=%s reason=%s error=%s",
+                    session_id[:8],
+                    orchestration_decision.handled,
+                    orchestration_decision.fallback_to_legacy,
+                    plan.intent if plan else "",
+                    plan.topic if plan else "",
+                    ",".join(tools.names) if tools else "",
+                    orchestration_decision.reason,
+                    orchestration_decision.error,
+                )
             conversation_route = classify_conversation_route(
                 user_message,
                 recent_messages=recent_messages,
