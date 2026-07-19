@@ -154,3 +154,102 @@ quality in Phase 6-B, add only these minimum columns:
 - Store FAQ DB: `検索語/同義語`
 
 Do not add columns as part of Phase 6-A.
+
+## Phase 6-B Public Knowledge Filter
+
+Issue #8 adds a read-only public knowledge filter on top of the Phase 6-A
+normalization output. The sync still writes all fetched rows to normalized
+local files, and it does not modify Notion.
+
+Additional output files:
+
+- `outputs/notion_sync/menu.public.jsonl`
+- `outputs/notion_sync/store_faq.public.jsonl`
+- `outputs/notion_sync/public_knowledge_report.json`
+
+`report.json` also includes:
+
+- `public_menu_count`
+- `public_store_faq_count`
+- `public_knowledge.menu.included_count`
+- `public_knowledge.menu.excluded_count`
+- `public_knowledge.menu.excluded_reasons`
+- `public_knowledge.menu.warnings`
+- `public_knowledge.store_faq.included_count`
+- `public_knowledge.store_faq.excluded_count`
+- `public_knowledge.store_faq.excluded_reasons`
+- `public_knowledge.store_faq.warnings`
+
+### Public Menu Conditions
+
+Only menu rows satisfying all conditions are written to `menu.public.jsonl`:
+
+- `AI公開 == true`
+- `提供状態` is `提供中` or `季節限定`
+- product name is not empty, `コピー`, `ー`, or another placeholder
+- price exists and is not abnormal
+
+Rows outside those conditions are not deleted. They remain in
+`menu.normalized.jsonl` and are counted with exclusion reason codes:
+
+- `not_ai_public`
+- `not_available_for_public_ai`
+- `placeholder_name`
+- `missing_price`
+- `abnormal_price`
+
+Duplicate names inside the public menu set are kept and reported as
+`menu.public_duplicate_name` warnings.
+
+`別名検索語` is normalized into the `aliases` list. Commas, Japanese commas,
+newlines, semicolons, and slashes can be used as separators.
+
+### Public Store FAQ Conditions
+
+Only store FAQ rows satisfying all conditions are written to
+`store_faq.public.jsonl`:
+
+- `回答可否 == true`
+- `FAQカテゴリ` is present
+- the row has answer material
+- `valid_until` / `有効終了日` is not expired
+
+Rows outside those conditions are not deleted. They remain in
+`store_faq.normalized.jsonl` and are counted with exclusion reason codes:
+
+- `not_answer_allowed`
+- `missing_faq_category`
+- `missing_answer_material`
+- `expired_valid_until`
+
+Duplicate public FAQ keys inside the same category are kept and reported as
+`store.public_duplicate_faq` warnings.
+
+### GitHub Actions Check
+
+Run the `Notion Knowledge Sync Validation` workflow manually with `target=all`.
+After it finishes, download the `notion-sync-report` artifact and inspect:
+
+- `report.json` for total counts, public counts, and validation issues
+- `public_knowledge_report.json` for included/excluded counts, exclusion
+  reasons, and duplicate warnings
+- `menu.public.jsonl` for future direct-answer menu candidates
+- `store_faq.public.jsonl` for future direct-answer FAQ candidates
+
+The workflow remains dry-run only. It does not deploy and does not write to
+Notion.
+
+### Safe Menu Selection Procedure
+
+For the current 983 menu rows:
+
+1. Keep every row and do not delete duplicates, `コピー`, `ー`, or old drafts.
+2. Leave `AI公開` off by default.
+3. Set `提供状態` for confirmed current items only.
+4. Turn `AI公開` on only for items AI may directly answer from.
+5. Add common search terms to `別名検索語` when helpful.
+6. Run the GitHub Actions dry-run and confirm the public menu count, exclusion
+   reasons, and public duplicate warnings before using the public JSONL files.
+
+If the new Notion properties are missing, the sync safely falls back to zero
+public direct-answer rows by treating `AI公開` and `回答可否` as false.

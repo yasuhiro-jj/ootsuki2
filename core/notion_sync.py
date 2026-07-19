@@ -8,10 +8,11 @@ validated in CI before later phases feed them into RAG or application caches.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 import json
 import os
 from pathlib import Path
+import re
 from typing import Any, Callable, Iterable, Literal, Optional
 
 
@@ -19,6 +20,9 @@ MENU_DB_ID = "262e9a7e-e5b7-801e-8a67-d962ab454c70"
 STORE_DB_ID = "262e9a7e-e5b7-806e-911c-e966a0ccf7fe"
 
 DEFAULT_OUTPUT_DIR = "outputs/notion_sync"
+
+PUBLIC_MENU_STATUSES = {"提供中", "季節限定"}
+PLACEHOLDER_MENU_NAMES = {"", "-", "ー", "ｰ", "―", "－", "–", "—", "コピー", "copy"}
 
 MENU_PROP_ALIASES = {
     "name": ("名前", "Name"),
@@ -68,6 +72,9 @@ class NormalizedMenuItem:
     requires_reservation: bool = False
     serving_size: str = ""
     image_url: str = ""
+    ai_public: bool = False
+    availability_status: str = ""
+    aliases: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -93,6 +100,8 @@ class NormalizedStoreFaq:
     features: str = ""
     reservation_method: str = ""
     notes: str = ""
+    faq_category: str = ""
+    answer_allowed: bool = False
 
 
 @dataclass
@@ -114,6 +123,9 @@ class SyncReport:
     store_db_id: str
     menu_count: int = 0
     store_count: int = 0
+    public_menu_count: int = 0
+    public_store_faq_count: int = 0
+    public_knowledge: dict[str, Any] = field(default_factory=dict)
     issues: list[ValidationIssue] = field(default_factory=list)
     outputs: dict[str, str] = field(default_factory=dict)
 
@@ -212,6 +224,9 @@ def normalize_menu_page(page: dict[str, Any]) -> NormalizedMenuItem:
             _value_by_alias(props, MENU_PROP_ALIASES["serving_size"]) or ""
         ).strip(),
         image_url=str(_value_by_alias(props, MENU_PROP_ALIASES["image_url"]) or "").strip(),
+        ai_public=bool(_value_by_alias(props, ("AI公開",)) or False),
+        availability_status=str(_value_by_alias(props, ("提供状態",)) or "").strip(),
+        aliases=_split_aliases(_value_by_alias(props, ("別名検索語",))),
     )
 
 
@@ -229,8 +244,16 @@ def normalize_store_page(page: dict[str, Any]) -> NormalizedStoreFaq:
         parking=_bool_or_none(_value_by_alias(props, STORE_PROP_ALIASES["parking"])),
         takeout=_bool_or_none(_value_by_alias(props, STORE_PROP_ALIASES["takeout"])),
         seats=_float_or_none(_value_by_alias(props, STORE_PROP_ALIASES["seats"])),
-        valid_from=str(_value_by_alias(props, STORE_PROP_ALIASES["valid_from"]) or ""),
-        valid_until=str(_value_by_alias(props, STORE_PROP_ALIASES["valid_until"]) or ""),
+        valid_from=str(
+            _value_by_alias(props, STORE_PROP_ALIASES["valid_from"])
+            or _value_by_alias(props, ("valid_from", "有効開始日"))
+            or ""
+        ),
+        valid_until=str(
+            _value_by_alias(props, STORE_PROP_ALIASES["valid_until"])
+            or _value_by_alias(props, ("valid_until", "有効終了日"))
+            or ""
+        ),
         priority=_float_or_none(_value_by_alias(props, STORE_PROP_ALIASES["priority"])),
         address=str(_value_by_alias(props, STORE_PROP_ALIASES["address"]) or "").strip(),
         phone=str(_value_by_alias(props, STORE_PROP_ALIASES["phone"]) or "").strip(),
@@ -243,6 +266,8 @@ def normalize_store_page(page: dict[str, Any]) -> NormalizedStoreFaq:
             _value_by_alias(props, STORE_PROP_ALIASES["reservation_method"]) or ""
         ).strip(),
         notes=str(_value_by_alias(props, STORE_PROP_ALIASES["notes"]) or "").strip(),
+        faq_category=str(_value_by_alias(props, ("FAQカテゴリ",)) or "").strip(),
+        answer_allowed=bool(_value_by_alias(props, ("回答可否",)) or False),
     )
 
 
@@ -377,12 +402,17 @@ def build_sync_report(
     menu_items: list[NormalizedMenuItem],
     store_items: list[NormalizedStoreFaq],
     outputs: Optional[dict[str, str]] = None,
+    public_knowledge: Optional[dict[str, Any]] = None,
 ) -> SyncReport:
     issues: list[ValidationIssue] = []
     if target in {"all", "menu"}:
         issues.extend(validate_menu_items(menu_items))
     if target in {"all", "store"}:
         issues.extend(validate_store_faqs(store_items))
+    public_knowledge = public_knowledge or build_public_knowledge_report(
+        menu_items=menu_items,
+        store_items=store_items,
+    )
     return SyncReport(
         mode="dry-run",
         target=target,
@@ -391,6 +421,11 @@ def build_sync_report(
         store_db_id=store_db_id,
         menu_count=len(menu_items),
         store_count=len(store_items),
+        public_menu_count=public_knowledge.get("menu", {}).get("included_count", 0),
+        public_store_faq_count=public_knowledge.get("store_faq", {}).get(
+            "included_count", 0
+        ),
+        public_knowledge=public_knowledge,
         issues=issues,
         outputs=outputs or {},
     )
@@ -422,11 +457,16 @@ def sync_notion_knowledge(
     if target in {"all", "store"}:
         store_items = normalize_store_pages(query_pages(resolved_store_db_id))
 
+    public_knowledge = build_public_knowledge_report(
+        menu_items=menu_items,
+        store_items=store_items,
+    )
     outputs = write_sync_outputs(
         output_dir=output_dir,
         target=target,
         menu_items=menu_items,
         store_items=store_items,
+        public_knowledge=public_knowledge,
     )
     report = build_sync_report(
         target=target,
@@ -435,6 +475,7 @@ def sync_notion_knowledge(
         menu_items=menu_items,
         store_items=store_items,
         outputs=outputs,
+        public_knowledge=public_knowledge,
     )
     report_path = Path(output_dir) / "report.json"
     report.outputs["report"] = str(report_path)
@@ -451,6 +492,7 @@ def write_sync_outputs(
     target: str,
     menu_items: list[NormalizedMenuItem],
     store_items: list[NormalizedStoreFaq],
+    public_knowledge: Optional[dict[str, Any]] = None,
 ) -> dict[str, str]:
     base = Path(output_dir)
     base.mkdir(parents=True, exist_ok=True)
@@ -459,11 +501,139 @@ def write_sync_outputs(
         menu_path = base / "menu.normalized.jsonl"
         _write_jsonl(menu_path, [asdict(item) for item in menu_items])
         outputs["menu"] = str(menu_path)
+        public_menu_path = base / "menu.public.jsonl"
+        _write_jsonl(public_menu_path, [asdict(item) for item in public_menu_items(menu_items)])
+        outputs["public_menu"] = str(public_menu_path)
     if target in {"all", "store"}:
         store_path = base / "store_faq.normalized.jsonl"
         _write_jsonl(store_path, [asdict(item) for item in store_items])
         outputs["store"] = str(store_path)
+        public_store_path = base / "store_faq.public.jsonl"
+        _write_jsonl(
+            public_store_path,
+            [asdict(item) for item in public_store_faqs(store_items)],
+        )
+        outputs["public_store_faq"] = str(public_store_path)
+    if public_knowledge is not None:
+        public_report_path = base / "public_knowledge_report.json"
+        public_report_path.write_text(
+            json.dumps(public_knowledge, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        outputs["public_knowledge_report"] = str(public_report_path)
     return outputs
+
+
+def public_menu_items(items: Iterable[NormalizedMenuItem]) -> list[NormalizedMenuItem]:
+    return [item for item in items if public_menu_exclusion_reason(item) is None]
+
+
+def public_store_faqs(items: Iterable[NormalizedStoreFaq]) -> list[NormalizedStoreFaq]:
+    return [item for item in items if public_store_faq_exclusion_reason(item) is None]
+
+
+def build_public_knowledge_report(
+    *,
+    menu_items: list[NormalizedMenuItem],
+    store_items: list[NormalizedStoreFaq],
+) -> dict[str, Any]:
+    public_menus = public_menu_items(menu_items)
+    public_stores = public_store_faqs(store_items)
+    return {
+        "menu": {
+            "total_count": len(menu_items),
+            "included_count": len(public_menus),
+            "excluded_count": len(menu_items) - len(public_menus),
+            "excluded_reasons": _count_exclusion_reasons(
+                public_menu_exclusion_reason(item) for item in menu_items
+            ),
+            "warnings": _public_menu_warnings(public_menus),
+        },
+        "store_faq": {
+            "total_count": len(store_items),
+            "included_count": len(public_stores),
+            "excluded_count": len(store_items) - len(public_stores),
+            "excluded_reasons": _count_exclusion_reasons(
+                public_store_faq_exclusion_reason(item) for item in store_items
+            ),
+            "warnings": _public_store_warnings(public_stores),
+        },
+    }
+
+
+def public_menu_exclusion_reason(item: NormalizedMenuItem) -> Optional[str]:
+    if _is_placeholder_menu_name(item.name):
+        return "placeholder_name"
+    if not item.ai_public:
+        return "not_ai_public"
+    if item.availability_status not in PUBLIC_MENU_STATUSES:
+        return "not_available_for_public_ai"
+    if item.price is None:
+        return "missing_price"
+    if item.price < 0 or item.price > 100000:
+        return "abnormal_price"
+    return None
+
+
+def public_store_faq_exclusion_reason(item: NormalizedStoreFaq) -> Optional[str]:
+    if not item.answer_allowed:
+        return "not_answer_allowed"
+    if not item.faq_category:
+        return "missing_faq_category"
+    if not _has_store_answer_material(item):
+        return "missing_answer_material"
+    if _is_expired(item.valid_until):
+        return "expired_valid_until"
+    return None
+
+
+def _public_menu_warnings(items: list[NormalizedMenuItem]) -> list[dict[str, Any]]:
+    warnings: list[dict[str, Any]] = []
+    seen_names: dict[str, NormalizedMenuItem] = {}
+    for item in items:
+        normalized_name = _normalize_key(item.name)
+        if normalized_name in seen_names:
+            warnings.append(
+                {
+                    "code": "menu.public_duplicate_name",
+                    "message": f"Duplicate public menu product name: {item.name}",
+                    "source_page_id": item.source_page_id,
+                    "other_source_page_id": seen_names[normalized_name].source_page_id,
+                    "field": "name",
+                }
+            )
+        else:
+            seen_names[normalized_name] = item
+    return warnings
+
+
+def _public_store_warnings(items: list[NormalizedStoreFaq]) -> list[dict[str, Any]]:
+    warnings: list[dict[str, Any]] = []
+    seen_keys: dict[str, NormalizedStoreFaq] = {}
+    for item in items:
+        normalized_key = _normalize_key(f"{item.faq_category}:{item.key}")
+        if normalized_key in seen_keys:
+            warnings.append(
+                {
+                    "code": "store.public_duplicate_faq",
+                    "message": f"Duplicate public store FAQ: {item.key}",
+                    "source_page_id": item.source_page_id,
+                    "other_source_page_id": seen_keys[normalized_key].source_page_id,
+                    "field": "key",
+                }
+            )
+        else:
+            seen_keys[normalized_key] = item
+    return warnings
+
+
+def _count_exclusion_reasons(reasons: Iterable[Optional[str]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for reason in reasons:
+        if not reason:
+            continue
+        counts[reason] = counts.get(reason, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def _write_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> None:
@@ -518,6 +688,23 @@ def _list_value(value: Any) -> list[str]:
     return [text] if text else []
 
 
+def _split_aliases(value: Any) -> list[str]:
+    if value is None:
+        return []
+    raw_values = [str(item) for item in value] if isinstance(value, list) else re.split(
+        r"[,、\n;/]+", str(value)
+    )
+    aliases: list[str] = []
+    seen: set[str] = set()
+    for raw_value in raw_values:
+        alias = raw_value.strip()
+        key = _normalize_key(alias)
+        if alias and key not in seen:
+            aliases.append(alias)
+            seen.add(key)
+    return aliases
+
+
 def _float_or_none(value: Any) -> Optional[float]:
     if value in (None, ""):
         return None
@@ -542,6 +729,21 @@ def _bool_or_none(value: Any) -> Optional[bool]:
 
 def _normalize_key(value: str) -> str:
     return "".join(str(value or "").lower().split())
+
+
+def _is_placeholder_menu_name(value: str) -> bool:
+    normalized = _normalize_key(value)
+    placeholder_keys = {_normalize_key(name) for name in PLACEHOLDER_MENU_NAMES}
+    return normalized in placeholder_keys
+
+
+def _is_expired(value: str) -> bool:
+    if not value:
+        return False
+    try:
+        return date.fromisoformat(value[:10]) < date.today()
+    except ValueError:
+        return False
 
 
 def _has_store_answer_material(item: NormalizedStoreFaq) -> bool:
