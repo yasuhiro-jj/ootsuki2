@@ -1,0 +1,49 @@
+name: Notion Knowledge Sync Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Read-only sync target"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - menu
+          - store
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+      NOTION_CHATBOT_MENU_DB_ID: ${{ secrets.NOTION_CHATBOT_MENU_DB_ID }}
+      NOTION_CHATBOT_STORE_KNOWLEDGE_DB_ID: ${{ secrets.NOTION_CHATBOT_STORE_KNOWLEDGE_DB_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Read-only Notion sync dry-run
+        run: >
+          python scripts/sync_notion_knowledge.py
+          --target "${{ inputs.target }}"
+          --dry-run
+          --output-dir outputs/notion_sync
+          --report outputs/notion_sync/report.json
+
+      - name: Validate report
+        run: python scripts/validate_notion_knowledge.py --report outputs/notion_sync/report.json --strict-schema
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: notion-sync-report
+          path: outputs/notion_sync/
