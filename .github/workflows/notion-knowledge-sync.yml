@@ -12,6 +12,15 @@ on:
           - all
           - menu
           - store
+      create_snapshot_pr:
+        description: "Create or update a PR for app-bundled public knowledge snapshot"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
   validate:
@@ -41,6 +50,90 @@ jobs:
 
       - name: Validate report
         run: python scripts/validate_notion_knowledge.py --report outputs/notion_sync/report.json --strict-schema
+
+      - name: Build public knowledge snapshot
+        if: ${{ inputs.create_snapshot_pr && inputs.target == 'all' }}
+        run: >
+          python scripts/build_public_knowledge_snapshot.py
+          --sync-dir outputs/notion_sync
+          --snapshot-dir public_notion_knowledge
+          --report outputs/notion_sync/snapshot_report.json
+
+      - name: Refuse partial snapshot targets
+        if: ${{ inputs.create_snapshot_pr && inputs.target != 'all' }}
+        run: |
+          echo "Snapshot PR creation requires target=all so menu and store FAQ are updated together." >&2
+          exit 1
+
+      - name: Create public knowledge snapshot PR
+        if: ${{ inputs.create_snapshot_pr && inputs.target == 'all' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain -- public_notion_knowledge)" ]; then
+            echo "No public knowledge snapshot changes."
+            exit 0
+          fi
+
+          branch="notion/public-knowledge-snapshot-${GITHUB_RUN_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add public_notion_knowledge
+          git commit -m "chore: update public notion knowledge snapshot"
+          git push origin "$branch"
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("outputs/notion_sync/snapshot_report.json").read_text(encoding="utf-8"))
+          lines = [
+              "## 概要",
+              "",
+              "Notion Knowledge Sync Validationで検証済みの公開知識スナップショット更新PRです。",
+              "",
+              "## 件数",
+              "",
+              f"- 公開メニュー: {report.get('public_menu_count', 0)}",
+              f"- 公開店舗FAQ: {report.get('public_store_faq_count', 0)}",
+              "",
+              "## 更新対象",
+              "",
+          ]
+          for path in report.get("updated_files", []):
+              lines.append(f"- `{path}`")
+          lines.extend(["", "## 除外理由", ""])
+          excluded = report.get("excluded_reasons", {})
+          lines.append("### menu")
+          for key, value in sorted((excluded.get("menu") or {}).items()):
+              lines.append(f"- `{key}`: {value}")
+          lines.append("")
+          lines.append("### store_faq")
+          for key, value in sorted((excluded.get("store_faq") or {}).items()):
+              lines.append(f"- `{key}`: {value}")
+          lines.extend(["", "## 警告", ""])
+          warnings = report.get("warnings", {})
+          for target in ("menu", "store_faq"):
+              target_warnings = warnings.get(target) or []
+              lines.append(f"### {target}")
+              if not target_warnings:
+                  lines.append("- なし")
+              for warning in target_warnings:
+                  lines.append(f"- `{warning.get('code', '')}` {warning.get('message', '')}")
+              lines.append("")
+          lines.extend([
+              "## 安全方針",
+              "",
+              "- Notion APIは読み取り専用です",
+              "- `/chat` の回答切替は含みません",
+              "- mainへの自動マージはしません",
+          ])
+          Path("outputs/notion_sync/snapshot_pr_body.md").write_text("\n".join(lines), encoding="utf-8")
+          PY
+
+          gh pr create --base main --head "$branch" --title "Notion公開知識スナップショットを更新する" --body-file outputs/notion_sync/snapshot_pr_body.md
 
       - uses: actions/upload-artifact@v4
         if: always()

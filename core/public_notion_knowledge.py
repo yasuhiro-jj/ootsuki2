@@ -23,7 +23,7 @@ from .conversation_planner import (
 )
 
 
-DEFAULT_PUBLIC_KNOWLEDGE_DIR = "outputs/notion_sync"
+DEFAULT_PUBLIC_KNOWLEDGE_DIR = "public_notion_knowledge"
 DEFAULT_MIN_CONFIDENCE = 0.75
 
 UNSAFE_INTENTS = {
