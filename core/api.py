@@ -413,9 +413,25 @@ def create_app(config: ConfigLoader) -> FastAPI:
         config=config,
         menu_service=shared_menu_service,
     )
+    enable_public_notion_direct_responses = (
+        os.getenv("ENABLE_PUBLIC_NOTION_KNOWLEDGE_DIRECT_RESPONSES", "")
+        .strip()
+        .lower()
+        in {"1", "true", "yes", "on"}
+    )
+    enable_public_notion_shadow = (
+        os.getenv("ENABLE_PUBLIC_NOTION_KNOWLEDGE_SHADOW", "")
+        .strip()
+        .lower()
+        in {"1", "true", "yes", "on"}
+    )
     autonomous_orchestrator = (
         AutonomousConversationOrchestrator()
-        if config.get("features.enable_autonomous_conversation_orchestrator", True)
+        if (
+            config.get("features.enable_autonomous_conversation_orchestrator", True)
+            or enable_public_notion_direct_responses
+            or enable_public_notion_shadow
+        )
         else None
     )
     quality_logger = ConversationQualityLogger(
