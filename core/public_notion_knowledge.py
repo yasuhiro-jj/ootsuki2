@@ -216,9 +216,9 @@ class PublicNotionKnowledgeCandidateBuilder:
             return PublicKnowledgeCandidate(False, reason="no_public_menu_match")
 
         candidate_type = "menu_price" if _contains_any(message, PRICE_TERMS) else "menu_availability"
-        if candidate_type == "menu_price" and not _has_valid_price(item):
+        if not _has_valid_price(item):
             return PublicKnowledgeCandidate(False, reason="missing_public_menu_price")
-        response = _format_menu_candidate_response(item, include_price=True)
+        response = _format_menu_candidate_response(item, candidate_type=candidate_type)
         return PublicKnowledgeCandidate(
             True,
             candidate_type=candidate_type,
@@ -273,6 +273,13 @@ class PublicNotionResponseGuard:
         "\u6c0f\u540d",
         "\u304a\u540d\u524d",
         "\u500b\u4eba\u60c5\u5831",
+        "\u4eba\u6c17",
+        "\u304a\u3059\u3059\u3081",
+        "\u305c\u3072",
+        "\u4ed6\u306b",
+        "\u307b\u304b\u306b",
+        "line",
+        "\u65b0\u9bae",
     )
 
     def check(self, candidate: PublicKnowledgeCandidate) -> tuple[bool, str]:
@@ -287,8 +294,10 @@ class PublicNotionResponseGuard:
         if candidate.candidate_type in {"menu_availability", "menu_price"}:
             if candidate.source != "public_notion_menu":
                 return False, "invalid_menu_source"
-            if candidate.candidate_type == "menu_price" and "\u5186" not in candidate.response:
+            if "\u5186" not in candidate.response:
                 return False, "missing_price_in_response"
+            if not _looks_like_fixed_menu_template(candidate):
+                return False, "invalid_menu_template"
         if candidate.candidate_type == "business_hours" and candidate.source != "public_notion_store_faq":
             return False, "invalid_store_source"
         return True, "passed"
@@ -329,12 +338,26 @@ def _best_menu_match(
 def _format_menu_candidate_response(
     item: PublicMenuKnowledge,
     *,
-    include_price: bool,
+    candidate_type: str,
 ) -> str:
-    price_text = ""
-    if include_price and isinstance(item.price, (int, float)) and item.price > 0:
-        price_text = f"\u3001{int(item.price):,}\u5186"
-    return f"\u306f\u3044\u3001{item.name}{price_text}\u3042\u308a\u307e\u3059\u3002"
+    price_text = f"{int(item.price):,}\u5186"
+    if candidate_type == "menu_price":
+        return f"{item.name}\u306f{price_text}\u3067\u3059\u3002"
+    return f"\u306f\u3044\u3001{item.name}\uff08{price_text}\uff09\u3092\u3054\u7528\u610f\u3057\u3066\u3044\u307e\u3059\u3002"
+
+
+def _looks_like_fixed_menu_template(candidate: PublicKnowledgeCandidate) -> bool:
+    response = candidate.response.strip()
+    if candidate.candidate_type == "menu_availability":
+        return (
+            response.startswith("\u306f\u3044\u3001")
+            and "\uff08" in response
+            and "\u5186\uff09\u3092\u3054\u7528\u610f\u3057\u3066\u3044\u307e\u3059\u3002" in response
+            and response.endswith("\u3092\u3054\u7528\u610f\u3057\u3066\u3044\u307e\u3059\u3002")
+        )
+    if candidate.candidate_type == "menu_price":
+        return response.endswith("\u5186\u3067\u3059\u3002") and "\u306f" in response
+    return False
 
 
 def _has_valid_price(item: PublicMenuKnowledge) -> bool:

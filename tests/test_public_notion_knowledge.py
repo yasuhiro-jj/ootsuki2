@@ -97,7 +97,10 @@ class PublicNotionKnowledgeTests(unittest.TestCase):
         self.assertEqual(candidate.candidate_type, "menu_availability")
         self.assertEqual(candidate.source, "public_notion_menu")
         self.assertEqual(candidate.matched_name, "\u751f\u30d3\u30fc\u30eb")
-        self.assertIn("650", candidate.response)
+        self.assertEqual(
+            candidate.response,
+            "\u306f\u3044\u3001\u751f\u30d3\u30fc\u30eb\uff08650\u5186\uff09\u3092\u3054\u7528\u610f\u3057\u3066\u3044\u307e\u3059\u3002",
+        )
 
     def test_builds_public_menu_price_candidate_from_alias(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -109,6 +112,7 @@ class PublicNotionKnowledgeTests(unittest.TestCase):
 
         self.assertTrue(candidate.accepted)
         self.assertEqual(candidate.candidate_type, "menu_price")
+        self.assertEqual(candidate.response, "\u751f\u30d3\u30fc\u30eb\u306f650\u5186\u3067\u3059\u3002")
 
     def test_builds_public_lunch_availability_and_price_candidates(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -127,7 +131,7 @@ class PublicNotionKnowledgeTests(unittest.TestCase):
         self.assertEqual(availability.candidate_type, "menu_availability")
         self.assertTrue(price.accepted)
         self.assertEqual(price.candidate_type, "menu_price")
-        self.assertIn("1,200", price.response)
+        self.assertEqual(price.response, "A\u304a\u8089\u30e9\u30f3\u30c1\u306f1,200\u5186\u3067\u3059\u3002")
 
     def test_builds_business_hours_candidate(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -182,6 +186,20 @@ class PublicNotionKnowledgeTests(unittest.TestCase):
             )
             candidate = self.make_builder(tmp).build(
                 "\u5024\u6bb5\u306a\u3057\u3044\u304f\u3089\uff1f",
+                plan(INTENT_PRODUCT_EXISTENCE),
+            )
+
+        self.assertFalse(candidate.accepted)
+        self.assertEqual(candidate.reason, "missing_public_menu_price")
+
+    def test_availability_question_rejects_missing_price(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            write_jsonl(
+                Path(tmp) / "menu.public.jsonl",
+                [{"name": "\u5024\u6bb5\u306a\u3057\u5546\u54c1", "aliases": ["\u5024\u6bb5\u306a\u3057"]}],
+            )
+            candidate = self.make_builder(tmp).build(
+                "\u5024\u6bb5\u306a\u3057\u3042\u308b\uff1f",
                 plan(INTENT_PRODUCT_EXISTENCE),
             )
 
@@ -282,6 +300,20 @@ class PublicNotionKnowledgeTests(unittest.TestCase):
             True,
             candidate_type="menu_price",
             response="\u3054\u6ce8\u6587\u3092\u627f\u308a\u307e\u3057\u305f\u3002",
+            source="public_notion_menu",
+        )
+
+        passed, reason = guard.check(candidate)
+
+        self.assertFalse(passed)
+        self.assertEqual(reason, "dangerous_response")
+
+    def test_response_guard_rejects_non_template_menu_response(self):
+        guard = PublicNotionResponseGuard()
+        candidate = PublicKnowledgeCandidate(
+            True,
+            candidate_type="menu_availability",
+            response="\u751f\u30d3\u30fc\u30eb\u306f\u4eba\u6c17\u3067\u3059\u3002\u305c\u3072\u3069\u3046\u305e\u3002",
             source="public_notion_menu",
         )
 
