@@ -1,0 +1,38 @@
+{
+  "generated_at": "2026-07-20T12:37:59.317508+00:00",
+  "source": "notion-knowledge-sync",
+  "mode": "dry-run",
+  "target": "all",
+  "menu_count": 568,
+  "store_count": 3,
+  "public_menu_count": 74,
+  "public_store_faq_count": 1,
+  "error_count": 0,
+  "warning_count": 463,
+  "public_knowledge": {
+    "menu": {
+      "total_count": 568,
+      "included_count": 74,
+      "excluded_count": 494,
+      "excluded_reasons": {
+        "not_ai_public": 492,
+        "placeholder_name": 2
+      },
+      "warnings": []
+    },
+    "store_faq": {
+      "total_count": 3,
+      "included_count": 1,
+      "excluded_count": 2,
+      "excluded_reasons": {
+        "not_answer_allowed": 2
+      },
+      "warnings": []
+    }
+  },
+  "files": {
+    "menu": "menu.public.jsonl",
+    "store_faq": "store_faq.public.jsonl",
+    "report": "public_knowledge_report.json"
+  }
+}
