@@ -54,6 +54,14 @@ FAQ_TERMS = (
     "\u30c6\u30a4\u30af\u30a2\u30a6\u30c8",
 )
 
+MENU_PRICE_TERMS = (
+    "\u3044\u304f\u3089",
+    "\u5024\u6bb5",
+    "\u4fa1\u683c",
+    "\u6599\u91d1",
+    "\u5186",
+)
+
 RECOMMEND_TERMS = (
     "\u304a\u3059\u3059\u3081",
     "\u3064\u307e\u307f",
@@ -167,6 +175,16 @@ class ConversationPlanner:
                 next_action="lookup_product_availability",
                 confidence=0.9,
                 reason="direct_menu_existence",
+            )
+
+        if _contains_any(text, MENU_PRICE_TERMS):
+            return ConversationPlan(
+                intent=INTENT_PRODUCT_EXISTENCE,
+                topic="menu",
+                required_tools=(TOOL_MENU,),
+                next_action="lookup_product_price",
+                confidence=0.84,
+                reason="menu_price_question",
             )
 
         if is_short_order_confirmation(text, state.to_memory_updates()) or _looks_like_order(

@@ -41,6 +41,8 @@ class ConversationOrchestratorTests(unittest.TestCase):
         self.assertTrue(decision.fallback_to_legacy)
         self.assertEqual(decision.plan.intent, INTENT_PRODUCT_EXISTENCE)
         self.assertIn(TOOL_MENU, decision.tools.names)
+        self.assertFalse(decision.public_knowledge_candidate.accepted)
+        self.assertEqual(decision.public_knowledge_candidate.reason, "feature_disabled")
 
         followup = self.inspect(
             "\u3058\u3083\u30422\u3064",

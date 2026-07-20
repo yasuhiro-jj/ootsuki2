@@ -1036,8 +1036,9 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 )
                 plan = orchestration_decision.plan
                 tools = orchestration_decision.tools
+                public_candidate = orchestration_decision.public_knowledge_candidate
                 logger.info(
-                    "[AutonomousConversation] session=%s handled=%s fallback=%s intent=%s topic=%s tools=%s reason=%s error=%s",
+                    "[AutonomousConversation] session=%s handled=%s fallback=%s intent=%s topic=%s tools=%s reason=%s error=%s public_candidate=%s public_candidate_type=%s public_candidate_reason=%s public_candidate_source=%s public_candidate_confidence=%.2f",
                     session_id[:8],
                     orchestration_decision.handled,
                     orchestration_decision.fallback_to_legacy,
@@ -1046,6 +1047,11 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     ",".join(tools.names) if tools else "",
                     orchestration_decision.reason,
                     orchestration_decision.error,
+                    public_candidate.accepted if public_candidate else False,
+                    public_candidate.candidate_type if public_candidate else "",
+                    public_candidate.reason if public_candidate else "",
+                    public_candidate.source if public_candidate else "",
+                    public_candidate.confidence if public_candidate else 0.0,
                 )
             conversation_route = classify_conversation_route(
                 user_message,

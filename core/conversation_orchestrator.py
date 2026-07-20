@@ -15,6 +15,10 @@ from typing import Any, Dict, Iterable, Optional
 from .conversation_planner import ConversationPlan, ConversationPlanner
 from .conversation_state import ConversationState
 from .conversation_tools import ConversationToolRouter, ConversationToolSelection
+from .public_notion_knowledge import (
+    PublicKnowledgeCandidate,
+    PublicNotionKnowledgeCandidateBuilder,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +30,7 @@ class OrchestratorDecision:
     state: ConversationState
     plan: Optional[ConversationPlan] = None
     tools: Optional[ConversationToolSelection] = None
+    public_knowledge_candidate: Optional[PublicKnowledgeCandidate] = None
     response: Optional[str] = None
     reason: str = ""
     error: str = ""
@@ -39,9 +44,15 @@ class AutonomousConversationOrchestrator:
         *,
         planner: Optional[ConversationPlanner] = None,
         tool_router: Optional[ConversationToolRouter] = None,
+        public_knowledge_builder: Optional[PublicNotionKnowledgeCandidateBuilder] = None,
     ) -> None:
         self.planner = planner or ConversationPlanner()
         self.tool_router = tool_router or ConversationToolRouter()
+        self.public_knowledge_builder = (
+            public_knowledge_builder
+            if public_knowledge_builder is not None
+            else PublicNotionKnowledgeCandidateBuilder.from_env()
+        )
 
     def inspect(
         self,
@@ -69,12 +80,14 @@ class AutonomousConversationOrchestrator:
                 recent_messages=recent_messages,
             )
             tools = self.tool_router.select(plan)
+            public_candidate = self.public_knowledge_builder.build(message, plan)
             return OrchestratorDecision(
                 handled=False,
                 fallback_to_legacy=True,
                 state=state,
                 plan=plan,
                 tools=tools,
+                public_knowledge_candidate=public_candidate,
                 reason=plan.reason,
             )
         except Exception as exc:
