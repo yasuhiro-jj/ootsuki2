@@ -25,13 +25,13 @@ from core.api import create_app
 class FakeConfig:
     app_name = "ootsuki_test"
 
-    def __init__(self, tmp: str):
+    def __init__(self, tmp: str, *, autonomous_orchestrator_enabled: bool = True):
         self.tmp = tmp
         self.values = {
             "project_name": "ootsuki_test",
             "frontend_title": "ootsuki_test",
             "ai.temperature": 0.7,
-            "features.enable_autonomous_conversation_orchestrator": True,
+            "features.enable_autonomous_conversation_orchestrator": autonomous_orchestrator_enabled,
             "features.enable_conversation_quality_logs": True,
             "features.enable_langgraph": False,
             "features.enable_agent_executor": False,
@@ -164,6 +164,45 @@ class PublicNotionDirectChatTests(unittest.TestCase):
                 ).json()["message"]
 
         self.assertNotEqual(
+            response,
+            "\u306f\u3044\u3001\u751f\u30d3\u30fc\u30eb\uff08528\u5186\uff09\u3092\u3054\u7528\u610f\u3057\u3066\u3044\u307e\u3059\u3002",
+        )
+
+    def test_chat_direct_flag_connects_even_when_autonomous_config_is_disabled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            knowledge_dir = Path(tmp) / "public_notion_knowledge"
+            write_jsonl(
+                knowledge_dir / "menu.public.jsonl",
+                [{"name": "\u751f\u30d3\u30fc\u30eb", "price": 528, "aliases": ["\u751f"]}],
+            )
+            write_jsonl(
+                knowledge_dir / "store_faq.public.jsonl",
+                [
+                    {
+                        "key": "\u55b6\u696d\u6642\u9593",
+                        "answer": "11:00\u304b\u308914:00\u307e\u3067\u3067\u3059\u3002",
+                        "faq_category": "\u55b6\u696d\u6642\u9593",
+                    }
+                ],
+            )
+            env = {
+                "OPENAI_API_KEY": "",
+                "NOTION_API_KEY": "",
+                "ENABLE_PUBLIC_NOTION_KNOWLEDGE_DIRECT_RESPONSES": "true",
+                "ENABLE_PUBLIC_NOTION_KNOWLEDGE_SHADOW": "false",
+                "PUBLIC_NOTION_KNOWLEDGE_DIR": str(knowledge_dir),
+            }
+            with patch.dict(os.environ, env, clear=False):
+                app = create_app(
+                    FakeConfig(tmp, autonomous_orchestrator_enabled=False)
+                )
+                client = TestClient(app)
+                response = client.post(
+                    "/chat",
+                    json={"message": "\u751f\u30d3\u30fc\u30eb\u3042\u308b\uff1f"},
+                ).json()["message"]
+
+        self.assertEqual(
             response,
             "\u306f\u3044\u3001\u751f\u30d3\u30fc\u30eb\uff08528\u5186\uff09\u3092\u3054\u7528\u610f\u3057\u3066\u3044\u307e\u3059\u3002",
         )
