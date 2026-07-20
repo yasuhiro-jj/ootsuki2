@@ -25,6 +25,7 @@ from .conversation_planner import (
 
 DEFAULT_PUBLIC_KNOWLEDGE_DIR = "public_notion_knowledge"
 DEFAULT_MIN_CONFIDENCE = 0.75
+DEFAULT_DIRECT_RESPONSE_MIN_CONFIDENCE = 0.80
 
 UNSAFE_INTENTS = {
     INTENT_CANCEL,
@@ -166,11 +167,13 @@ class PublicNotionKnowledgeCandidateBuilder:
 
     @classmethod
     def from_env(cls) -> "PublicNotionKnowledgeCandidateBuilder":
+        shadow_enabled = _env_bool("ENABLE_PUBLIC_NOTION_KNOWLEDGE_SHADOW", False)
+        direct_enabled = _env_bool("ENABLE_PUBLIC_NOTION_KNOWLEDGE_DIRECT_RESPONSES", False)
         return cls(
             PublicNotionKnowledgeRepository(
                 os.getenv("PUBLIC_NOTION_KNOWLEDGE_DIR") or DEFAULT_PUBLIC_KNOWLEDGE_DIR
             ),
-            enabled=_env_bool("ENABLE_PUBLIC_NOTION_KNOWLEDGE_SHADOW", False),
+            enabled=shadow_enabled or direct_enabled,
             min_confidence=_env_float(
                 "PUBLIC_NOTION_KNOWLEDGE_MIN_CONFIDENCE",
                 DEFAULT_MIN_CONFIDENCE,
@@ -201,11 +204,20 @@ class PublicNotionKnowledgeCandidateBuilder:
             )
 
     def _build_menu_candidate(self, message: str, plan: Any) -> PublicKnowledgeCandidate:
-        item = _best_menu_match(message, self.repository.menus)
+        match = _best_menu_match(message, self.repository.menus)
+        if match.ambiguous:
+            return PublicKnowledgeCandidate(
+                False,
+                reason="ambiguous_public_menu_match",
+                metadata={"matches": match.names},
+            )
+        item = match.item
         if item is None:
             return PublicKnowledgeCandidate(False, reason="no_public_menu_match")
 
         candidate_type = "menu_price" if _contains_any(message, PRICE_TERMS) else "menu_availability"
+        if candidate_type == "menu_price" and not _has_valid_price(item):
+            return PublicKnowledgeCandidate(False, reason="missing_public_menu_price")
         response = _format_menu_candidate_response(item, include_price=True)
         return PublicKnowledgeCandidate(
             True,
@@ -241,12 +253,53 @@ class PublicNotionKnowledgeCandidateBuilder:
         return PublicKnowledgeCandidate(False, reason="no_public_store_faq_match")
 
 
+@dataclass(frozen=True)
+class MenuMatchResult:
+    item: Optional[PublicMenuKnowledge] = None
+    ambiguous: bool = False
+    names: tuple[str, ...] = ()
+
+
+class PublicNotionResponseGuard:
+    """Reject risky direct responses before they can reach users."""
+
+    danger_terms = (
+        "\u3054\u6ce8\u6587",
+        "\u6ce8\u6587\u3092\u627f\u308a",
+        "\u4e88\u7d04\u78ba\u5b9a",
+        "\u4e88\u7d04\u3057\u307e\u3057\u305f",
+        "\u96fb\u8a71\u756a\u53f7",
+        "\u9023\u7d61\u5148",
+        "\u6c0f\u540d",
+        "\u304a\u540d\u524d",
+        "\u500b\u4eba\u60c5\u5831",
+    )
+
+    def check(self, candidate: PublicKnowledgeCandidate) -> tuple[bool, str]:
+        if not candidate.accepted:
+            return False, candidate.reason or "candidate_rejected"
+        if not candidate.response.strip():
+            return False, "empty_response"
+        if _contains_any(candidate.response, self.danger_terms):
+            return False, "dangerous_response"
+        if candidate.candidate_type not in {"menu_availability", "menu_price", "business_hours"}:
+            return False, "unsupported_candidate_type"
+        if candidate.candidate_type in {"menu_availability", "menu_price"}:
+            if candidate.source != "public_notion_menu":
+                return False, "invalid_menu_source"
+            if candidate.candidate_type == "menu_price" and "\u5186" not in candidate.response:
+                return False, "missing_price_in_response"
+        if candidate.candidate_type == "business_hours" and candidate.source != "public_notion_store_faq":
+            return False, "invalid_store_source"
+        return True, "passed"
+
+
 def _best_menu_match(
     message: str,
     items: Iterable[PublicMenuKnowledge],
-) -> Optional[PublicMenuKnowledge]:
+) -> MenuMatchResult:
     normalized_message = _normalize(message)
-    best: tuple[int, PublicMenuKnowledge] | None = None
+    matches: list[tuple[int, PublicMenuKnowledge]] = []
     for item in items:
         terms = [item.name, *item.aliases]
         for term in terms:
@@ -255,9 +308,22 @@ def _best_menu_match(
                 continue
             if normalized_term in normalized_message:
                 score = len(normalized_term)
-                if best is None or score > best[0]:
-                    best = (score, item)
-    return best[1] if best else None
+                matches.append((score, item))
+                break
+    if not matches:
+        return MenuMatchResult()
+    best_score = max(score for score, _ in matches)
+    best_items = {
+        item.name: item
+        for score, item in matches
+        if score == best_score
+    }
+    if len(best_items) > 1:
+        return MenuMatchResult(
+            ambiguous=True,
+            names=tuple(sorted(best_items)),
+        )
+    return MenuMatchResult(item=next(iter(best_items.values())))
 
 
 def _format_menu_candidate_response(
@@ -269,6 +335,10 @@ def _format_menu_candidate_response(
     if include_price and isinstance(item.price, (int, float)) and item.price > 0:
         price_text = f"\u3001{int(item.price):,}\u5186"
     return f"\u306f\u3044\u3001{item.name}{price_text}\u3042\u308a\u307e\u3059\u3002"
+
+
+def _has_valid_price(item: PublicMenuKnowledge) -> bool:
+    return isinstance(item.price, (int, float)) and item.price > 0
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:

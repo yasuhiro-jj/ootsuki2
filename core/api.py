@@ -1026,6 +1026,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 for turn in recent_turns
                 if turn.get("content")
             ]
+            orchestration_decision = None
             if autonomous_orchestrator:
                 orchestration_decision = autonomous_orchestrator.inspect(
                     user_message,
@@ -1072,6 +1073,73 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 conversation_route.reason,
                 allow_standard_answer_search,
             )
+            if orchestration_decision and orchestration_decision.handled:
+                plan = orchestration_decision.plan
+                public_candidate = orchestration_decision.public_knowledge_candidate
+                response_message = orchestration_decision.response or ""
+                response_source = "public_notion"
+                fallback_reason = orchestration_decision.fallback_reason or ""
+                ai_engine.save_memory(
+                    session_id,
+                    {
+                        "active_topic": plan.topic if plan else "public_notion",
+                        "detected_intent": plan.intent if plan else "public_notion",
+                        "last_assistant_action": "public_notion_direct_response",
+                        "public_notion_candidate_type": (
+                            public_candidate.candidate_type if public_candidate else ""
+                        ),
+                    },
+                )
+                session_memory = ai_engine.get_session_memory(session_id)
+                session = ai_engine.get_session(session_id)
+                if session:
+                    session.add_message("user", request.message)
+                    session.add_message("assistant", response_message)
+                logger.info(
+                    "[Decision] session=%s response_source=%s planner_intent=%s planner_confidence=%.2f candidate_type=%s candidate_source=%s fallback_reason=%s guard_result=%s response=%s",
+                    session_id[:8],
+                    response_source,
+                    plan.intent if plan else "",
+                    plan.confidence if plan else 0.0,
+                    public_candidate.candidate_type if public_candidate else "",
+                    public_candidate.source if public_candidate else "",
+                    fallback_reason,
+                    orchestration_decision.guard_result,
+                    response_message,
+                )
+                _record_quality_log(
+                    session_id=session_id,
+                    user_id=request.customer_id,
+                    user_message=request.message,
+                    ai_response=response_message,
+                    recent_history=recent_turns,
+                    session_memory=session_memory,
+                    detected_intent=plan.intent if plan else intent_result.intent.value,
+                    route=conversation_route.kind,
+                    route_reason=conversation_route.reason,
+                    node=response_source,
+                    referenced_sources={
+                        "response_source": response_source,
+                        "planner_intent": plan.intent if plan else "",
+                        "planner_confidence": plan.confidence if plan else 0.0,
+                        "candidate_type": public_candidate.candidate_type if public_candidate else "",
+                        "candidate_source": public_candidate.source if public_candidate else "",
+                        "fallback_reason": fallback_reason,
+                        "guard_result": orchestration_decision.guard_result,
+                        "actual_response": response_message,
+                    },
+                    latency_ms=_elapsed_ms(started_at),
+                    channel="web",
+                )
+                return ChatResponse(
+                    message=response_message,
+                    session_id=session_id,
+                    timestamp=datetime.now().isoformat(),
+                    options=[],
+                    suggestions=None,
+                    image_url=None,
+                    line_reply_messages=None,
+                )
             memory_updates = infer_memory_updates(
                 user_message,
                 conversation_route,

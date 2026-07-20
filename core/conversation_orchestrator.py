@@ -9,6 +9,7 @@ unless a later phase explicitly implements a handled response.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Optional
 
@@ -16,8 +17,10 @@ from .conversation_planner import ConversationPlan, ConversationPlanner
 from .conversation_state import ConversationState
 from .conversation_tools import ConversationToolRouter, ConversationToolSelection
 from .public_notion_knowledge import (
+    DEFAULT_DIRECT_RESPONSE_MIN_CONFIDENCE,
     PublicKnowledgeCandidate,
     PublicNotionKnowledgeCandidateBuilder,
+    PublicNotionResponseGuard,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,6 +37,8 @@ class OrchestratorDecision:
     response: Optional[str] = None
     reason: str = ""
     error: str = ""
+    guard_result: str = ""
+    fallback_reason: str = ""
 
 
 class AutonomousConversationOrchestrator:
@@ -45,6 +50,9 @@ class AutonomousConversationOrchestrator:
         planner: Optional[ConversationPlanner] = None,
         tool_router: Optional[ConversationToolRouter] = None,
         public_knowledge_builder: Optional[PublicNotionKnowledgeCandidateBuilder] = None,
+        public_response_guard: Optional[PublicNotionResponseGuard] = None,
+        direct_responses_enabled: Optional[bool] = None,
+        direct_min_confidence: Optional[float] = None,
     ) -> None:
         self.planner = planner or ConversationPlanner()
         self.tool_router = tool_router or ConversationToolRouter()
@@ -52,6 +60,20 @@ class AutonomousConversationOrchestrator:
             public_knowledge_builder
             if public_knowledge_builder is not None
             else PublicNotionKnowledgeCandidateBuilder.from_env()
+        )
+        self.public_response_guard = public_response_guard or PublicNotionResponseGuard()
+        self.direct_responses_enabled = (
+            direct_responses_enabled
+            if direct_responses_enabled is not None
+            else _env_bool("ENABLE_PUBLIC_NOTION_KNOWLEDGE_DIRECT_RESPONSES", False)
+        )
+        self.direct_min_confidence = (
+            direct_min_confidence
+            if direct_min_confidence is not None
+            else _env_float(
+                "PUBLIC_NOTION_DIRECT_RESPONSE_MIN_CONFIDENCE",
+                DEFAULT_DIRECT_RESPONSE_MIN_CONFIDENCE,
+            )
         )
 
     def inspect(
@@ -81,14 +103,35 @@ class AutonomousConversationOrchestrator:
             )
             tools = self.tool_router.select(plan)
             public_candidate = self.public_knowledge_builder.build(message, plan)
+            handled = False
+            fallback_to_legacy = True
+            response = None
+            guard_result = "not_evaluated"
+            fallback_reason = "direct_response_disabled"
+            if self.direct_responses_enabled:
+                if plan.confidence < self.direct_min_confidence:
+                    guard_result = "not_evaluated"
+                    fallback_reason = "direct_low_confidence"
+                else:
+                    guard_passed, guard_result = self.public_response_guard.check(public_candidate)
+                    if guard_passed:
+                        handled = True
+                        fallback_to_legacy = False
+                        response = public_candidate.response
+                        fallback_reason = ""
+                    else:
+                        fallback_reason = guard_result or public_candidate.reason or "guard_rejected"
             return OrchestratorDecision(
-                handled=False,
-                fallback_to_legacy=True,
+                handled=handled,
+                fallback_to_legacy=fallback_to_legacy,
                 state=state,
                 plan=plan,
                 tools=tools,
                 public_knowledge_candidate=public_candidate,
+                response=response,
                 reason=plan.reason,
+                guard_result=guard_result,
+                fallback_reason=fallback_reason,
             )
         except Exception as exc:
             logger.warning(
@@ -103,4 +146,23 @@ class AutonomousConversationOrchestrator:
                 tools=None,
                 reason="planner_exception",
                 error=exc.__class__.__name__,
+                guard_result="not_evaluated",
+                fallback_reason="planner_exception",
             )
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if not value:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
