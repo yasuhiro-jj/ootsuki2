@@ -2735,6 +2735,92 @@ def create_app(config: ConfigLoader) -> FastAPI:
                             }
                         
                         ws_session_memory = ai_engine.get_session_memory(session_id)
+                        ws_orchestration_decision = None
+                        if autonomous_orchestrator:
+                            recent_ws_messages = [
+                                turn.get("content", "")
+                                for turn in conv_turns
+                                if turn.get("content")
+                            ]
+                            ws_orchestration_decision = autonomous_orchestrator.inspect(
+                                message,
+                                session_id=session_id,
+                                customer_id=session_id,
+                                session_memory=ws_session_memory,
+                                recent_messages=recent_ws_messages,
+                            )
+                            ws_plan = ws_orchestration_decision.plan
+                            ws_candidate = ws_orchestration_decision.public_knowledge_candidate
+                            logger.info(
+                                "[WS][AutonomousConversation] session=%s handled=%s fallback=%s response_source=%s intent=%s confidence=%.2f candidate_type=%s candidate_source=%s fallback_reason=%s guard_result=%s response=%s",
+                                session_id[:8],
+                                ws_orchestration_decision.handled,
+                                ws_orchestration_decision.fallback_to_legacy,
+                                "public_notion" if ws_orchestration_decision.handled else "legacy",
+                                ws_plan.intent if ws_plan else "",
+                                ws_plan.confidence if ws_plan else 0.0,
+                                ws_candidate.candidate_type if ws_candidate else "",
+                                ws_candidate.source if ws_candidate else "",
+                                ws_orchestration_decision.fallback_reason,
+                                ws_orchestration_decision.guard_result,
+                                ws_orchestration_decision.response or "",
+                            )
+                        if ws_orchestration_decision and ws_orchestration_decision.handled:
+                            ws_plan = ws_orchestration_decision.plan
+                            ws_candidate = ws_orchestration_decision.public_knowledge_candidate
+                            response_message = normalize_customer_reply(
+                                ws_orchestration_decision.response or ""
+                            )
+                            ai_engine.save_memory(
+                                session_id,
+                                {
+                                    "active_topic": ws_plan.topic if ws_plan else "public_notion",
+                                    "detected_intent": ws_plan.intent if ws_plan else "public_notion",
+                                    "last_assistant_action": "public_notion_direct_response",
+                                    "public_notion_candidate_type": (
+                                        ws_candidate.candidate_type if ws_candidate else ""
+                                    ),
+                                },
+                            )
+                            sess = ai_engine.get_session(session_id)
+                            if sess:
+                                sess.add_message("user", message)
+                                sess.add_message("assistant", response_message)
+                            response = {
+                                "type": "response",
+                                "message": response_message,
+                                "options": [],
+                                "timestamp": datetime.now().isoformat(),
+                                "image_url": None,
+                                "line_reply_messages": None,
+                                "response_source": "public_notion",
+                            }
+                            _record_quality_log(
+                                session_id=session_id,
+                                user_id=session_id,
+                                user_message=message,
+                                ai_response=response_message,
+                                recent_history=conv_turns,
+                                session_memory=ai_engine.get_session_memory(session_id),
+                                detected_intent=ws_plan.intent if ws_plan else "public_notion",
+                                route="public_notion_direct_response",
+                                route_reason=ws_orchestration_decision.reason,
+                                node="public_notion",
+                                referenced_sources={
+                                    "response_source": "public_notion",
+                                    "planner_intent": ws_plan.intent if ws_plan else "",
+                                    "planner_confidence": ws_plan.confidence if ws_plan else 0.0,
+                                    "candidate_type": ws_candidate.candidate_type if ws_candidate else "",
+                                    "candidate_source": ws_candidate.source if ws_candidate else "",
+                                    "fallback_reason": ws_orchestration_decision.fallback_reason,
+                                    "guard_result": ws_orchestration_decision.guard_result,
+                                    "actual_response": response_message,
+                                },
+                                latency_ms=_elapsed_ms(started_at),
+                                channel="websocket",
+                            )
+                            await websocket.send_json(response)
+                            continue
                         if is_initial_reservation_request(message, ws_session_memory):
                             direct_response = format_initial_reservation_reply()
                             ai_engine.save_memory(
