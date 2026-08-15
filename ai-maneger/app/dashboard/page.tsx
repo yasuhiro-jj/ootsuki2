@@ -56,7 +56,19 @@ function todayInTokyo() {
 }
 
 export default async function DashboardPage() {
-  const access = await getCurrentTenantAccessResult("read");
+  let access;
+  try {
+    access = await getCurrentTenantAccessResult("read");
+  } catch (error) {
+    access = {
+      ok: false as const,
+      status: 500,
+      message: error instanceof Error ? error.message : "Failed to verify tenant access.",
+      tenant: null,
+      principalId: null,
+    };
+  }
+
   if (!access.ok) {
     return (
       <AppShell title="アクセス不可" description="tenant / role の認可を満たした場合のみダッシュボードを表示します。">

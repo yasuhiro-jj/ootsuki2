@@ -6,6 +6,7 @@
     "dev": "node dev.mjs",
     "dev:clean": "node dev.mjs --clean",
     "build": "next build",
+    "test": "node --import tsx --test tests/tenant-access.test.ts",
     "start": "next start --port 3002",
     "lint": "next lint",
     "check:notion-env": "tsx scripts/check-notion-env.ts",
