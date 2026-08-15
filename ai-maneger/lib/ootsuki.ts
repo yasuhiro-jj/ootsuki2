@@ -256,3 +256,12 @@ export function resolveWeekRange(referenceDate: string) {
   const parsed = parseDate(referenceDate) ?? new Date();
   return buildWeekRange(parsed);
 }
+
+export function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunkSize = Math.max(1, Math.floor(size) || 1);
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    chunks.push(items.slice(i, i + chunkSize));
+  }
+  return chunks;
+}

@@ -3,7 +3,7 @@ import { logTenantAudit } from "@/lib/api/audit";
 import { requireTenantAccess } from "@/lib/api/tenant-access";
 import { calculateAverageSpend } from "@/lib/ootsuki";
 import { saveDailyInputBatch } from "@/lib/notion/ootsuki";
-import type { DailyInputPayload } from "@/types/ootsuki";
+import { CSV_SAVE_TIME_BUDGET_MS } from "@/lib/csv-save";
 
 export const maxDuration = 300;
 
@@ -45,9 +45,9 @@ export async function POST(request: Request) {
   const access = await requireTenantAccess(request, "write");
   if (!access.ok) return access.response;
 
-  let body: { rows?: RowInput[] };
+  let body: { rows?: RowInput[]; skipWeeklySummary?: boolean };
   try {
-    body = (await request.json()) as { rows?: RowInput[] };
+    body = (await request.json()) as { rows?: RowInput[]; skipWeeklySummary?: boolean };
   } catch {
     return NextResponse.json({ ok: false, message: "JSONの形式が正しくありません。" }, { status: 400 });
   }
@@ -111,26 +111,39 @@ export async function POST(request: Request) {
 
   try {
     console.log(`[daily-input-batch] saving ${payloads.length} rows…`, { tenant: access.tenant });
-    const results = await saveDailyInputBatch(payloads);
+    const results = await saveDailyInputBatch(payloads, {
+      skipWeeklySummary: body.skipWeeklySummary !== false,
+      timeBudgetMs: CSV_SAVE_TIME_BUDGET_MS,
+    });
     const succeeded = results.filter((r) => r.ok).length;
-    const failed = results.filter((r) => !r.ok);
+    const failed = results.filter((r) => !r.ok && !r.deferred);
+    const deferred = results.filter((r) => r.deferred);
     await logTenantAudit(request, access, {
       action: "daily_input.batch_save",
       resourceType: "daily-input-batch",
-      metadata: { total: payloads.length, succeeded, failed: failed.length },
+      metadata: {
+        total: payloads.length,
+        succeeded,
+        failed: failed.length,
+        deferred: deferred.length,
+      },
     });
-    console.log(`[daily-input-batch] done: ${succeeded} OK, ${failed.length} failed`);
+    console.log(
+      `[daily-input-batch] done: ${succeeded} OK, ${failed.length} failed, ${deferred.length} deferred`,
+    );
 
     return NextResponse.json({
-      ok: failed.length === 0,
+      ok: failed.length === 0 && deferred.length === 0,
+      incomplete: deferred.length > 0,
       saved: succeeded,
       failed: failed.length,
+      deferred: deferred.length,
       total: results.length,
       results,
       message:
-        failed.length === 0
+        failed.length === 0 && deferred.length === 0
           ? `${succeeded}件の日次データを保存しました。`
-          : `${succeeded}件保存、${failed.length}件失敗しました。`,
+          : `${succeeded}件保存、${failed.length}件失敗、${deferred.length}件は時間切れのため後続で再送します。`,
     });
   } catch (error) {
     console.error("[daily-input-batch] error:", error);

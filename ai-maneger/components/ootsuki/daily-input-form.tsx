@@ -2,7 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatDate } from "@/lib/format";
-import { normalizeProductCodeKey, normalizeProductMatchKey } from "@/lib/ootsuki";
+import {
+  CSV_SAVE_INITIAL_CHUNK_SIZE,
+  CSV_SAVE_MAX_ATTEMPTS,
+  canRetryCsvSave,
+  nextCsvSaveChunkSize,
+  remainingRowsAfterBatch,
+  uniqueWeekStarts,
+  type BatchSaveRowResult,
+} from "@/lib/csv-save";
+import { normalizeProductCodeKey, normalizeProductMatchKey, resolveWeekRange } from "@/lib/ootsuki";
 
 /** 一時非表示: `true` にすると「商品分析CSV取込」セクションを再度表示する */
 const SHOW_PRODUCT_ANALYSIS_CSV = false;
@@ -792,12 +801,12 @@ export function DailyInputForm({ defaultDate }: DailyInputFormProps) {
     }
 
     const total = selectedCsvRows.length;
-    const estimatedSec = Math.max(10, Math.round(total * 2.5));
+    const estimatedSec = Math.max(20, Math.round(total * 2));
 
     setBatchStatus("loading");
     setBatchElapsedSec(0);
     setBatchMessage(
-      `${total}件をNotionに保存しています…（1件ずつ書き込むため、目安 約${estimatedSec}秒。そのままお待ちください）`,
+      `${total}件を確実に保存します…（失敗・時間切れ分は自動で再送します / 目安 約${estimatedSec}秒以上。画面を閉じないでください）`,
     );
 
     stopBatchTimer();
@@ -805,19 +814,6 @@ export function DailyInputForm({ defaultDate }: DailyInputFormProps) {
     batchTimerRef.current = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startedAt) / 1000);
       setBatchElapsedSec(elapsed);
-      if (elapsed >= 90) {
-        setBatchMessage(
-          `${total}件を保存中…（${elapsed}秒経過 / 件数が多いと数分かかることがあります。Notion側の応答待ちです。画面はそのままお待ちください）`,
-        );
-      } else if (elapsed >= 20) {
-        setBatchMessage(
-          `${total}件を保存中…（${elapsed}秒経過 / 完了までもう少しかかります。画面を閉じずにお待ちください）`,
-        );
-      } else {
-        setBatchMessage(
-          `${total}件をNotionに保存しています…（${elapsed}秒経過 / 目安 約${estimatedSec}秒）`,
-        );
-      }
     }, 1000);
 
     const rows = selectedCsvRows.map((row) => ({
@@ -845,54 +841,138 @@ export function DailyInputForm({ defaultDate }: DailyInputFormProps) {
       source: `CSV取込: ${row.date}`,
     }));
 
-    try {
-      const res = await fetch("/api/daily-input-batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows }),
-      });
+    let pending = [...rows];
+    const savedDates = new Set<string>();
+    const failedDates = new Set<string>();
+    const attemptsByDate = new Map<string, number>();
+    let chunkSize = CSV_SAVE_INITIAL_CHUNK_SIZE;
+    let consecutiveTimeouts = 0;
+    let firstFailureDetail = "";
 
-      let data: {
-        ok?: boolean;
-        message?: string;
-        saved?: number;
-        failed?: number;
-        results?: Array<{ date: string; ok: boolean; message?: string }>;
-      };
-      try {
-        data = await res.json();
-      } catch {
-        stopBatchTimer();
-        setBatchStatus("error");
-        setBatchMessage(`サーバーからの応答を解析できませんでした（HTTP ${res.status}）`);
-        return;
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    try {
+      while (pending.length > 0) {
+        const retryable = pending.filter((row) =>
+          canRetryCsvSave(attemptsByDate.get(row.date) ?? 0),
+        );
+        if (retryable.length === 0) {
+          for (const row of pending) failedDates.add(row.date);
+          pending = [];
+          break;
+        }
+
+        chunkSize = nextCsvSaveChunkSize(chunkSize, consecutiveTimeouts > 0);
+        const chunk = retryable.slice(0, chunkSize);
+        for (const row of chunk) {
+          attemptsByDate.set(row.date, (attemptsByDate.get(row.date) ?? 0) + 1);
+        }
+
+        const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+        setBatchMessage(
+          `${total}件を保存中…（${savedDates.size}件完了 / 残り${pending.length}件 / ${elapsed}秒経過。画面を閉じないでください）`,
+        );
+
+        let results: BatchSaveRowResult[] = [];
+        let hadTimeout = false;
+        try {
+          const res = await fetch("/api/daily-input-batch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ rows: chunk, skipWeeklySummary: true }),
+          });
+          try {
+            const data = (await res.json()) as {
+              results?: BatchSaveRowResult[];
+            };
+            results = data.results ?? [];
+            if (res.status === 504 || res.status === 502 || res.status === 503) {
+              hadTimeout = true;
+              consecutiveTimeouts += 1;
+            } else {
+              consecutiveTimeouts = 0;
+            }
+          } catch {
+            hadTimeout = true;
+            consecutiveTimeouts += 1;
+            results = [];
+          }
+        } catch {
+          hadTimeout = true;
+          consecutiveTimeouts += 1;
+          results = [];
+        }
+
+        const stillPendingInChunk = remainingRowsAfterBatch(chunk, results);
+        for (const result of results) {
+          if (!result.ok) continue;
+          savedDates.add(result.date);
+        }
+        if (!firstFailureDetail) {
+          const firstFailure = results.find((row) => !row.ok && !row.deferred && row.message);
+          if (firstFailure?.message) {
+            firstFailureDetail = `（例: ${firstFailure.date} / ${firstFailure.message}）`;
+          }
+        }
+
+        const savedInThisRound = new Set(results.filter((result) => result.ok).map((result) => result.date));
+        pending = pending.filter((row) => {
+          if (savedInThisRound.has(row.date)) return false;
+          if (!canRetryCsvSave(attemptsByDate.get(row.date) ?? 0)) {
+            failedDates.add(row.date);
+            return false;
+          }
+          return true;
+        });
+        setAppliedCsvRowIds((current) => [
+          ...new Set([
+            ...current,
+            ...selectedCsvRows.filter((row) => savedDates.has(row.date)).map((row) => row.id),
+          ]),
+        ]);
+
+        if (hadTimeout || stillPendingInChunk.length > 0) {
+          chunkSize = nextCsvSaveChunkSize(chunkSize, hadTimeout);
+          await sleep(hadTimeout ? 1200 : 250);
+        }
       }
 
-      if (!res.ok || !data.ok) {
-        stopBatchTimer();
-        const firstFailure = data.results?.find((r) => !r.ok);
-        const detail = firstFailure?.message ? `（例: ${firstFailure.date} / ${firstFailure.message}）` : "";
-        setBatchStatus(data.saved && data.saved > 0 ? "success" : "error");
-        setBatchMessage(`${data.message || `保存に失敗しました（HTTP ${res.status}）`}${detail}`);
-        if (data.saved && data.saved > 0) {
-          setTimeout(() => window.location.reload(), 2000);
+      const weekStarts = uniqueWeekStarts([...savedDates], (date) => resolveWeekRange(date).weekStart);
+      for (const weekStart of weekStarts) {
+        try {
+          await fetch("/api/weekly-summary", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ referenceDate: weekStart }),
+          });
+        } catch {
+          // Daily rows are already saved; weekly summary can be refreshed later.
         }
-        return;
       }
 
       stopBatchTimer();
       const totalSec = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+      const failedCount = failedDates.size;
+
+      if (failedCount > 0) {
+        setBatchStatus(savedDates.size > 0 ? "success" : "error");
+        setBatchMessage(
+          `${savedDates.size}件保存、${failedCount}件は再試行上限に達しました（${totalSec}秒）${firstFailureDetail}。失敗した日付だけ選び直して再実行してください。`,
+        );
+        return;
+      }
+
       setBatchStatus("success");
       setBatchMessage(
-        `${data.saved}件の日次データをNotionに保存しました（${totalSec}秒）。ページを再読み込みします…`,
+        `${savedDates.size}件の日次データをNotionに保存しました（${totalSec}秒）。ページを再読み込みします…`,
       );
       setTimeout(() => window.location.reload(), 1200);
     } catch (err) {
       stopBatchTimer();
-      setBatchStatus("error");
+      setBatchStatus(savedDates.size > 0 ? "success" : "error");
       setBatchMessage(
         err instanceof Error
-          ? `通信エラー: ${err.message}`
+          ? `通信エラー: ${err.message}${savedDates.size > 0 ? `（${savedDates.size}件は保存済み）` : ""}`
           : "通信エラーが発生しました。",
       );
     }
@@ -941,7 +1021,11 @@ export function DailyInputForm({ defaultDate }: DailyInputFormProps) {
       try {
         data = await res.json();
       } catch {
-        setError(`サーバーからの応答を解析できませんでした（HTTP ${res.status}）`);
+        setError(
+          res.status === 504 || res.status === 502 || res.status === 503
+            ? `保存がタイムアウトしました（HTTP ${res.status}）。時間をおいて再実行してください。`
+            : `サーバーからの応答を解析できませんでした（HTTP ${res.status}）`,
+        );
         return;
       }
 
