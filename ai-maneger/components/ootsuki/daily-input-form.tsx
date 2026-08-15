@@ -805,9 +805,9 @@ export function DailyInputForm({ defaultDate }: DailyInputFormProps) {
     batchTimerRef.current = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startedAt) / 1000);
       setBatchElapsedSec(elapsed);
-      if (elapsed >= 60) {
+      if (elapsed >= 90) {
         setBatchMessage(
-          `${total}件を保存中…（${elapsed}秒経過 / 通常より時間がかかっています。Notion側の応答待ちです。画面はそのままお待ちください）`,
+          `${total}件を保存中…（${elapsed}秒経過 / 件数が多いと数分かかることがあります。Notion側の応答待ちです。画面はそのままお待ちください）`,
         );
       } else if (elapsed >= 20) {
         setBatchMessage(

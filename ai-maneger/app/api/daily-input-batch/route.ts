@@ -5,6 +5,8 @@ import { calculateAverageSpend } from "@/lib/ootsuki";
 import { saveDailyInputBatch } from "@/lib/notion/ootsuki";
 import type { DailyInputPayload } from "@/types/ootsuki";
 
+export const maxDuration = 300;
+
 interface RowInput {
   date?: string;
   sales?: number;
@@ -53,10 +55,6 @@ export async function POST(request: Request) {
   const rows = body.rows;
   if (!Array.isArray(rows) || rows.length === 0) {
     return NextResponse.json({ ok: false, message: "保存する行がありません。" }, { status: 400 });
-  }
-
-  if (rows.length > 31) {
-    return NextResponse.json({ ok: false, message: "一度に保存できるのは31行までです。" }, { status: 400 });
   }
 
   const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
