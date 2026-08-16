@@ -546,6 +546,8 @@ def infer_memory_updates(
     elif route.kind == "store" and _contains_any(text, ORDER_FLOW_KEYWORDS):
         updates["active_topic"] = "order"
         updates["pending_flow"] = "order"
+        if current_memory.get("current_entity"):
+            updates["current_entity"] = current_memory.get("current_entity")
     elif route.kind == "store" and (
         current_memory.get("pending_flow") == "reservation"
         or current_memory.get("active_topic") == "reservation"

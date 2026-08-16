@@ -7,6 +7,11 @@ from core.menu_existence import (
     is_direct_menu_existence_question,
 )
 from core.menu_service import MenuItemView, MenuService
+from core.response_compactness import (
+    format_short_order_confirmation,
+    format_snack_recommendation_reply,
+    has_ambiguous_order_candidates,
+)
 
 
 class MenuExistenceTests(unittest.TestCase):
@@ -24,6 +29,32 @@ class MenuExistenceTests(unittest.TestCase):
         self.assertFalse(is_direct_menu_existence_question("おつまみありますか？"))
         self.assertFalse(is_direct_menu_existence_question("ビールに合うつまみは？"))
         self.assertFalse(is_direct_menu_existence_question("酒のつまみを教えて"))
+
+    def test_snack_recommendation_reply_uses_specific_menu_hits(self):
+        answer = format_snack_recommendation_reply(
+            [
+                SimpleNamespace(name="枝豆", price=380),
+                SimpleNamespace(name="唐揚げ", price=600),
+            ],
+        )
+
+        self.assertIn("枝豆", answer)
+        self.assertIn("唐揚げ", answer)
+        self.assertNotEqual(answer, "酒のつまみをご提案します。以下からお選びください。")
+
+    def test_short_order_confirmation_clarifies_multiple_existence_candidates(self):
+        memory = {
+            "active_topic": "menu",
+            "current_entity": "中生ビール",
+            "last_assistant_action": "answered_product_existence",
+            "menu_existence_candidates": ["中生ビール", "大生ビール"],
+        }
+
+        self.assertTrue(has_ambiguous_order_candidates(memory))
+        self.assertEqual(
+            format_short_order_confirmation(memory),
+            "中生と大生、どちらにしますか？",
+        )
 
     def test_direct_menu_lookup_precedes_natural_route(self):
         source = Path("core/api.py").read_text(encoding="utf-8")
