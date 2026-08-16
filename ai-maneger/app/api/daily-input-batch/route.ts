@@ -4,6 +4,7 @@ import { requireTenantAccess } from "@/lib/api/tenant-access";
 import { calculateAverageSpend } from "@/lib/ootsuki";
 import { saveDailyInputBatch } from "@/lib/notion/ootsuki";
 import { CSV_SAVE_TIME_BUDGET_MS } from "@/lib/csv-save";
+import type { DailyInputPayload } from "@/types/ootsuki";
 
 export const maxDuration = 300;
 
