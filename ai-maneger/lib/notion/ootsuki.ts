@@ -32,12 +32,12 @@ async function cfg() {
 const PROJECT_NAME_KEYS = ["案件名", "名前", "Name", "title"];
 const KPI_TARGET_KEYS = ["KPI目標", "KPI Target"];
 const KPI_ACTUAL_KEYS = ["KPI実績", "KPI Actual"];
-const CATEGORY_KEYS = ["カテゴリ", "Category", "種別"];
-const STATUS_KEYS = ["ステータス", "Status"];
+const CATEGORY_KEYS = ["カテゴリ", "カテゴリー", "Category", "種別", "分類", "Type", "区分"];
+const STATUS_KEYS = ["ステータス", "Status", "進行状況"];
 const SUMMARY_KEYS = ["要点", "要約", "Summary"];
 const RELATED_NUMBER_KEYS = ["関連数字", "数値", "Related Numbers"];
 const NEXT_ACTION_KEYS = ["次アクション", "次のアクション", "Next Action"];
-const TITLE_KEYS = ["タイトル", "件名", "名前", "Name", "title", "日付メモ", "週（メモ）"];
+const TITLE_KEYS = ["タイトル", "件名", "名前", "Name", "title", "日付メモ", "週（メモ）", "メモ名"];
 const DATE_KEYS = ["日付", "Date"];
 const WEEK_START_KEYS = ["週開始", "開始週", "Week Start"];
 const WEEK_END_KEYS = ["週終了", "終了週", "Week End"];
@@ -337,7 +337,16 @@ export async function getLatestProjectDirectionEntries(limit = 10) {
   });
   return pages
     .map(mapMemoEntry)
-    .filter((entry) => entry.category === "プロジェクト方針" || entry.category === "プロジェクト状況")
+    .filter((entry) => {
+      const combined = `${entry.category} ${entry.title} ${entry.summary}`;
+      return (
+        entry.category === "プロジェクト方針" ||
+        entry.category === "プロジェクト状況" ||
+        combined.includes("プロジェクト方針") ||
+        combined.includes("プロジェクト状況") ||
+        entry.title.includes("方針")
+      );
+    })
     .slice(0, limit);
 }
 

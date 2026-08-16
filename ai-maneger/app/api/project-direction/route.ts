@@ -34,6 +34,7 @@ export async function POST(request: Request) {
 
   try {
     const noteId = await saveProjectDirection({
+      tenant: access.tenant,
       title,
       status,
       summary,

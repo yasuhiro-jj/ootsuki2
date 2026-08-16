@@ -1,10 +1,12 @@
 import {
-  createPageInDatabase,
-  getDatabaseSchemaProperties,
+  createPageInDatabaseWithToken,
+  getDatabaseSchemaPropertiesWithToken,
   getPropertyNameByAliases,
-  queryDatabaseAll,
+  queryDatabaseAllWithToken,
 } from "@/lib/notion/client";
 import { getActiveTenantNotionConfig } from "@/lib/notion/tenant";
+import { getTenantNotionConfig } from "@/lib/tenant-config/service";
+import type { TenantKey, TenantNotionConfig } from "@/lib/tenant-config/types";
 import type { NotionProperty } from "@/types/notion";
 
 function richText(content: string) {
@@ -118,12 +120,12 @@ export async function saveDecisionMemo(payload: {
     throw new Error("NOTION_OOTSUKI_MEMO_DB_ID が未設定です");
   }
 
-  const pages = await queryDatabaseAll(memoDbId, {
+  const pages = await queryDatabaseAllWithToken(notion.notionToken, memoDbId, {
     sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
   });
   let schemaProperties = pages[0]?.properties ?? {};
   if (Object.keys(schemaProperties).length === 0) {
-    schemaProperties = await getDatabaseSchemaProperties(memoDbId);
+    schemaProperties = await getDatabaseSchemaPropertiesWithToken(notion.notionToken, memoDbId);
   }
   if (Object.keys(schemaProperties).length === 0) {
     throw new Error(
@@ -135,15 +137,15 @@ export async function saveDecisionMemo(payload: {
   setMappedTextLikeProperty(
     properties,
     schemaProperties,
-    ["タイトル", "件名", "名前", "Name", "title", "日付メモ", "週（メモ）"],
+    ["タイトル", "件名", "名前", "Name", "title", "日付メモ", "週（メモ）", "メモ名"],
     payload.title?.trim() || "メモ",
     "title",
   );
-  setMappedCategoryLikeProperty(properties, schemaProperties, ["カテゴリ", "Category", "種別"], "判断メモ");
+  setMappedCategoryLikeProperty(properties, schemaProperties, ["カテゴリ", "カテゴリー", "Category", "種別", "分類", "Type", "区分"], "判断メモ");
   setMappedStatusLikeProperty(
     properties,
     schemaProperties,
-    ["ステータス", "Status"],
+    ["ステータス", "Status", "進行状況"],
     payload.status?.trim() || "進行中",
   );
   setMappedProperty(properties, schemaProperties, ["日付", "Date"], { date: { start: todayInTokyo() } });
@@ -166,7 +168,7 @@ export async function saveDecisionMemo(payload: {
     payload.nextAction?.trim() || "",
   );
 
-  const created = await createPageInDatabase(memoDbId, properties);
+  const created = await createPageInDatabaseWithToken(notion.notionToken, memoDbId, properties);
   return created.id;
 }
 
@@ -176,19 +178,30 @@ export async function saveProjectDirection(payload: {
   summary: string;
   relatedNumbers?: string;
   nextAction?: string;
+  tenant?: TenantKey;
 }) {
-  const notion = await getActiveTenantNotionConfig();
+  const notion = payload.tenant ? await getTenantNotionConfig(payload.tenant) : await getActiveTenantNotionConfig();
+  return saveProjectDirectionWithConfig(notion, payload);
+}
+
+async function saveProjectDirectionWithConfig(notion: TenantNotionConfig, payload: {
+  title?: string;
+  status?: string;
+  summary: string;
+  relatedNumbers?: string;
+  nextAction?: string;
+}) {
   const memoDbId = notion.memoDbId;
   if (!memoDbId) {
     throw new Error("NOTION_OOTSUKI_MEMO_DB_ID が未設定です");
   }
 
-  const pages = await queryDatabaseAll(memoDbId, {
+  const pages = await queryDatabaseAllWithToken(notion.notionToken, memoDbId, {
     sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
   });
   let schemaProperties = pages[0]?.properties ?? {};
   if (Object.keys(schemaProperties).length === 0) {
-    schemaProperties = await getDatabaseSchemaProperties(memoDbId);
+    schemaProperties = await getDatabaseSchemaPropertiesWithToken(notion.notionToken, memoDbId);
   }
   if (Object.keys(schemaProperties).length === 0) {
     throw new Error(
@@ -200,15 +213,15 @@ export async function saveProjectDirection(payload: {
   setMappedTextLikeProperty(
     properties,
     schemaProperties,
-    ["タイトル", "件名", "名前", "Name", "title", "日付メモ", "週（メモ）"],
+    ["タイトル", "件名", "名前", "Name", "title", "日付メモ", "週（メモ）", "メモ名"],
     payload.title?.trim() || `${todayInTokyo()} プロジェクト方針`,
     "title",
   );
-  setMappedCategoryLikeProperty(properties, schemaProperties, ["カテゴリ", "Category", "種別"], "プロジェクト方針");
+  setMappedCategoryLikeProperty(properties, schemaProperties, ["カテゴリ", "カテゴリー", "Category", "種別", "分類", "Type", "区分"], "プロジェクト方針");
   setMappedStatusLikeProperty(
     properties,
     schemaProperties,
-    ["ステータス", "Status"],
+    ["ステータス", "Status", "進行状況"],
     payload.status?.trim() || "進行中",
   );
   setMappedProperty(properties, schemaProperties, ["日付", "Date"], { date: { start: todayInTokyo() } });
@@ -231,6 +244,6 @@ export async function saveProjectDirection(payload: {
     payload.nextAction?.trim() || "",
   );
 
-  const created = await createPageInDatabase(memoDbId, properties);
+  const created = await createPageInDatabaseWithToken(notion.notionToken, memoDbId, properties);
   return created.id;
 }
