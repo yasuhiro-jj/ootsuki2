@@ -68,6 +68,7 @@ export function DashboardAgentChat({ enabled }: { enabled: boolean }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: text,
+            saveToNotion: true,
             ...(options?.agentName ? { agentName: options.agentName } : {}),
             ...(options?.agentRole ? { agentRole: options.agentRole } : {}),
             ...(sessionId ? { sessionId } : {}),
@@ -81,7 +82,15 @@ export function DashboardAgentChat({ enabled }: { enabled: boolean }) {
         }
 
         setSessionId(data.sessionId);
-        setMessages((prev) => [...prev, { id: nextId(), role: "assistant", content: data.reply }]);
+        const notionStatus = data.notionMemoId
+          ? "\n\nNotionに保存しました。"
+          : data.notionSaveError
+            ? `\n\nNotion保存に失敗しました: ${data.notionSaveError}`
+            : "";
+        setMessages((prev) => [
+          ...prev,
+          { id: nextId(), role: "assistant", content: `${data.reply}${notionStatus}` },
+        ]);
       } catch (error) {
         setError(error instanceof Error ? error.message : "通信に失敗しました。");
       } finally {

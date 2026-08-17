@@ -3,6 +3,7 @@ export type AgentChatRequestBody = {
   sessionId?: string;
   agentName?: string;
   agentRole?: string;
+  saveToNotion?: boolean;
 };
 
 export type SalesAnalysisResult = {
@@ -44,6 +45,8 @@ export type AgentChatSuccessResponse = {
   sessionId: string;
   source: string;
   fallbackUsed: boolean;
+  notionMemoId?: string;
+  notionSaveError?: string;
   structured?: StructuredAgentResult;
 };
 

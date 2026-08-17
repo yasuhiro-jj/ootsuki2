@@ -10,6 +10,7 @@ import {
 } from "@/lib/tenant-config/repository";
 import { generateEmbedding } from "@/lib/db/embeddings";
 import { generateReply, type ChatMessage } from "@/lib/agent-chat";
+import { saveDecisionMemo } from "@/lib/notion/decision-memo";
 import {
   getAgentHubKnowledgeContext,
   getKnowledgeContextFromUrls,
@@ -53,6 +54,15 @@ import type {
 export const runtime = "nodejs";
 
 const sessionStore = new Map<string, ChatMessage[]>();
+
+function todayInTokyo() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
 
 function sessionKey(tenant: string, sessionId: string) {
   return `${tenant}:${sessionId}`;
@@ -345,6 +355,7 @@ export async function POST(request: Request) {
   const message = typeof body.message === "string" ? body.message.trim() : "";
   const agentName = typeof body.agentName === "string" ? body.agentName.trim() : "";
   const agentRole = typeof body.agentRole === "string" ? body.agentRole.trim() : "";
+  const saveToNotion = body.saveToNotion === true;
   if (!message) {
     return NextResponse.json(
       {
@@ -354,6 +365,10 @@ export async function POST(request: Request) {
       } satisfies AgentChatErrorResponse,
       { status: 400 },
     );
+  }
+  if (saveToNotion) {
+    const writeAccess = await requireTenantAccess(request, "write");
+    if (!writeAccess.ok) return writeAccess.response;
   }
 
   const tenantConfig = await getActiveTenantNotionConfig();
@@ -521,6 +536,28 @@ export async function POST(request: Request) {
       outputFormat && outputFormat !== "text"
         ? tryParseStructured(reply, outputFormat) ?? undefined
         : undefined;
+    let notionMemoId: string | undefined;
+    let notionSaveError: string | undefined;
+    if (saveToNotion) {
+      try {
+        notionMemoId = await saveDecisionMemo({
+          title: `${todayInTokyo()} AI report${agentName ? ` - ${agentName}` : ""}`,
+          status: "完了",
+          summary: reply,
+          relatedNumbers: [
+            `依頼: ${message}`,
+            agentName ? `担当: ${agentName}` : "",
+            agentRole ? `役割: ${agentRole}` : "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          nextAction: "AIレポートを確認し、実行項目へ反映する",
+        });
+      } catch (err) {
+        notionSaveError = err instanceof Error ? err.message : "Notion save failed";
+        console.error("[agent-chat] notion report save failed:", err);
+      }
+    }
 
     return NextResponse.json({
       ok: true,
@@ -528,6 +565,8 @@ export async function POST(request: Request) {
       sessionId,
       source: `${access.tenant}-dashboard-agent`,
       fallbackUsed: false,
+      ...(notionMemoId ? { notionMemoId } : {}),
+      ...(notionSaveError ? { notionSaveError } : {}),
       ...(structured ? { structured } : {}),
     });
   } catch (error) {
