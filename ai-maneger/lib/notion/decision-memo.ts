@@ -13,6 +13,38 @@ function richText(content: string) {
   return [{ type: "text", text: { content: content || " " } }];
 }
 
+function splitTextForNotion(content: string, maxLength = 1800) {
+  const chunks: string[] = [];
+  let remaining = content.trim();
+  while (remaining.length > maxLength) {
+    const splitAt = Math.max(
+      remaining.lastIndexOf("\n", maxLength),
+      remaining.lastIndexOf("。", maxLength),
+      remaining.lastIndexOf(".", maxLength),
+    );
+    const index = splitAt > 200 ? splitAt + 1 : maxLength;
+    chunks.push(remaining.slice(0, index).trim());
+    remaining = remaining.slice(index).trim();
+  }
+  if (remaining) chunks.push(remaining);
+  return chunks.length ? chunks : [" "];
+}
+
+function notionTextBlocks(title: string, content: string) {
+  return [
+    {
+      object: "block",
+      type: "heading_2",
+      heading_2: { rich_text: richText(title) },
+    },
+    ...splitTextForNotion(content).map((chunk) => ({
+      object: "block",
+      type: "paragraph",
+      paragraph: { rich_text: richText(chunk) },
+    })),
+  ];
+}
+
 function todayInTokyo() {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Tokyo",
@@ -113,6 +145,7 @@ export async function saveDecisionMemo(payload: {
   summary: string;
   relatedNumbers?: string;
   nextAction?: string;
+  body?: string;
 }) {
   const notion = await getActiveTenantNotionConfig();
   const memoDbId = notion.memoDbId;
@@ -168,7 +201,10 @@ export async function saveDecisionMemo(payload: {
     payload.nextAction?.trim() || "",
   );
 
-  const created = await createPageInDatabaseWithToken(notion.notionToken, memoDbId, properties);
+  const extraPayload = payload.body?.trim()
+    ? { children: notionTextBlocks(payload.title?.trim() || "AI report", payload.body) }
+    : {};
+  const created = await createPageInDatabaseWithToken(notion.notionToken, memoDbId, properties, extraPayload);
   return created.id;
 }
 

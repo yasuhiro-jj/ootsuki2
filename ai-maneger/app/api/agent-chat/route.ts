@@ -552,6 +552,19 @@ export async function POST(request: Request) {
             .filter(Boolean)
             .join("\n"),
           nextAction: "AIレポートを確認し、実行項目へ反映する",
+          body: [
+            "# AI Manager Report",
+            "",
+            "## User request",
+            message,
+            "",
+            "## Agent",
+            agentName || "AI運用アシスタント",
+            agentRole ? `\n${agentRole}` : "",
+            "",
+            "## Answer",
+            reply,
+          ].join("\n"),
         });
       } catch (err) {
         notionSaveError = err instanceof Error ? err.message : "Notion save failed";
