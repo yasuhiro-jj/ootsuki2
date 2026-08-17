@@ -100,6 +100,9 @@ export interface MonthlyAggregate {
   grossProfit: number;
   lineRegistrations: number;
   lineVisits: number;
+  salesYoY?: number;
+  customersYoY?: number;
+  averageSpendYoY?: number;
   salesMoM?: number;
   customersMoM?: number;
   averageSpendMoM?: number;
