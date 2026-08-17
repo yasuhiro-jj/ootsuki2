@@ -593,6 +593,16 @@ export async function saveWeeklyReview(payload: WeeklyReviewPayload) {
   const pages = await queryDatabaseAll(memoDbId, {
     sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
   });
+  let schemaProperties = pages[0]?.properties ?? {};
+  if (Object.keys(schemaProperties).length === 0) {
+    schemaProperties = await getDatabaseSchemaProperties(memoDbId);
+  }
+  if (Object.keys(schemaProperties).length === 0) {
+    throw new Error(
+      "週次レビューDBのプロパティ定義を取得できませんでした。Notion連携先IDとインテグレーション権限を確認してください。",
+    );
+  }
+
   const existing = pages.find((page) => {
     const category = getPropertyText(page.properties, CATEGORY_KEYS);
     const start = getPropertyDate(page.properties, WEEK_START_KEYS) || getPropertyDate(page.properties, DATE_KEYS);
@@ -600,16 +610,28 @@ export async function saveWeeklyReview(payload: WeeklyReviewPayload) {
     return category === "振り返り" && start === payload.weekStart && (!end || end === payload.weekEnd);
   });
 
-  const properties = {
-    タイトル: { title: richText(`${payload.weekStart} 週次レビュー`) },
-    カテゴリ: { select: { name: "振り返り" } },
-    ステータス: { status: { name: payload.status || "進行中" } },
-    週開始: { date: { start: payload.weekStart } },
-    週終了: { date: { start: payload.weekEnd } },
-    要点: { rich_text: richText(payload.summary) },
-    関連数字: { rich_text: richText(payload.relatedNumbers || "") },
-    次アクション: { rich_text: richText(payload.nextActions.join("\n")) },
-  };
+  const properties: Record<string, unknown> = {};
+
+  setMappedTextLikeProperty(
+    properties,
+    schemaProperties,
+    TITLE_KEYS,
+    `${payload.weekStart} 週次レビュー`,
+    "title",
+  );
+  setMappedProperty(properties, schemaProperties, CATEGORY_KEYS, {
+    select: { name: "振り返り" },
+  });
+  setMappedStatusLikeProperty(properties, schemaProperties, STATUS_KEYS, payload.status || "進行中");
+  // 週開始/週終了が無いDBでも保存できるよう、setMappedProperty はスキーマに存在しない
+  // プロパティには何も設定しない(フォールバックしない)。既存データとの互換のため、
+  // 汎用の日付プロパティ(DATE_KEYS)にも週開始日を入れておく。
+  setMappedProperty(properties, schemaProperties, WEEK_START_KEYS, { date: { start: payload.weekStart } });
+  setMappedProperty(properties, schemaProperties, WEEK_END_KEYS, { date: { start: payload.weekEnd } });
+  setMappedProperty(properties, schemaProperties, DATE_KEYS, { date: { start: payload.weekStart } });
+  setMappedTextLikeProperty(properties, schemaProperties, SUMMARY_KEYS, payload.summary);
+  setMappedTextLikeProperty(properties, schemaProperties, RELATED_NUMBER_KEYS, payload.relatedNumbers || "");
+  setMappedTextLikeProperty(properties, schemaProperties, NEXT_ACTION_KEYS, payload.nextActions.join("\n"));
 
   if (existing) {
     await updatePage(existing.id, { properties });
