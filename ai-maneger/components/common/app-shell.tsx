@@ -9,14 +9,20 @@ const navigationItems = [
   { href: "/admin/tenant-access", label: "権限管理" },
 ];
 
+export interface AppShellSectionLink {
+  id: string;
+  label: string;
+}
+
 interface AppShellProps {
   title: string;
   description?: string;
   actions?: ReactNode;
   children: ReactNode;
+  sectionLinks?: AppShellSectionLink[];
 }
 
-export function AppShell({ title, description, actions, children }: AppShellProps) {
+export function AppShell({ title, description, actions, children, sectionLinks }: AppShellProps) {
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,_#f7f4ea_0%,_#fffdf8_40%,_#fff7ed_100%)] text-stone-900">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl gap-6 px-4 py-6 md:px-8">
@@ -40,6 +46,24 @@ export function AppShell({ title, description, actions, children }: AppShellProp
               </Link>
             ))}
           </nav>
+
+          {sectionLinks && sectionLinks.length > 0 ? (
+            <nav className="mt-8 max-h-[45vh] space-y-1 overflow-y-auto border-t border-white/10 pt-6">
+              <p className="px-4 pb-1 text-[11px] uppercase tracking-[0.25em] text-stone-500">
+                このページのセクション
+              </p>
+              {sectionLinks.map((item) => (
+                <a
+                  key={item.id}
+                  href={"#" + item.id}
+                  className="block truncate rounded-xl px-4 py-2 text-xs leading-5 text-stone-300 transition hover:bg-white/10 hover:text-white"
+                >
+                  {item.label}
+                </a>
+              ))}
+            </nav>
+          ) : null}
+
           <div className="mt-10 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-stone-300">
             Notion を正本にしつつ、通常運用はダッシュボードから完結させるためのUIです。
           </div>
