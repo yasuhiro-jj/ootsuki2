@@ -21,6 +21,7 @@ import {
   aggregateMonthToDate,
   aggregateWeek,
   attachMonthOverMonth,
+  attachMonthYearOverYear,
   attachWeekOverWeek,
   attachYearOverYear,
   buildMetricAlerts,
@@ -148,9 +149,34 @@ export default async function DashboardPage() {
   const currentMonth = aggregateMonthToDate(entries, now);
   const previousMonthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
   const previousMonth = aggregateMonthBusinessDays(entries, previousMonthDate, currentMonth.totalDays);
-  const profitAlertSummary = attachMonthOverMonth(currentMonth, previousMonth);
-  const metricAlerts = buildMetricAlerts(weekSummary);
-  const profitActionAlerts = buildProfitActionAlerts(profitAlertSummary);
+  const lastYearMonthDate = new Date(Date.UTC(now.getUTCFullYear() - 1, now.getUTCMonth(), 1));
+  let sameMonthLastYear = aggregateMonthBusinessDays(entries, lastYearMonthDate, currentMonth.totalDays);
+  const currentMonthDailyEntries = entries.filter(
+    (entry) => entry.date && entry.date >= currentMonth.monthStart && entry.date <= currentMonth.monthEnd,
+  );
+  const lastYearFromPreviousMonth = currentMonthDailyEntries.reduce(
+    (acc, entry) => ({
+      sales: acc.sales + (entry.previousSales ?? 0),
+      customers: acc.customers + (entry.previousCustomers ?? 0),
+    }),
+    { sales: 0, customers: 0 },
+  );
+  if (lastYearFromPreviousMonth.sales > 0 || lastYearFromPreviousMonth.customers > 0) {
+    const mergedSales = lastYearFromPreviousMonth.sales || sameMonthLastYear.sales;
+    const mergedCustomers = lastYearFromPreviousMonth.customers || sameMonthLastYear.customers;
+    sameMonthLastYear = {
+      ...sameMonthLastYear,
+      sales: mergedSales,
+      customers: mergedCustomers,
+      averageSpend: calculateAverageSpend(mergedSales, mergedCustomers),
+    };
+  }
+  const monthSummary = attachMonthYearOverYear(
+    attachMonthOverMonth(currentMonth, previousMonth),
+    sameMonthLastYear,
+  );
+  const metricAlerts = buildMetricAlerts(monthSummary, "今月");
+  const profitActionAlerts = buildProfitActionAlerts(monthSummary);
   const latestWeeklyReview = latestWeeklyReviews[0];
   const judgmentMaterial =
     latestWeeklyReview &&
@@ -205,31 +231,31 @@ export default async function DashboardPage() {
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <SectionCard>
-          <p className="text-sm text-stone-500">今週売上</p>
-          <p className="mt-3 text-4xl font-bold">{formatYen(weekSummary.sales)}</p>
+          <p className="text-sm text-stone-500">今月売上（累計）</p>
+          <p className="mt-3 text-4xl font-bold">{formatYen(monthSummary.sales)}</p>
           <p className="mt-2 text-sm text-stone-500">
-            昨対比 {formatPercentDelta(weekSummary.salesYoY)}
+            昨対比 {formatPercentDelta(monthSummary.salesYoY)}
           </p>
         </SectionCard>
         <SectionCard>
-          <p className="text-sm text-stone-500">今週客数</p>
-          <p className="mt-3 text-4xl font-bold">{formatCount(weekSummary.customers)}</p>
+          <p className="text-sm text-stone-500">今月客数（累計）</p>
+          <p className="mt-3 text-4xl font-bold">{formatCount(monthSummary.customers)}</p>
           <p className="mt-2 text-sm text-stone-500">
-            昨対比 {formatPercentDelta(weekSummary.customersYoY)}
+            昨対比 {formatPercentDelta(monthSummary.customersYoY)}
           </p>
         </SectionCard>
         <SectionCard>
-          <p className="text-sm text-stone-500">今週客単価</p>
-          <p className="mt-3 text-4xl font-bold">{formatYen(weekSummary.averageSpend)}</p>
+          <p className="text-sm text-stone-500">今月客単価</p>
+          <p className="mt-3 text-4xl font-bold">{formatYen(monthSummary.averageSpend)}</p>
           <p className="mt-2 text-sm text-stone-500">
-            昨対比 {formatPercentDelta(weekSummary.averageSpendYoY)}
+            昨対比 {formatPercentDelta(monthSummary.averageSpendYoY)}
           </p>
         </SectionCard>
         <SectionCard>
-          <p className="text-sm text-stone-500">入力済み日数</p>
-          <p className="mt-3 text-4xl font-bold">{weekSummary.totalDays}</p>
+          <p className="text-sm text-stone-500">今月の入力済み日数</p>
+          <p className="mt-3 text-4xl font-bold">{monthSummary.totalDays}</p>
           <p className="mt-2 text-sm text-stone-500">
-            {weekSummary.weekStart} 〜 {weekSummary.weekEnd}
+            {monthSummary.monthStart} 〜 {monthSummary.monthEnd}
           </p>
         </SectionCard>
       </section>

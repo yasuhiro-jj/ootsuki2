@@ -1,5 +1,17 @@
 export const recommendedAgents = [
   {
+    name: "MEO/GBP運用アドバイザー",
+    role: "Googleビジネスプロフィールの投稿、写真、口コミ返信、検索順位改善を来店導線に結びつけるMEO専門家。",
+    href: "https://meo-auto-assistant.vercel.app",
+    linkLabel: "MEOアプリ",
+  },
+  {
+    name: "Instagram販促アドバイザー",
+    role: "Instagramの投稿、リール、ストーリーズ、プロフィール導線を売上と来店につなげるSNS販促専門家。",
+    href: "https://frontend-six-phi-29.vercel.app/",
+    linkLabel: "インスタ自動投稿アプリ",
+  },
+  {
     name: "売上分析エージェント",
     role: "客数×客単価分解と前週比を軸に、事実と仮説を分けてレポート化する売上データアナリスト。",
   },

@@ -234,6 +234,19 @@ export function attachMonthOverMonth(
   };
 }
 
+export function attachMonthYearOverYear(
+  current: MonthlyAggregate,
+  lastYear?: MonthlyAggregate | null,
+): MonthlyAggregate {
+  if (!lastYear) return current;
+  return {
+    ...current,
+    salesYoY: percentDelta(current.sales, lastYear.sales),
+    customersYoY: percentDelta(current.customers, lastYear.customers),
+    averageSpendYoY: percentDelta(current.averageSpend, lastYear.averageSpend),
+  };
+}
+
 export function attachWeekOverWeek(
   current: WeeklyAggregate,
   previous?: WeeklyAggregate | null,
@@ -263,15 +276,23 @@ export function attachYearOverYear(
   };
 }
 
-export function buildMetricAlerts(summary: WeeklyAggregate): DashboardMetricAlert[] {
+type PeriodMetricSummary = Pick<
+  WeeklyAggregate | MonthlyAggregate,
+  "sales" | "customers" | "grossMarginRate"
+>;
+
+export function buildMetricAlerts(
+  summary: PeriodMetricSummary,
+  periodLabel = "今週",
+): DashboardMetricAlert[] {
   return [
     {
-      label: "今週売上",
+      label: `${periodLabel}売上`,
       status: summary.sales > 0 ? "ok" : "missing",
-      detail: summary.sales > 0 ? `${formatYen(summary.sales)} を記録済みです。` : "今週売上がまだ入っていません。",
+      detail: summary.sales > 0 ? `${formatYen(summary.sales)} を記録済みです。` : `${periodLabel}売上がまだ入っていません。`,
     },
     {
-      label: "今週客数",
+      label: `${periodLabel}客数`,
       status: summary.customers > 0 ? "ok" : "missing",
       detail: summary.customers > 0 ? `${formatCount(summary.customers)} を記録済みです。` : "客数がまだ入っていません。",
     },
