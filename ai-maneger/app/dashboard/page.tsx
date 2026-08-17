@@ -13,6 +13,7 @@ import { UpdatedBanner } from "@/components/ootsuki/updated-banner";
 import { WeeklyActionsPanel } from "@/components/ootsuki/weekly-actions-panel";
 import { WeeklyJudgmentPanel } from "@/components/ootsuki/weekly-judgment-panel";
 import { NotionInstructionsPanel } from "@/components/ootsuki/notion-instructions-panel";
+import { UsenTimeZoneSalesPanel } from "@/components/ootsuki/usen-time-zone-sales-panel";
 import { recommendedAgents } from "@/lib/agents";
 import { getCurrentTenantAccessResult } from "@/lib/api/tenant-access";
 import { formatDateTime } from "@/lib/format";
@@ -403,6 +404,15 @@ export default async function DashboardPage() {
             configReady={salesOverviewConfigReady}
             tenant={access.tenant}
           />
+        </SectionCard>
+      </section>
+
+      <section id="usen-time-zone" className="mt-6 scroll-mt-6">
+        <SectionCard
+          title="USEN時間帯別売上"
+          description="USENレジの「注文客数の時間別推移」CSVを読み込み、時間帯別の合計とピークを確認できます。ログイン情報は保存せず、アップロードしたCSVだけをブラウザ内で解析します。"
+        >
+          <UsenTimeZoneSalesPanel />
         </SectionCard>
       </section>
 
