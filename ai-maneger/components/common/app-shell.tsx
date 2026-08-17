@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { LogoutButton } from "@/components/auth/LogoutButton";
+import { HashScrollFix } from "@/components/common/hash-scroll-fix";
 import { TenantAccessBadge } from "@/components/TenantAccessBadge";
 
 const navigationItems = [
@@ -25,6 +26,7 @@ interface AppShellProps {
 export function AppShell({ title, description, actions, children, sectionLinks }: AppShellProps) {
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,_#f7f4ea_0%,_#fffdf8_40%,_#fff7ed_100%)] text-stone-900">
+      <HashScrollFix />
       <div className="mx-auto flex min-h-screen w-full max-w-7xl gap-6 px-4 py-6 md:px-8">
         <aside className="hidden w-64 shrink-0 rounded-[28px] border border-stone-900/10 bg-stone-950 p-6 text-stone-50 shadow-[0_30px_80px_rgba(28,25,23,0.28)] lg:block">
           <p className="text-xs uppercase tracking-[0.35em] text-orange-300">
