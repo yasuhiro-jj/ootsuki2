@@ -1,6 +1,7 @@
 import type {
   DashboardMetricAlert,
   KpiSnapshotEntry,
+  MonthlyAggregate,
   ProfitActionAlert,
   WeeklyAggregate,
 } from "@/types/ootsuki";
@@ -18,6 +19,20 @@ const EMPTY_WEEK: WeeklyAggregate = {
   lineVisits: 0,
   notes: [],
   actions: [],
+  totalDays: 0,
+};
+
+const EMPTY_MONTH: MonthlyAggregate = {
+  monthKey: "",
+  monthStart: "",
+  monthEnd: "",
+  sales: 0,
+  customers: 0,
+  averageSpend: 0,
+  grossMarginRate: 0,
+  grossProfit: 0,
+  lineRegistrations: 0,
+  lineVisits: 0,
   totalDays: 0,
 };
 
@@ -42,6 +57,17 @@ function buildWeekRange(reference: Date) {
   return {
     weekStart: dateOnly(start),
     weekEnd: dateOnly(end),
+  };
+}
+
+function buildMonthRange(reference: Date) {
+  const year = reference.getUTCFullYear();
+  const month = reference.getUTCMonth();
+  const start = new Date(Date.UTC(year, month, 1));
+  const end = new Date(Date.UTC(year, month + 1, 0));
+  return {
+    monthStart: dateOnly(start),
+    monthEnd: dateOnly(end),
   };
 }
 
@@ -131,6 +157,83 @@ export function aggregateWeek(entries: KpiSnapshotEntry[], referenceDate: Date) 
   };
 }
 
+export function aggregateMonthToDate(entries: KpiSnapshotEntry[], referenceDate: Date): MonthlyAggregate {
+  const { monthStart, monthEnd } = buildMonthRange(referenceDate);
+  const cutoff = dateOnly(referenceDate);
+  const monthToDateEnd = cutoff < monthEnd ? cutoff : monthEnd;
+  return aggregateMonthEntries(
+    entries.filter((entry) => entry.date && entry.date >= monthStart && entry.date <= monthToDateEnd),
+    monthStart,
+    monthToDateEnd,
+  );
+}
+
+export function aggregateMonthBusinessDays(
+  entries: KpiSnapshotEntry[],
+  referenceDate: Date,
+  businessDays: number,
+): MonthlyAggregate {
+  const { monthStart, monthEnd } = buildMonthRange(referenceDate);
+  const days = Math.max(0, Math.floor(businessDays));
+  const monthEntries = entries
+    .filter((entry) => entry.date && entry.date >= monthStart && entry.date <= monthEnd)
+    .sort((left, right) => (left.date || "").localeCompare(right.date || ""))
+    .slice(0, days);
+  const lastIncludedDate = monthEntries.at(-1)?.date || monthStart;
+  return aggregateMonthEntries(monthEntries, monthStart, lastIncludedDate);
+}
+
+function aggregateMonthEntries(
+  monthEntries: KpiSnapshotEntry[],
+  monthStart: string,
+  monthEnd: string,
+): MonthlyAggregate {
+  if (monthEntries.length === 0) {
+    return {
+      ...EMPTY_MONTH,
+      monthKey: `${monthStart}_${monthEnd}`,
+      monthStart,
+      monthEnd,
+    };
+  }
+
+  const sales = monthEntries.reduce((sum, entry) => sum + entry.sales, 0);
+  const customers = monthEntries.reduce((sum, entry) => sum + entry.customers, 0);
+  const grossProfit = monthEntries.reduce((sum, entry) => sum + entry.grossProfit, 0);
+  const lineRegistrations = monthEntries.reduce((sum, entry) => sum + entry.lineRegistrations, 0);
+  const lineVisits = monthEntries.reduce((sum, entry) => sum + entry.lineVisits, 0);
+
+  return {
+    monthKey: `${monthStart}_${monthEnd}`,
+    monthStart,
+    monthEnd,
+    sales,
+    customers,
+    averageSpend: calculateAverageSpend(sales, customers),
+    grossMarginRate: sales > 0 ? (grossProfit / sales) * 100 : 0,
+    grossProfit,
+    lineRegistrations,
+    lineVisits,
+    totalDays: monthEntries.length,
+  };
+}
+
+export function attachMonthOverMonth(
+  current: MonthlyAggregate,
+  previous?: MonthlyAggregate | null,
+): MonthlyAggregate {
+  if (!previous) return current;
+  return {
+    ...current,
+    salesMoM: percentDelta(current.sales, previous.sales),
+    customersMoM: percentDelta(current.customers, previous.customers),
+    averageSpendMoM: percentDelta(current.averageSpend, previous.averageSpend),
+    grossMarginRateMoM: percentDelta(current.grossMarginRate, previous.grossMarginRate),
+    lineRegistrationsMoM: percentDelta(current.lineRegistrations, previous.lineRegistrations),
+    lineVisitsMoM: percentDelta(current.lineVisits, previous.lineVisits),
+  };
+}
+
 export function attachWeekOverWeek(
   current: WeeklyAggregate,
   previous?: WeeklyAggregate | null,
@@ -183,8 +286,22 @@ export function buildMetricAlerts(summary: WeeklyAggregate): DashboardMetricAler
   ];
 }
 
-export function buildProfitActionAlerts(summary: WeeklyAggregate): ProfitActionAlert[] {
+type ProfitActionSummary = Pick<
+  WeeklyAggregate | MonthlyAggregate,
+  "sales" | "customers" | "averageSpend" | "grossMarginRate" | "totalDays"
+> &
+  Partial<Pick<WeeklyAggregate, "customersWoW" | "averageSpendWoW" | "grossMarginRateWoW">> &
+  Partial<Pick<MonthlyAggregate, "customersMoM" | "averageSpendMoM" | "grossMarginRateMoM">>;
+
+export function buildProfitActionAlerts(summary: ProfitActionSummary): ProfitActionAlert[] {
   const alerts: ProfitActionAlert[] = [];
+  const isMonthly = typeof summary.grossMarginRateMoM === "number" ||
+    typeof summary.averageSpendMoM === "number" ||
+    typeof summary.customersMoM === "number";
+  const comparisonLabel = isMonthly ? "前月比" : "前週比";
+  const grossMarginRateDelta = summary.grossMarginRateMoM ?? summary.grossMarginRateWoW;
+  const averageSpendDelta = summary.averageSpendMoM ?? summary.averageSpendWoW;
+  const customersDelta = summary.customersMoM ?? summary.customersWoW;
 
   if (summary.sales <= 0 || summary.totalDays <= 0) {
     alerts.push({
@@ -199,11 +316,11 @@ export function buildProfitActionAlerts(summary: WeeklyAggregate): ProfitActionA
     return alerts;
   }
 
-  if (typeof summary.grossMarginRateWoW === "number" && summary.grossMarginRateWoW <= -1.5) {
+  if (typeof grossMarginRateDelta === "number" && grossMarginRateDelta <= -1.5) {
     alerts.push({
       title: "粗利率が悪化",
       status: "urgent",
-      reason: `粗利率が前週比 ${formatPercentDelta(summary.grossMarginRateWoW)} です。値引き/原価上振れの確認が必要です。`,
+      reason: `粗利率が${comparisonLabel} ${formatPercentDelta(grossMarginRateDelta)} です。値引き/原価上振れの確認が必要です。`,
       actions: [
         "値引き・返品が多い商品を上位3つ確認する",
         "原価率が高い商品の販促比率を今週だけ下げる",
@@ -212,11 +329,11 @@ export function buildProfitActionAlerts(summary: WeeklyAggregate): ProfitActionA
     });
   }
 
-  if (typeof summary.averageSpendWoW === "number" && summary.averageSpendWoW <= -4) {
+  if (typeof averageSpendDelta === "number" && averageSpendDelta <= -4) {
     alerts.push({
       title: "客単価が低下",
       status: "urgent",
-      reason: `客単価が前週比 ${formatPercentDelta(summary.averageSpendWoW)} です。追加注文導線の弱化が疑われます。`,
+      reason: `客単価が${comparisonLabel} ${formatPercentDelta(averageSpendDelta)} です。追加注文導線の弱化が疑われます。`,
       actions: [
         "会計前の追加提案トークを1フレーズ固定する",
         "高粗利のサイド/ドリンクをセット表示で先頭に出す",
@@ -225,11 +342,11 @@ export function buildProfitActionAlerts(summary: WeeklyAggregate): ProfitActionA
     });
   }
 
-  if (typeof summary.customersWoW === "number" && summary.customersWoW <= -6) {
+  if (typeof customersDelta === "number" && customersDelta <= -6) {
     alerts.push({
       title: "客数が減少",
       status: "watch",
-      reason: `客数が前週比 ${formatPercentDelta(summary.customersWoW)} です。来店動機の再提示が必要です。`,
+      reason: `客数が${comparisonLabel} ${formatPercentDelta(customersDelta)} です。来店動機の再提示が必要です。`,
       actions: [
         "LINE配信で来店理由を1つに絞って打ち出す",
         "曜日別で落ち込み日を特定し、限定施策を置く",
