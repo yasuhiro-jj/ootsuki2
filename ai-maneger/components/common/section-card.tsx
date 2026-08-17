@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 interface SectionCardProps {
+  id?: string;
   title?: string;
   description?: string;
   children: ReactNode;
@@ -8,6 +9,7 @@ interface SectionCardProps {
 }
 
 export function SectionCard({
+  id,
   title,
   description,
   children,
@@ -15,7 +17,11 @@ export function SectionCard({
 }: SectionCardProps) {
   return (
     <section
-      className={`rounded-[28px] border border-stone-900/10 bg-white/85 p-6 shadow-[0_18px_50px_rgba(120,53,15,0.08)] ${className}`}
+      id={id}
+      className={
+        "scroll-mt-24 rounded-[28px] border border-stone-900/10 bg-white/85 p-6 shadow-[0_18px_50px_rgba(120,53,15,0.08)] " +
+        className
+      }
     >
       {title ? <h3 className="text-xl font-bold tracking-tight">{title}</h3> : null}
       {description ? (
