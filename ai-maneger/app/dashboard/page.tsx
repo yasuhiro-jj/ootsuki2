@@ -17,7 +17,10 @@ import { recommendedAgents } from "@/lib/agents";
 import { getCurrentTenantAccessResult } from "@/lib/api/tenant-access";
 import { formatDateTime } from "@/lib/format";
 import {
+  aggregateMonthBusinessDays,
+  aggregateMonthToDate,
   aggregateWeek,
+  attachMonthOverMonth,
   attachWeekOverWeek,
   attachYearOverYear,
   buildMetricAlerts,
@@ -142,8 +145,12 @@ export default async function DashboardPage() {
     };
   }
   const weekSummary = attachYearOverYear(attachWeekOverWeek(currentWeek, previousWeek), sameWeekLastYear);
+  const currentMonth = aggregateMonthToDate(entries, now);
+  const previousMonthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  const previousMonth = aggregateMonthBusinessDays(entries, previousMonthDate, currentMonth.totalDays);
+  const profitAlertSummary = attachMonthOverMonth(currentMonth, previousMonth);
   const metricAlerts = buildMetricAlerts(weekSummary);
-  const profitActionAlerts = buildProfitActionAlerts(weekSummary);
+  const profitActionAlerts = buildProfitActionAlerts(profitAlertSummary);
   const latestWeeklyReview = latestWeeklyReviews[0];
   const judgmentMaterial =
     latestWeeklyReview &&
@@ -376,7 +383,7 @@ export default async function DashboardPage() {
       <section className="mt-6">
         <SectionCard
           title="利益を残す施策アラート"
-          description="粗利率・客単価・客数の前週比から、利益改善に直結する打ち手を自動提案します。"
+          description="粗利率・客単価・客数の前月比から、利益改善に直結する打ち手を自動提案します。"
         >
           <div className="grid gap-3 md:grid-cols-2">
             {profitActionAlerts.map((alert) => (
