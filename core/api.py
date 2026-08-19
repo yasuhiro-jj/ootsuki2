@@ -43,6 +43,7 @@ from .response_compactness import (
     format_contextual_price_reply,
     format_initial_reservation_reply,
     format_night_visit_reply,
+    has_ambiguous_order_candidates,
     format_other_recommendation_reply,
     format_party_size_without_context_reply,
     format_reservation_correction_reply,
@@ -1788,22 +1789,32 @@ def create_app(config: ConfigLoader) -> FastAPI:
 
             if is_short_order_confirmation(user_message, session_memory):
                 response_message = format_short_order_confirmation(session_memory)
-                _safe_record_customer_event(
-                    request.customer_id,
-                    session_id,
-                    EVENT_ORDER_CONFIRMED,
-                    product_name=get_recent_item_name(session_memory),
-                    strategy_id=str(session_memory.get("last_suggestion_strategy_id") or ""),
-                )
+                ambiguous_order_candidates = has_ambiguous_order_candidates(session_memory)
+                if not ambiguous_order_candidates:
+                    _safe_record_customer_event(
+                        request.customer_id,
+                        session_id,
+                        EVENT_ORDER_CONFIRMED,
+                        product_name=get_recent_item_name(session_memory),
+                        strategy_id=str(session_memory.get("last_suggestion_strategy_id") or ""),
+                    )
                 ai_engine.save_memory(
                     session_id,
                     {
                         "active_topic": "order",
                         "pending_flow": "order",
                         "detected_intent": "product_order",
-                        "order_intent_level": "confirming",
-                        "recently_confirmed_item": get_recent_item_name(session_memory),
-                        "last_assistant_action": "confirmed_order_item",
+                        "order_intent_level": (
+                            "clarifying" if ambiguous_order_candidates else "confirming"
+                        ),
+                        "recently_confirmed_item": (
+                            "" if ambiguous_order_candidates else get_recent_item_name(session_memory)
+                        ),
+                        "last_assistant_action": (
+                            "asked_order_candidate_clarification"
+                            if ambiguous_order_candidates
+                            else "confirmed_order_item"
+                        ),
                     },
                 )
                 session_memory = ai_engine.get_session_memory(session_id)
@@ -1837,7 +1848,11 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 )
 
             if is_snack_recommendation_request(user_message):
-                response_message = format_snack_recommendation_reply()
+                snack_items = shared_menu_service.search_menu_items_by_query(
+                    "つまみ",
+                    limit=3,
+                )
+                response_message = format_snack_recommendation_reply(snack_items)
                 ai_engine.save_memory(
                     session_id,
                     {
@@ -1862,7 +1877,13 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     route=conversation_route.kind,
                     route_reason=conversation_route.reason,
                     node="snack_recommendation",
-                    referenced_sources={"store_tools_used": False},
+                    referenced_sources={
+                        "store_tools_used": bool(snack_items),
+                        "menu_hits": len(snack_items),
+                        "menu_names": [
+                            getattr(item, "name", "") for item in snack_items[:3]
+                        ],
+                    },
                     latency_ms=_elapsed_ms(started_at),
                     channel="web",
                 )
@@ -1945,6 +1966,9 @@ def create_app(config: ConfigLoader) -> FastAPI:
                             "product_existence": current_entity,
                             "exists": has_exact_product_match,
                         },
+                        "menu_existence_candidates": [
+                            getattr(item, "name", "") for item in menu_items[:5]
+                        ],
                         "previous_question": user_message,
                         "last_assistant_action": "answered_product_existence",
                     },
@@ -2092,6 +2116,9 @@ def create_app(config: ConfigLoader) -> FastAPI:
                             "product_existence": current_entity,
                             "exists": has_exact_product_match,
                         },
+                        "menu_existence_candidates": [
+                            getattr(item, "name", "") for item in menu_items[:5]
+                        ],
                         "previous_question": user_message,
                         "last_assistant_action": "answered_product_existence",
                     },
@@ -3107,15 +3134,28 @@ def create_app(config: ConfigLoader) -> FastAPI:
                             logger.info("[WS] reservation_followup")
                         elif is_short_order_confirmation(message, ws_session_memory):
                             direct_response = format_short_order_confirmation(ws_session_memory)
+                            ambiguous_order_candidates = has_ambiguous_order_candidates(
+                                ws_session_memory
+                            )
                             ai_engine.save_memory(
                                 session_id,
                                 {
                                     "active_topic": "order",
                                     "pending_flow": "order",
                                     "detected_intent": "product_order",
-                                    "order_intent_level": "confirming",
-                                    "recently_confirmed_item": get_recent_item_name(ws_session_memory),
-                                    "last_assistant_action": "confirmed_order_item",
+                                    "order_intent_level": (
+                                        "clarifying" if ambiguous_order_candidates else "confirming"
+                                    ),
+                                    "recently_confirmed_item": (
+                                        ""
+                                        if ambiguous_order_candidates
+                                        else get_recent_item_name(ws_session_memory)
+                                    ),
+                                    "last_assistant_action": (
+                                        "asked_order_candidate_clarification"
+                                        if ambiguous_order_candidates
+                                        else "confirmed_order_item"
+                                    ),
                                 },
                             )
                             result = {
@@ -3173,6 +3213,9 @@ def create_app(config: ConfigLoader) -> FastAPI:
                                         "product_existence": current_entity,
                                         "exists": has_exact_product_match,
                                     },
+                                    "menu_existence_candidates": [
+                                        getattr(item, "name", "") for item in menu_items[:5]
+                                    ],
                                     "previous_question": message,
                                     "last_assistant_action": "answered_product_existence",
                                 },
@@ -3188,7 +3231,11 @@ def create_app(config: ConfigLoader) -> FastAPI:
                                 len(menu_items),
                             )
                         elif is_snack_recommendation_request(message):
-                            direct_response = format_snack_recommendation_reply()
+                            snack_items = shared_menu_service.search_menu_items_by_query(
+                                "つまみ",
+                                limit=3,
+                            )
+                            direct_response = format_snack_recommendation_reply(snack_items)
                             ai_engine.save_memory(
                                 session_id,
                                 {

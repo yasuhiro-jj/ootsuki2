@@ -266,7 +266,35 @@ def is_snack_recommendation_request(message: str) -> bool:
     return has_snack and has_drink
 
 
-def format_snack_recommendation_reply() -> str:
+def _format_menu_item_label(item: Any) -> str:
+    name = str(getattr(item, "name", "") or "").strip()
+    if not name:
+        return ""
+    price = getattr(item, "price", None)
+    if isinstance(price, (int, float)) and price > 0:
+        return f"{name}（{int(price):,}円）"
+    return name
+
+
+def format_snack_recommendation_reply(menu_items: Any = None) -> str:
+    labels = []
+    for item in list(menu_items or [])[:3]:
+        label = _format_menu_item_label(item)
+        if label and label not in labels:
+            labels.append(label)
+
+    for fallback in ("唐揚げ", "冷奴"):
+        if len(labels) >= 2:
+            break
+        if not any(fallback in label for label in labels):
+            labels.append(fallback)
+
+    if len(labels) >= 2:
+        return (
+            f"ビールに合わせるなら、{labels[0]}がおすすめです。\n"
+            f"軽くつまむなら{labels[1]}も合いますよ。"
+        )
+
     return SNACK_RECOMMENDATION_REPLY
 
 
@@ -302,6 +330,47 @@ def get_recent_item_name(memory: Dict[str, Any]) -> str:
         if value:
             return value
     return ""
+
+
+def get_order_candidate_names(memory: Dict[str, Any]) -> list[str]:
+    if not memory:
+        return []
+
+    raw_candidates = memory.get("menu_existence_candidates") or []
+    if isinstance(raw_candidates, str):
+        raw_candidates = [raw_candidates]
+
+    names: list[str] = []
+    for value in raw_candidates:
+        name = str(value or "").strip()
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def has_ambiguous_order_candidates(memory: Dict[str, Any]) -> bool:
+    return (
+        memory.get("last_assistant_action") == "answered_product_existence"
+        and len(get_order_candidate_names(memory)) > 1
+    )
+
+
+def _strip_common_suffix(first: str, second: str) -> tuple[str, str]:
+    for suffix in ("ビール", "サワー", "ハイ", "酒"):
+        if first.endswith(suffix) and second.endswith(suffix):
+            first = first[: -len(suffix)] or first
+            second = second[: -len(suffix)] or second
+            break
+    return first, second
+
+
+def format_order_candidate_clarification(memory: Dict[str, Any]) -> str:
+    names = get_order_candidate_names(memory)
+    if len(names) >= 2:
+        first, second = _strip_common_suffix(names[0], names[1])
+        return f"{first}と{second}、どちらにしますか？"
+    item_name = get_recent_item_name(memory) or "どちら"
+    return f"{item_name}でよろしいですか？"
 
 
 def is_contextual_price_request(message: str, memory: Dict[str, Any]) -> bool:
@@ -493,6 +562,9 @@ def is_short_order_confirmation(message: str, memory: Dict[str, Any]) -> bool:
 
 
 def format_short_order_confirmation(memory: Dict[str, Any]) -> str:
+    if has_ambiguous_order_candidates(memory):
+        return format_order_candidate_clarification(memory)
+
     item_name = get_recent_item_name(memory) or "ご注文"
     if memory.get("last_assistant_action") == "confirmed_order_item":
         return f"かしこまりました。{item_name}をもう1つですね。"

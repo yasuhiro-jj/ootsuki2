@@ -13,6 +13,8 @@ import { UpdatedBanner } from "@/components/ootsuki/updated-banner";
 import { WeeklyActionsPanel } from "@/components/ootsuki/weekly-actions-panel";
 import { WeeklyJudgmentPanel } from "@/components/ootsuki/weekly-judgment-panel";
 import { NotionInstructionsPanel } from "@/components/ootsuki/notion-instructions-panel";
+import { UsenTimeZoneSalesPanel } from "@/components/ootsuki/usen-time-zone-sales-panel";
+import { PosTimeZoneSalesPanel } from "@/components/ootsuki/pos-time-zone-sales-panel";
 import { recommendedAgents } from "@/lib/agents";
 import { getCurrentTenantAccessResult } from "@/lib/api/tenant-access";
 import { formatDateTime } from "@/lib/format";
@@ -50,6 +52,25 @@ export const dynamic = "force-dynamic";
 
 const BUILD_TIMESTAMP = "v2-20260412-2";
 
+const dashboardAnchorItems = [
+  { href: "#instructions", label: "運用指示書" },
+  { href: "#monthly-kpis", label: "今月の数字" },
+  { href: "#daily-input", label: "今日の日次入力" },
+  { href: "#weekly-actions", label: "今週の実行項目" },
+  { href: "#project-status", label: "プロジェクト状況" },
+  { href: "#weekly-numbers", label: "今週見る数字" },
+  { href: "#judgment-material", label: "今週の判断材料" },
+  { href: "#sales-overview", label: "売上早見表" },
+  { href: "#usen-time-zone", label: "USEN時間帯別売上" },
+  { href: "#pos-time-zone", label: "POS時間帯別売上" },
+  { href: "#profit-alerts", label: "利益アラート" },
+  { href: "#ai-assistant", label: "AI運用アシスタント" },
+  { href: "#agent-hub", label: "エージェント呼び出し" },
+  { href: "#weekly-log", label: "今週の実施ログ" },
+  { href: "#weekly-review", label: "週次レビュー入力" },
+  { href: "#decision-memos", label: "直近の判断メモ" },
+];
+
 function todayInTokyo() {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Tokyo",
@@ -60,7 +81,19 @@ function todayInTokyo() {
 }
 
 export default async function DashboardPage() {
-  const access = await getCurrentTenantAccessResult("read");
+  let access;
+  try {
+    access = await getCurrentTenantAccessResult("read");
+  } catch (error) {
+    access = {
+      ok: false as const,
+      status: 500,
+      message: error instanceof Error ? error.message : "Failed to verify tenant access.",
+      tenant: null,
+      principalId: null,
+    };
+  }
+
   if (!access.ok) {
     return (
       <AppShell title="アクセス不可" description="tenant / role の認可を満たした場合のみダッシュボードを表示します。">
@@ -198,8 +231,9 @@ export default async function DashboardPage() {
     .filter(
       (entry) =>
         !isWeeklySummaryEntry(entry) &&
-        entry.weekStart === weekSummary.weekStart &&
-        entry.weekEnd === weekSummary.weekEnd &&
+        Boolean(entry.date) &&
+        entry.date! >= monthSummary.monthStart &&
+        entry.date! <= monthSummary.monthEnd &&
         (entry.sales || 0) > 0,
     )
     .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
@@ -217,10 +251,11 @@ export default async function DashboardPage() {
     <AppShell
       title={dashboardTitle}
       description="日次入力、今週の数字確認、週次レビュー、LINE配信文の確認までを一画面で回せる運用画面です。通常作業はこの画面を起点に進めます。"
+      sectionNavItems={dashboardAnchorItems}
     >
       <UpdatedBanner />
 
-      <section className="mt-4">
+      <section id="instructions" className="mt-4 scroll-mt-6">
         <SectionCard
           title="運用指示書"
           description="Notion の専用ページに書いた内容を表示します（1行目を見出し、2行目以降を本文として表示。LINE配信ページと同様にページ本文のブロックを読みます）。"
@@ -229,7 +264,7 @@ export default async function DashboardPage() {
         </SectionCard>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section id="monthly-kpis" className="grid scroll-mt-6 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <SectionCard>
           <p className="text-sm text-stone-500">今月売上（累計）</p>
           <p className="mt-3 text-4xl font-bold">{formatYen(monthSummary.sales)}</p>
@@ -262,6 +297,8 @@ export default async function DashboardPage() {
 
       <section className="mt-6 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <SectionCard
+          id="daily-input"
+          className="scroll-mt-6"
           title="今日の日次入力"
           description="毎日の売上入力はここから行います。保存すると日次売上DBに記録され、週次集計も自動更新されます。"
         >
@@ -269,6 +306,8 @@ export default async function DashboardPage() {
         </SectionCard>
 
         <SectionCard
+          id="weekly-actions"
+          className="scroll-mt-6"
           title="今週の実行項目"
           description="Notion に保存した今週の実行項目を表示し、必要に応じてエージェント提案を確認してから更新できます。"
         >
@@ -284,6 +323,8 @@ export default async function DashboardPage() {
 
       <section className="mt-6 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <SectionCard
+          id="project-status"
+          className="scroll-mt-6"
           title="プロジェクト状況"
           description="この内容は Notion のプロジェクトページ/DB とメモDBの最新内容から表示されます。対象案件のKPI目標と直近メモを見ながら、今週の意思決定を揃えます。"
         >
@@ -305,7 +346,7 @@ export default async function DashboardPage() {
                 更新: {latestMemo ? formatDateTime(latestMemo.updatedAt) : "未設定"}
               </p>
             </div>
-            <ProjectDirectionForm defaultTitle={`${weekSummary.weekStart} 方針`} canWrite={canWriteMemo} />
+            <ProjectDirectionForm defaultTitle={`${weekSummary.weekStart} プロジェクト方針`} canWrite={canWriteMemo} />
             <div className="rounded-2xl border border-stone-900/10 bg-white px-4 py-4">
               <p className="text-sm font-semibold text-stone-900">保存済みのプロジェクト方針履歴</p>
               <p className="mt-1 text-xs text-stone-500">
@@ -346,6 +387,8 @@ export default async function DashboardPage() {
         </SectionCard>
 
         <SectionCard
+          id="weekly-numbers"
+          className="scroll-mt-6"
           title="今週見る数字"
           description="週次集計から主要KPIを確認できます。未入力の項目だけアラート表示します。"
         >
@@ -381,6 +424,8 @@ export default async function DashboardPage() {
 
       <section className="mt-6 grid gap-6 xl:grid-cols-[1fr_1.15fr]">
         <SectionCard
+          id="judgment-material"
+          className="scroll-mt-6"
           title="今週の判断材料"
           description="最新メモをベースに表示しつつ、エージェント提案で今週の判断材料下書きを更新できます。"
         >
@@ -395,6 +440,8 @@ export default async function DashboardPage() {
         </SectionCard>
 
         <SectionCard
+          id="sales-overview"
+          className="scroll-mt-6"
           title="売上早見表"
           description="Notion を開かなくても、選択月の日次売上と週次売上、昨対比をまとめて確認できます。"
         >
@@ -406,7 +453,25 @@ export default async function DashboardPage() {
         </SectionCard>
       </section>
 
-      <section className="mt-6">
+      <section id="usen-time-zone" className="mt-6 scroll-mt-6">
+        <SectionCard
+          title="USEN時間帯別売上"
+          description="USENレジの「注文客数の時間別推移」CSVを読み込み、時間帯別の合計とピークを確認できます。ログイン情報は保存せず、アップロードしたCSVだけをブラウザ内で解析します。"
+        >
+          <UsenTimeZoneSalesPanel />
+        </SectionCard>
+      </section>
+
+      <section id="pos-time-zone" className="mt-6 scroll-mt-6">
+        <SectionCard
+          title="POS時間帯別 売上・客数"
+          description="POSレジの時間帯別CSV（売上・客数）をアップロードし、時間帯別の合計と客単価（売上÷客数）を確認できます。"
+        >
+          <PosTimeZoneSalesPanel />
+        </SectionCard>
+      </section>
+
+      <section id="profit-alerts" className="mt-6 scroll-mt-6">
         <SectionCard
           title="利益を残す施策アラート"
           description="粗利率・客単価・客数の前月比から、利益改善に直結する打ち手を自動提案します。"
@@ -436,7 +501,7 @@ export default async function DashboardPage() {
         </SectionCard>
       </section>
 
-      <section className="mt-6">
+      <section id="ai-assistant" className="mt-6 scroll-mt-6">
         <SectionCard
           title="AI運用アシスタント"
           description="ダッシュボード上の数字、メモ、週次レビューを前提に、そのまま相談できます。"
@@ -445,7 +510,7 @@ export default async function DashboardPage() {
         </SectionCard>
       </section>
 
-      <section className="mt-6">
+      <section id="agent-hub" className="mt-6 scroll-mt-6">
         <SectionCard
           title="エージェント呼び出しハブ"
           description="各エージェントに依頼内容を入力すると、ダッシュボード上の数字やメモを前提に回答やレポートを返します。"
@@ -456,6 +521,8 @@ export default async function DashboardPage() {
 
       <section className="mt-6 grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
         <SectionCard
+          id="weekly-log"
+          className="scroll-mt-6"
           title="今週の実施ログ"
           description="今週入力した日次データを確認しながら、レビュー文面をその場でまとめられます。"
         >
@@ -486,6 +553,8 @@ export default async function DashboardPage() {
         </SectionCard>
 
         <SectionCard
+          id="weekly-review"
+          className="scroll-mt-6"
           title="今週の週次レビュー入力"
           description={
             currentDraft
@@ -501,6 +570,8 @@ export default async function DashboardPage() {
         </SectionCard>
 
         <SectionCard
+          id="decision-memos"
+          className="scroll-mt-6"
           title="直近の判断メモ"
           description="Notion を開かなくても直近メモを見返せるよう、必要な内容だけここに出します。下のフォームから直接追記もできます。"
         >

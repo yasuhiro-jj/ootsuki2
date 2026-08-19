@@ -642,17 +642,11 @@ export async function saveWeeklyReview(payload: WeeklyReviewPayload) {
   return created.id;
 }
 
-export async function saveDailyInput(payload: DailyInputPayload) {
-  const notion = await cfg();
-  const dailySalesDbId = notion.dailySalesDbId;
-  if (!dailySalesDbId) {
-    throw new Error("NOTION_OOTSUKI_DAILY_SALES_DB_ID が未設定です");
-  }
-
-  const pages = await queryDatabaseAll(dailySalesDbId);
-  const existing = pages.find((page) => getPropertyDate(page.properties, DATE_KEYS) === payload.date);
+function buildDailyInputProperties(
+  schemaProperties: Record<string, NotionProperty>,
+  payload: DailyInputPayload,
+) {
   const weekRange = resolveWeekRange(payload.date);
-  const schemaProperties = existing?.properties ?? pages[0]?.properties ?? {};
   const properties: Record<string, unknown> = {};
 
   setMappedProperty(properties, schemaProperties, TITLE_KEYS, { title: richText(`${payload.date} 日次売上`) });
@@ -689,11 +683,65 @@ export async function saveDailyInput(payload: DailyInputPayload) {
   setMappedProperty(properties, schemaProperties, LINE_DONE_KEYS, { checkbox: payload.lineDone });
   setMappedProperty(properties, schemaProperties, STORE_POP_KEYS, { checkbox: payload.storePopDone });
 
+  return properties;
+}
+
+async function queryDailyPagesByDates(dailySalesDbId: string, dates: string[]) {
+  const uniqueDates = [...new Set(dates.filter(Boolean))];
+  if (uniqueDates.length === 0) return [] as NotionPage[];
+
+  const schema = await getDatabaseSchemaProperties(dailySalesDbId);
+  const datePropName = getPropertyNameByAliases(schema, DATE_KEYS);
+  if (!datePropName) {
+    return queryDatabaseAll(dailySalesDbId);
+  }
+
+  if (uniqueDates.length === 1) {
+    return queryDatabaseAll(dailySalesDbId, {
+      filter: { property: datePropName, date: { equals: uniqueDates[0] } },
+    });
+  }
+
+  const pages: NotionPage[] = [];
+  const FILTER_CHUNK = 50;
+  for (let i = 0; i < uniqueDates.length; i += FILTER_CHUNK) {
+    const chunk = uniqueDates.slice(i, i + FILTER_CHUNK);
+    const part = await queryDatabaseAll(dailySalesDbId, {
+      filter: {
+        or: chunk.map((date) => ({
+          property: datePropName,
+          date: { equals: date },
+        })),
+      },
+    });
+    pages.push(...part);
+  }
+  return pages;
+}
+
+export async function saveDailyInput(
+  payload: DailyInputPayload,
+  options?: { skipWeeklySummary?: boolean },
+) {
+  const notion = await cfg();
+  const dailySalesDbId = notion.dailySalesDbId;
+  if (!dailySalesDbId) {
+    throw new Error("NOTION_OOTSUKI_DAILY_SALES_DB_ID が未設定です");
+  }
+
+  const pages = await queryDailyPagesByDates(dailySalesDbId, [payload.date]);
+  const existing = pages.find((page) => getPropertyDate(page.properties, DATE_KEYS) === payload.date);
+  const schemaProperties =
+    existing?.properties ?? pages[0]?.properties ?? (await getDatabaseSchemaProperties(dailySalesDbId));
+  const properties = buildDailyInputProperties(schemaProperties, payload);
+
   if (existing) {
     await updatePage(existing.id, { properties });
   } else {
     await createPageInDatabase(dailySalesDbId, properties);
   }
+
+  if (options?.skipWeeklySummary) return;
 
   try {
     await upsertWeeklySummary(payload.date);
@@ -703,12 +751,51 @@ export async function saveDailyInput(payload: DailyInputPayload) {
   }
 }
 
-export async function saveDailyInputBatch(payloads: DailyInputPayload[]) {
-  const results: Array<{ date: string; ok: boolean; message?: string }> = [];
+export async function saveDailyInputBatch(
+  payloads: DailyInputPayload[],
+  options?: { skipWeeklySummary?: boolean; timeBudgetMs?: number },
+) {
+  const notion = await cfg();
+  const dailySalesDbId = notion.dailySalesDbId;
+  if (!dailySalesDbId) {
+    throw new Error("NOTION_OOTSUKI_DAILY_SALES_DB_ID が未設定です");
+  }
+
+  const startedAt = Date.now();
+  const timeBudgetMs = options?.timeBudgetMs ?? 8_000;
+  const skipWeeklySummary = options?.skipWeeklySummary ?? true;
+  const results: Array<{ date: string; ok: boolean; deferred?: boolean; message?: string }> = [];
+  const pages = await queryDailyPagesByDates(
+    dailySalesDbId,
+    payloads.map((payload) => payload.date),
+  );
+  const schemaProperties = pages[0]?.properties ?? (await getDatabaseSchemaProperties(dailySalesDbId));
+  const pagesByDate = new Map<string, NotionPage>();
+  for (const page of pages) {
+    const date = getPropertyDate(page.properties, DATE_KEYS);
+    if (date) pagesByDate.set(date, page);
+  }
 
   for (const payload of payloads) {
+    if (Date.now() - startedAt >= timeBudgetMs) {
+      results.push({
+        date: payload.date,
+        ok: false,
+        deferred: true,
+        message: "time_budget",
+      });
+      continue;
+    }
+
     try {
-      await saveDailyInput(payload);
+      const existing = pagesByDate.get(payload.date);
+      const properties = buildDailyInputProperties(existing?.properties ?? schemaProperties, payload);
+      if (existing) {
+        await updatePage(existing.id, { properties });
+      } else {
+        const created = await createPageInDatabase(dailySalesDbId, properties);
+        pagesByDate.set(payload.date, created);
+      }
       results.push({ date: payload.date, ok: true });
     } catch (error) {
       results.push({
@@ -716,6 +803,21 @@ export async function saveDailyInputBatch(payloads: DailyInputPayload[]) {
         ok: false,
         message: error instanceof Error ? error.message : "保存に失敗しました。",
       });
+    }
+  }
+
+  if (!skipWeeklySummary) {
+    const weekStarts = new Set<string>();
+    for (const result of results) {
+      if (!result.ok) continue;
+      weekStarts.add(resolveWeekRange(result.date).weekStart);
+    }
+    for (const weekStart of weekStarts) {
+      try {
+        await upsertWeeklySummary(weekStart);
+      } catch (error) {
+        console.warn("[ootsuki] weekly summary sync failed after batch save:", error);
+      }
     }
   }
 

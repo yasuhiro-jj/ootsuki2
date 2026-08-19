@@ -140,6 +140,29 @@ class ConversationRouterTests(unittest.TestCase):
         self.assertEqual(route.kind, "store")
         self.assertEqual(updates.get("active_topic"), "order")
         self.assertEqual(updates.get("pending_flow"), "order")
+        self.assertEqual(updates.get("current_entity"), "中生ビール")
+
+    def test_polite_order_followup_after_product_existence_stays_store_order(self):
+        current_memory = {
+            "active_topic": "menu",
+            "current_entity": "中生ビール",
+            "detected_intent": "product_existence",
+            "last_assistant_action": "answered_product_existence",
+        }
+        route = classify_conversation_route(
+            "お願いします",
+            active_topic=current_memory["active_topic"],
+        )
+        updates = infer_memory_updates(
+            "お願いします",
+            route,
+            current_memory=current_memory,
+        )
+
+        self.assertEqual(route.kind, "store")
+        self.assertEqual(updates.get("active_topic"), "order")
+        self.assertEqual(updates.get("pending_flow"), "order")
+        self.assertEqual(updates.get("current_entity"), "中生ビール")
 
     def test_topic_shift_from_product_existence_to_business_hours(self):
         route = classify_conversation_route(

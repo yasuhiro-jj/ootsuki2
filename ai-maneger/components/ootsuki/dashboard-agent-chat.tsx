@@ -32,6 +32,27 @@ const presetPrompts = [
     message:
       "Notionデータから読み取れる内容だけを根拠に、改善提案を優先順位つきで整理してください。出力は `最優先` `次点` `保留` の3段階でお願いします。",
   },
+  {
+    label: "MEO改善",
+    agentName: "MEO/GBP運用アドバイザー",
+    agentRole: "Googleビジネスプロフィールの投稿、写真、口コミ返信、順位改善を売上改善に結びつけるMEO専門家。",
+    message:
+      "今月の売上、客数、客単価、曜日や時間帯の傾向を前提に、MEO/GBPで今週やるべき改善策を出してください。Google投稿、写真、口コミ返信、店舗情報、順位確認に分けて、実行順でまとめてください。",
+  },
+  {
+    label: "Instagram案",
+    agentName: "Instagram販促アドバイザー",
+    agentRole: "Instagramの投稿、リール、ストーリーズ、プロフィール導線を売上と来店につなげるSNS販促専門家。",
+    message:
+      "今月の売上と時間帯別の傾向を前提に、Instagramで出す投稿案、リール案、ストーリーズ案を作ってください。来店理由、CTA、ハッシュタグ、効果確認の数字も入れてください。",
+  },
+  {
+    label: "販促統合",
+    agentName: "販促チャネル統合プランナー",
+    agentRole: "LINE、MEO/GBP、Instagramを組み合わせ、今週すぐ実行できる販促順序に落とし込む専門家。",
+    message:
+      "LINE、MEO/GBP、Instagramを使って、今週の売上改善プランを作ってください。既存客、新規検索客、Instagramで知った人を分けて、どの順番で何を出すかまで具体化してください。",
+  },
 ];
 
 export function DashboardAgentChat({ enabled }: { enabled: boolean }) {

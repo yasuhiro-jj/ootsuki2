@@ -1,7 +1,8 @@
 import type { NotionInstructionsDocument } from "@/types/ootsuki";
 
 function notionOpenUrl(pageId: string) {
-  return `https://www.notion.so/${pageId.replace(/-/g, "")}`;
+  const compactId = pageId.replace(/-/g, "");
+  return `https://app.notion.com/p/${compactId}`;
 }
 
 export function NotionInstructionsPanel(props: { document: NotionInstructionsDocument }) {

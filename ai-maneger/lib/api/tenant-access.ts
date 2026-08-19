@@ -10,6 +10,14 @@ const AUTH_USER_HEADER = "x-auth-user";
 
 type TenantAction = "read" | "write" | "admin";
 
+type HeaderReader = {
+  get(name: string): string | null;
+};
+
+type CookieReader = {
+  get(name: string): { value?: string } | undefined;
+};
+
 export type CurrentAccessContext = {
   tenant: TenantKey | null;
   principalId: string | null;
@@ -164,6 +172,14 @@ async function evaluateTenantAccess(
   };
 }
 
+type TenantAccessEvaluator = typeof evaluateTenantAccess;
+
+let tenantAccessEvaluator: TenantAccessEvaluator = evaluateTenantAccess;
+
+export function __setEvaluateTenantAccessForTest(evaluator: TenantAccessEvaluator | null) {
+  tenantAccessEvaluator = evaluator ?? evaluateTenantAccess;
+}
+
 export async function requireTenantAccess(
   request: Request,
   action: TenantAction,
@@ -191,11 +207,14 @@ export async function requireTenantAccess(
   };
 }
 
-export async function getCurrentTenantAccessResult(action: TenantAction): Promise<TenantAccessDecision> {
+export async function getCurrentTenantAccessResult(
+  action: TenantAction,
+  stores?: { headers: HeaderReader; cookies: CookieReader },
+): Promise<TenantAccessDecision> {
   try {
-    const nextHeaders = await import("next/headers");
-    const headerStore = await nextHeaders.headers();
-    const cookieStore = await nextHeaders.cookies();
+    const nextHeaders = stores ? null : await import("next/headers");
+    const headerStore = stores?.headers ?? (await nextHeaders!.headers());
+    const cookieStore = stores?.cookies ?? (await nextHeaders!.cookies());
 
     const tenantHint =
       normalizeTenantKey(headerStore.get(TENANT_HEADER)) ||
@@ -204,7 +223,7 @@ export async function getCurrentTenantAccessResult(action: TenantAction): Promis
     const principalId =
       headerStore.get(AUTH_USER_HEADER)?.trim() || verifyAuthSessionToken(cookieStore.get("auth_session")?.value)?.sub || null;
 
-    return evaluateTenantAccess(tenant ?? null, principalId, action);
+    return await tenantAccessEvaluator(tenant ?? null, principalId, action);
   } catch {
     return {
       ok: false,

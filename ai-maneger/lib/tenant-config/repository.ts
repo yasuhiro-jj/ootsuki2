@@ -1,6 +1,7 @@
 import dns from "node:dns";
 import dnsPromises from "node:dns/promises";
 import { Pool } from "pg";
+import { withTenant } from "../db";
 import type {
   TenantAuditLogRecord,
   TenantConfigRecord,
@@ -37,13 +38,13 @@ async function resolvePostgresConnectionString(raw: string): Promise<string> {
     const v6 = await dnsPromises.resolve6(hostname).catch(() => [] as string[]);
     if (v6.length > 0) {
       url.hostname = `[${v6[0]}]`;
-      return url.toString().replace(/^https:/i, "postgresql:");
+      return url.toString().replace(/^http:/i, "postgresql:");
     }
 
     const v4 = await dnsPromises.resolve4(hostname).catch(() => [] as string[]);
     if (v4.length > 0) {
       url.hostname = v4[0];
-      return url.toString().replace(/^https:/i, "postgresql:");
+      return url.toString().replace(/^http:/i, "postgresql:");
     }
   } catch {
     // fall through
@@ -115,18 +116,19 @@ function rowToAuditLogRecord(row: Record<string, unknown>): TenantAuditLogRecord
 export async function fetchTenantConfigRecord(tenantKey: TenantKey): Promise<TenantConfigRecord | null> {
   if (!isTenantConfigStoreEnabled()) return null;
 
-  const client = await getPool();
-  const result = await client.query(
-    `SELECT tenant_key, notion_token_enc, project_db_id, ootsuki_project_page_id,
+  return withTenant(tenantKey, async (client) => {
+    const result = await client.query(
+      `SELECT tenant_key, notion_token_enc, project_db_id, ootsuki_project_page_id,
             daily_sales_db_id, kpi_db_id, memo_db_id, line_report_page_id,
             product_cost_db_id, weekly_actions_db_id, instructions_page_id,
             is_active, updated_at
        FROM tenant_configs
       WHERE tenant_key = $1 AND is_active = TRUE
       LIMIT 1`,
-    [tenantKey],
-  );
-  return result.rows[0] ? rowToRecord(result.rows[0]) : null;
+      [tenantKey],
+    );
+    return result.rows[0] ? rowToRecord(result.rows[0]) : null;
+  });
 }
 
 export async function listTenantConfigRecords(): Promise<TenantConfigRecord[]> {
@@ -148,9 +150,9 @@ export async function upsertTenantConfigRecord(record: Omit<TenantConfigRecord, 
     throw new Error("TENANT_CONFIG_STORE_ENABLED=true で有効化してください");
   }
 
-  const client = await getPool();
-  await client.query(
-    `INSERT INTO tenant_configs (
+  await withTenant(record.tenantKey, async (client) => {
+    await client.query(
+      `INSERT INTO tenant_configs (
       tenant_key, notion_token_enc, project_db_id, ootsuki_project_page_id,
       daily_sales_db_id, kpi_db_id, memo_db_id, line_report_page_id,
       product_cost_db_id, weekly_actions_db_id, instructions_page_id,
@@ -171,21 +173,22 @@ export async function upsertTenantConfigRecord(record: Omit<TenantConfigRecord, 
       instructions_page_id = EXCLUDED.instructions_page_id,
       is_active = EXCLUDED.is_active,
       updated_at = NOW()`,
-    [
-      record.tenantKey,
-      record.notionTokenEnc,
-      record.projectDbId,
-      record.ootsukiProjectPageId,
-      record.dailySalesDbId,
-      record.kpiDbId,
-      record.memoDbId,
-      record.lineReportPageId,
-      record.productCostDbId,
-      record.weeklyActionsDbId,
-      record.instructionsPageId,
-      record.isActive,
-    ],
-  );
+      [
+        record.tenantKey,
+        record.notionTokenEnc,
+        record.projectDbId,
+        record.ootsukiProjectPageId,
+        record.dailySalesDbId,
+        record.kpiDbId,
+        record.memoDbId,
+        record.lineReportPageId,
+        record.productCostDbId,
+        record.weeklyActionsDbId,
+        record.instructionsPageId,
+        record.isActive,
+      ],
+    );
+  });
 }
 
 export async function fetchTenantMembershipRecord(
@@ -193,33 +196,38 @@ export async function fetchTenantMembershipRecord(
   principalId: string,
 ): Promise<TenantMembershipRecord | null> {
   if (!isTenantConfigStoreEnabled()) return null;
-  const client = await getPool();
-  const result = await client.query(
-    `SELECT tenant_key, principal_id, role, is_active, updated_at
+  return withTenant(tenantKey, async (client) => {
+    const result = await client.query(
+      `SELECT tenant_key, principal_id, role, is_active, updated_at
        FROM tenant_memberships
       WHERE tenant_key = $1 AND principal_id = $2 AND is_active = TRUE
       LIMIT 1`,
-    [tenantKey, principalId],
-  );
-  return result.rows[0] ? rowToMembershipRecord(result.rows[0]) : null;
+      [tenantKey, principalId],
+    );
+    return result.rows[0] ? rowToMembershipRecord(result.rows[0]) : null;
+  });
 }
 
 export async function listTenantMembershipRecords(tenantKey?: TenantKey): Promise<TenantMembershipRecord[]> {
   if (!isTenantConfigStoreEnabled()) return [];
-  const client = await getPool();
-  const result = tenantKey
-    ? await client.query(
+  if (tenantKey) {
+    return withTenant(tenantKey, async (client) => {
+      const result = await client.query(
         `SELECT tenant_key, principal_id, role, is_active, updated_at
            FROM tenant_memberships
           WHERE tenant_key = $1
           ORDER BY tenant_key ASC, principal_id ASC`,
         [tenantKey],
-      )
-    : await client.query(
-        `SELECT tenant_key, principal_id, role, is_active, updated_at
+      );
+      return result.rows.map(rowToMembershipRecord);
+    });
+  }
+  const client = await getPool();
+  const result = await client.query(
+    `SELECT tenant_key, principal_id, role, is_active, updated_at
            FROM tenant_memberships
           ORDER BY tenant_key ASC, principal_id ASC`,
-      );
+  );
   return result.rows.map(rowToMembershipRecord);
 }
 
@@ -227,17 +235,18 @@ export async function upsertTenantMembershipRecord(record: Omit<TenantMembership
   if (!isTenantConfigStoreEnabled()) {
     throw new Error("TENANT_CONFIG_STORE_ENABLED=true で有効化してください");
   }
-  const client = await getPool();
-  await client.query(
-    `INSERT INTO tenant_memberships (
+  await withTenant(record.tenantKey, async (client) => {
+    await client.query(
+      `INSERT INTO tenant_memberships (
       tenant_key, principal_id, role, is_active, updated_at
     ) VALUES ($1, $2, $3, $4, NOW())
     ON CONFLICT (tenant_key, principal_id) DO UPDATE SET
       role = EXCLUDED.role,
       is_active = EXCLUDED.is_active,
       updated_at = NOW()`,
-    [record.tenantKey, record.principalId, record.role, record.isActive],
-  );
+      [record.tenantKey, record.principalId, record.role, record.isActive],
+    );
+  });
 }
 
 export async function insertTenantAuditLog(record: {
@@ -252,23 +261,24 @@ export async function insertTenantAuditLog(record: {
   metadata?: Record<string, unknown>;
 }) {
   if (!isTenantConfigStoreEnabled()) return;
-  const client = await getPool();
-  await client.query(
-    `INSERT INTO tenant_audit_logs (
+  await withTenant(record.tenantKey, async (client) => {
+    await client.query(
+      `INSERT INTO tenant_audit_logs (
       tenant_key, principal_id, role, action, resource_type, resource_id, path, method, metadata
     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)`,
-    [
-      record.tenantKey,
-      record.principalId,
-      record.role,
-      record.action,
-      record.resourceType,
-      record.resourceId || null,
-      record.path,
-      record.method,
-      JSON.stringify(record.metadata || {}),
-    ],
-  );
+      [
+        record.tenantKey,
+        record.principalId,
+        record.role,
+        record.action,
+        record.resourceType,
+        record.resourceId || null,
+        record.path,
+        record.method,
+        JSON.stringify(record.metadata || {}),
+      ],
+    );
+  });
 }
 
 export async function insertConversationLog(record: {
@@ -280,24 +290,26 @@ export async function insertConversationLog(record: {
   content: string;
 }): Promise<string | null> {
   if (!isTenantConfigStoreEnabled()) return null;
-  const client = await getPool();
-  const result = await client.query(
-    `INSERT INTO tenant_conversations (tenant_key, session_id, principal_id, agent_name, role, content)
+  return withTenant(record.tenantKey, async (client) => {
+    const result = await client.query(
+      `INSERT INTO tenant_conversations (tenant_key, session_id, principal_id, agent_name, role, content)
      VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING id`,
-    [record.tenantKey, record.sessionId, record.principalId, record.agentName, record.role, record.content],
-  );
-  return (result.rows[0]?.id as string) ?? null;
+      [record.tenantKey, record.sessionId, record.principalId, record.agentName, record.role, record.content],
+    );
+    return (result.rows[0]?.id as string) ?? null;
+  });
 }
 
-export async function updateConversationEmbedding(id: string, embedding: number[]): Promise<void> {
+export async function updateConversationEmbedding(tenantKey: string, id: string, embedding: number[]): Promise<void> {
   if (!isTenantConfigStoreEnabled()) return;
-  const client = await getPool();
   const embeddingStr = `[${embedding.join(",")}]`;
-  await client.query(
-    `UPDATE tenant_conversations SET embedding = $1::vector WHERE id = $2`,
-    [embeddingStr, id],
-  );
+  await withTenant(tenantKey, async (client) => {
+    await client.query(
+      `UPDATE tenant_conversations SET embedding = $1::vector WHERE id = $2`,
+      [embeddingStr, id],
+    );
+  });
 }
 
 export type SimilarConversation = {
@@ -314,10 +326,10 @@ export async function searchSimilarConversations(options: {
   limit: number;
 }): Promise<SimilarConversation[]> {
   if (!isTenantConfigStoreEnabled()) return [];
-  const client = await getPool();
   const embeddingStr = `[${options.queryEmbedding.join(",")}]`;
-  const result = await client.query(
-    `SELECT
+  return withTenant(options.tenantKey, async (client) => {
+    const result = await client.query(
+      `SELECT
        u.content       AS user_content,
        u.agent_name    AS agent_name,
        u.created_at    AS created_at,
@@ -337,14 +349,15 @@ export async function searchSimilarConversations(options: {
        AND u.embedding IS NOT NULL
      ORDER BY u.embedding <=> $3::vector
      LIMIT $4`,
-    [options.tenantKey, options.excludeSessionId, embeddingStr, options.limit],
-  );
-  return result.rows.map((row: Record<string, unknown>) => ({
-    userContent: String(row.user_content ?? ""),
-    assistantContent: row.assistant_content != null ? String(row.assistant_content) : null,
-    agentName: String(row.agent_name ?? ""),
-    createdAt: String(row.created_at ?? ""),
-  }));
+      [options.tenantKey, options.excludeSessionId, embeddingStr, options.limit],
+    );
+    return result.rows.map((row: Record<string, unknown>) => ({
+      userContent: String(row.user_content ?? ""),
+      assistantContent: row.assistant_content != null ? String(row.assistant_content) : null,
+      agentName: String(row.agent_name ?? ""),
+      createdAt: String(row.created_at ?? ""),
+    }));
+  });
 }
 
 export type ConversationEntry = {
@@ -360,22 +373,23 @@ export async function listConversationsForPeriod(options: {
   to: Date;
 }): Promise<ConversationEntry[]> {
   if (!isTenantConfigStoreEnabled()) return [];
-  const client = await getPool();
-  const result = await client.query(
-    `SELECT role, content, agent_name, created_at
+  return withTenant(options.tenantKey, async (client) => {
+    const result = await client.query(
+      `SELECT role, content, agent_name, created_at
        FROM tenant_conversations
       WHERE tenant_key = $1
         AND created_at >= $2
         AND created_at < $3
       ORDER BY created_at ASC`,
-    [options.tenantKey, options.from.toISOString(), options.to.toISOString()],
-  );
-  return result.rows.map((row: Record<string, unknown>) => ({
-    role: String(row.role ?? ""),
-    content: String(row.content ?? ""),
-    agentName: String(row.agent_name ?? ""),
-    createdAt: String(row.created_at ?? ""),
-  }));
+      [options.tenantKey, options.from.toISOString(), options.to.toISOString()],
+    );
+    return result.rows.map((row: Record<string, unknown>) => ({
+      role: String(row.role ?? ""),
+      content: String(row.content ?? ""),
+      agentName: String(row.agent_name ?? ""),
+      createdAt: String(row.created_at ?? ""),
+    }));
+  });
 }
 
 export async function upsertMemoryDigest(record: {
@@ -387,9 +401,9 @@ export async function upsertMemoryDigest(record: {
   sourceCount: number;
 }): Promise<string> {
   if (!isTenantConfigStoreEnabled()) throw new Error("TENANT_CONFIG_STORE_ENABLED=true が必要です");
-  const client = await getPool();
-  const result = await client.query(
-    `INSERT INTO tenant_memory_digests
+  return withTenant(record.tenantKey, async (client) => {
+    const result = await client.query(
+      `INSERT INTO tenant_memory_digests
        (tenant_key, period_start, period_end, digest_type, summary, source_count)
      VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (tenant_key, period_start, period_end, digest_type) DO UPDATE SET
@@ -397,19 +411,21 @@ export async function upsertMemoryDigest(record: {
        source_count = EXCLUDED.source_count,
        created_at = NOW()
      RETURNING id`,
-    [record.tenantKey, record.periodStart, record.periodEnd, record.digestType, record.summary, record.sourceCount],
-  );
-  return String(result.rows[0]?.id ?? "");
+      [record.tenantKey, record.periodStart, record.periodEnd, record.digestType, record.summary, record.sourceCount],
+    );
+    return String(result.rows[0]?.id ?? "");
+  });
 }
 
-export async function updateDigestEmbedding(id: string, embedding: number[]): Promise<void> {
+export async function updateDigestEmbedding(tenantKey: string, id: string, embedding: number[]): Promise<void> {
   if (!isTenantConfigStoreEnabled()) return;
-  const client = await getPool();
   const embeddingStr = `[${embedding.join(",")}]`;
-  await client.query(
-    `UPDATE tenant_memory_digests SET embedding = $1::vector WHERE id = $2`,
-    [embeddingStr, id],
-  );
+  await withTenant(tenantKey, async (client) => {
+    await client.query(
+      `UPDATE tenant_memory_digests SET embedding = $1::vector WHERE id = $2`,
+      [embeddingStr, id],
+    );
+  });
 }
 
 export type SimilarDigest = {
@@ -425,23 +441,24 @@ export async function searchSimilarDigests(options: {
   limit: number;
 }): Promise<SimilarDigest[]> {
   if (!isTenantConfigStoreEnabled()) return [];
-  const client = await getPool();
   const embeddingStr = `[${options.queryEmbedding.join(",")}]`;
-  const result = await client.query(
-    `SELECT summary, period_start, period_end, digest_type
+  return withTenant(options.tenantKey, async (client) => {
+    const result = await client.query(
+      `SELECT summary, period_start, period_end, digest_type
        FROM tenant_memory_digests
       WHERE tenant_key = $1
         AND embedding IS NOT NULL
       ORDER BY embedding <=> $2::vector
       LIMIT $3`,
-    [options.tenantKey, embeddingStr, options.limit],
-  );
-  return result.rows.map((row: Record<string, unknown>) => ({
-    summary: String(row.summary ?? ""),
-    periodStart: String(row.period_start ?? ""),
-    periodEnd: String(row.period_end ?? ""),
-    digestType: String(row.digest_type ?? ""),
-  }));
+      [options.tenantKey, embeddingStr, options.limit],
+    );
+    return result.rows.map((row: Record<string, unknown>) => ({
+      summary: String(row.summary ?? ""),
+      periodStart: String(row.period_start ?? ""),
+      periodEnd: String(row.period_end ?? ""),
+      digestType: String(row.digest_type ?? ""),
+    }));
+  });
 }
 
 export async function listTenantAuditLogs(options?: {

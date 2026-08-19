@@ -64,7 +64,7 @@ export async function runMemoryDigestGeneration(params: {
   });
 
   void generateEmbedding(summary)
-    .then((emb) => (emb ? updateDigestEmbedding(digestId, emb) : Promise.resolve()))
+    .then((emb) => (emb ? updateDigestEmbedding(params.tenantKey, digestId, emb) : Promise.resolve()))
     .catch((err) => console.error("[memory-digest] embedding save failed:", err));
 
   return {
