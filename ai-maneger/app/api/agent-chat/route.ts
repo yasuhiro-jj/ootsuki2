@@ -54,6 +54,12 @@ export const runtime = "nodejs";
 
 const sessionStore = new Map<string, ChatMessage[]>();
 
+const MARKETING_CHANNEL_CONTEXT = `【利用できる販促チャネル】
+- LINE: 既存客の再来店、雨の日や弱い曜日の来店促進、限定告知、在庫消化に使う。
+- MEO/GBP: Googleビジネスプロフィールの投稿、写真、口コミ返信、店舗情報、順位/キーワード改善に使う。GBP APIを使えるため、投稿作成、口コミ同期、返信下書き、店舗情報確認を施策に含めてよい。ただし口コミ返信は人の承認を前提にする。
+- Instagram: Instagram Graph APIを使えるため、フィード投稿、リール、ストーリーズ、予約投稿、プロフィール導線を施策に含めてよい。Instagramは認知、保存、来店理由づくり、商品/メニューの見せ方に使う。
+- 統合方針: LINEは既存客、MEO/GBPは検索中の新規客、Instagramは潜在客とファン化を担当させ、売上・客数・客単価・曜日・時間帯の課題に合わせて使い分ける。`;
+
 function sessionKey(tenant: string, sessionId: string) {
   return `${tenant}:${sessionId}`;
 }
@@ -460,6 +466,7 @@ export async function POST(request: Request) {
       salesYoYContext,
       alwaysOnNotionContext,
       dashboardContext,
+      MARKETING_CHANNEL_CONTEXT,
       agentHubKnowledgeContext,
       agentSpecificKnowledgeContext,
       restaurantKnowledgeContext,
@@ -509,8 +516,10 @@ export async function POST(request: Request) {
           generateEmbedding(reply),
         ]);
         await Promise.all([
-          userId && userEmb ? updateConversationEmbedding(userId, userEmb) : Promise.resolve(),
-          assistantId && assistantEmb ? updateConversationEmbedding(assistantId, assistantEmb) : Promise.resolve(),
+          userId && userEmb ? updateConversationEmbedding(access.tenant, userId, userEmb) : Promise.resolve(),
+          assistantId && assistantEmb
+            ? updateConversationEmbedding(access.tenant, assistantId, assistantEmb)
+            : Promise.resolve(),
         ]);
       } catch (err) {
         console.error("[agent-chat] conversation log/embedding save failed:", err);

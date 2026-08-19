@@ -18,8 +18,33 @@ async function notionHeaders() {
   };
 }
 
+function notionHeadersFromToken(token: string) {
+  if (!token) {
+    throw new Error("NOTION_API_KEY が未設定です");
+  }
+
+  return {
+    Authorization: `Bearer ${token}`,
+    "Notion-Version": NOTION_VERSION,
+    "Content-Type": "application/json",
+  };
+}
+
 async function notionFetch<T>(path: string, init?: RequestInit) {
   const headers = await notionHeaders();
+  return notionFetchWithHeaders<T>(path, headers, init);
+}
+
+async function notionFetchWithToken<T>(token: string, path: string, init?: RequestInit) {
+  const headers = notionHeadersFromToken(token);
+  return notionFetchWithHeaders<T>(path, headers, init);
+}
+
+async function notionFetchWithHeaders<T>(
+  path: string,
+  headers: Record<string, string>,
+  init?: RequestInit,
+) {
   const response = await fetch(`${NOTION_BASE}${path}`, {
     ...init,
     headers: {
@@ -43,10 +68,18 @@ async function notionFetch<T>(path: string, init?: RequestInit) {
 }
 
 export async function getDatabaseSchemaProperties(databaseOrDataSourceId: string) {
+  return getDatabaseSchemaPropertiesWithToken(
+    (await getActiveTenantNotionConfig()).notionToken,
+    databaseOrDataSourceId,
+  );
+}
+
+export async function getDatabaseSchemaPropertiesWithToken(token: string, databaseOrDataSourceId: string) {
   if (!databaseOrDataSourceId) return {} as Record<string, NotionProperty>;
 
   try {
-    const database = await notionFetch<{ properties?: Record<string, NotionProperty> }>(
+    const database = await notionFetchWithToken<{ properties?: Record<string, NotionProperty> }>(
+      token,
       `/databases/${databaseOrDataSourceId}`,
     );
     return database.properties ?? {};
@@ -55,7 +88,8 @@ export async function getDatabaseSchemaProperties(databaseOrDataSourceId: string
   }
 
   try {
-    const dataSource = await notionFetch<{ properties?: Record<string, NotionProperty> }>(
+    const dataSource = await notionFetchWithToken<{ properties?: Record<string, NotionProperty> }>(
+      token,
       `/data-sources/${databaseOrDataSourceId}`,
     );
     return dataSource.properties ?? {};
@@ -154,6 +188,14 @@ export function propertyToText(prop?: NotionProperty): string {
 }
 
 export async function queryDatabaseAll(databaseId: string, body: Record<string, unknown> = {}) {
+  return queryDatabaseAllWithToken((await getActiveTenantNotionConfig()).notionToken, databaseId, body);
+}
+
+export async function queryDatabaseAllWithToken(
+  token: string,
+  databaseId: string,
+  body: Record<string, unknown> = {},
+) {
   if (!databaseId) return [] as NotionPage[];
 
   const queryAllPages = async (path: string) => {
@@ -162,11 +204,11 @@ export async function queryDatabaseAll(databaseId: string, body: Record<string, 
     let startCursor: string | undefined;
 
     while (hasMore) {
-      const response = await notionFetch<{
+      const response = await notionFetchWithToken<{
         results: NotionPage[];
         has_more: boolean;
         next_cursor?: string | null;
-      }>(path, {
+      }>(token, path, {
         method: "POST",
         body: JSON.stringify({
           page_size: 100,
@@ -204,7 +246,10 @@ export async function queryDatabaseAll(databaseId: string, body: Record<string, 
     // 2) fallback to data_sources listed under the database object.
   }
 
-  const database = await notionFetch<{ data_sources?: Array<{ id?: string }> }>(`/databases/${databaseId}`);
+  const database = await notionFetchWithToken<{ data_sources?: Array<{ id?: string }> }>(
+    token,
+    `/databases/${databaseId}`,
+  );
   const dataSourceId = database.data_sources?.[0]?.id;
   if (!dataSourceId) {
     throw new Error(`Database ${databaseId} has no accessible data source.`);
@@ -235,15 +280,32 @@ export async function createPageInDatabase(
   properties: Record<string, unknown>,
   extraPayload: Record<string, unknown> = {},
 ) {
+  return createPageInDatabaseWithToken(
+    (await getActiveTenantNotionConfig()).notionToken,
+    databaseOrDataSourceId,
+    properties,
+    extraPayload,
+  );
+}
+
+export async function createPageInDatabaseWithToken(
+  token: string,
+  databaseOrDataSourceId: string,
+  properties: Record<string, unknown>,
+  extraPayload: Record<string, unknown> = {},
+) {
   if (!databaseOrDataSourceId) {
     throw new Error("Notion parent ID is missing.");
   }
 
   try {
-    return await createPage({
+    return await notionFetchWithToken<NotionPage>(token, "/pages", {
+      method: "POST",
+      body: JSON.stringify({
       ...extraPayload,
       parent: { database_id: databaseOrDataSourceId },
       properties,
+      }),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
@@ -253,16 +315,20 @@ export async function createPageInDatabase(
   }
 
   try {
-    return await createPage({
+    return await notionFetchWithToken<NotionPage>(token, "/pages", {
+      method: "POST",
+      body: JSON.stringify({
       ...extraPayload,
       parent: { data_source_id: databaseOrDataSourceId },
       properties,
+      }),
     });
   } catch {
     // Fall through to data source lookup from database metadata.
   }
 
-  const database = await notionFetch<{ data_sources?: Array<{ id?: string }> }>(
+  const database = await notionFetchWithToken<{ data_sources?: Array<{ id?: string }> }>(
+    token,
     `/databases/${databaseOrDataSourceId}`,
   );
   const dataSourceId = database.data_sources?.[0]?.id;
@@ -270,10 +336,13 @@ export async function createPageInDatabase(
     throw new Error(`Database ${databaseOrDataSourceId} has no accessible data source.`);
   }
 
-  return await createPage({
+  return await notionFetchWithToken<NotionPage>(token, "/pages", {
+    method: "POST",
+    body: JSON.stringify({
     ...extraPayload,
     parent: { data_source_id: dataSourceId },
     properties,
+    }),
   });
 }
 

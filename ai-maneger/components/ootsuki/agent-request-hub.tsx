@@ -14,6 +14,8 @@ import type {
 interface AgentDefinition {
   name: string;
   role: string;
+  href?: string;
+  linkLabel?: string;
 }
 
 interface AgentRequestHubProps {
@@ -362,9 +364,21 @@ export function AgentRequestHub({ enabled, agents }: AgentRequestHubProps) {
                 <p className="text-base font-semibold text-stone-900">{agent.name}</p>
                 <p className="mt-1 text-sm leading-7 text-stone-600">{agent.role}</p>
               </div>
-              <span className="rounded-full bg-white px-3 py-1 text-xs text-stone-500 shadow-sm">
-                依頼して回答取得
-              </span>
+              <div className="flex shrink-0 flex-col items-end gap-2">
+                <span className="rounded-full bg-white px-3 py-1 text-xs text-stone-500 shadow-sm">
+                  依頼して回答取得
+                </span>
+                {agent.href ? (
+                  <a
+                    href={agent.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-full border border-stone-900/10 bg-stone-950 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-stone-800"
+                  >
+                    {agent.linkLabel || "システムを開く"}
+                  </a>
+                ) : null}
+              </div>
             </div>
 
             <div className="mt-4 grid gap-3">

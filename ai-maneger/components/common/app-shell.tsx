@@ -9,18 +9,25 @@ const navigationItems = [
   { href: "/admin/tenant-access", label: "権限管理" },
 ];
 
+type SectionNavItem = {
+  href: string;
+  label: string;
+  depth?: 0 | 1;
+};
+
 interface AppShellProps {
   title: string;
   description?: string;
   actions?: ReactNode;
+  sectionNavItems?: SectionNavItem[];
   children: ReactNode;
 }
 
-export function AppShell({ title, description, actions, children }: AppShellProps) {
+export function AppShell({ title, description, actions, sectionNavItems, children }: AppShellProps) {
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,_#f7f4ea_0%,_#fffdf8_40%,_#fff7ed_100%)] text-stone-900">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl gap-6 px-4 py-6 md:px-8">
-        <aside className="hidden w-64 shrink-0 rounded-[28px] border border-stone-900/10 bg-stone-950 p-6 text-stone-50 shadow-[0_30px_80px_rgba(28,25,23,0.28)] lg:block">
+        <aside className="sticky top-6 hidden max-h-[calc(100vh-48px)] w-64 shrink-0 overflow-y-auto rounded-[28px] border border-stone-900/10 bg-stone-950 p-6 text-stone-50 shadow-[0_30px_80px_rgba(28,25,23,0.28)] lg:block">
           <p className="text-xs uppercase tracking-[0.35em] text-orange-300">
             AI Maneger
           </p>
@@ -40,6 +47,26 @@ export function AppShell({ title, description, actions, children }: AppShellProp
               </Link>
             ))}
           </nav>
+          {sectionNavItems?.length ? (
+            <nav className="mt-8 border-t border-white/10 pt-6">
+              <p className="px-4 text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">
+                ページ内メニュー
+              </p>
+              <div className="mt-3 border-l border-white/10">
+                {sectionNavItems.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`block border-l border-transparent py-2 text-sm text-stone-300 transition hover:border-orange-300 hover:bg-white/10 hover:text-white ${
+                      item.depth === 1 ? "pl-7 pr-3 text-xs" : "pl-4 pr-3 font-medium"
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
+            </nav>
+          ) : null}
           <div className="mt-10 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-stone-300">
             Notion を正本にしつつ、通常運用はダッシュボードから完結させるためのUIです。
           </div>

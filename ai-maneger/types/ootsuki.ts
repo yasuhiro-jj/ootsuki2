@@ -89,6 +89,29 @@ export interface WeeklyAggregate {
   totalDays: number;
 }
 
+export interface MonthlyAggregate {
+  monthKey: string;
+  monthStart: string;
+  monthEnd: string;
+  sales: number;
+  customers: number;
+  averageSpend: number;
+  grossMarginRate: number;
+  grossProfit: number;
+  lineRegistrations: number;
+  lineVisits: number;
+  salesYoY?: number;
+  customersYoY?: number;
+  averageSpendYoY?: number;
+  salesMoM?: number;
+  customersMoM?: number;
+  averageSpendMoM?: number;
+  grossMarginRateMoM?: number;
+  lineRegistrationsMoM?: number;
+  lineVisitsMoM?: number;
+  totalDays: number;
+}
+
 export interface MemoEntry {
   id: string;
   title: string;
