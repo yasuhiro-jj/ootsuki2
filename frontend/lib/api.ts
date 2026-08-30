@@ -53,7 +53,8 @@ export async function createSession(customerId?: string | null): Promise<Session
 export async function sendChatMessage(
   message: string,
   sessionId: string | null,
-  customerId?: string | null
+  customerId?: string | null,
+  customerPhone?: string | null
 ): Promise<ChatResponse> {
   try {
     const response = await fetch(`${API_BASE}/chat`, {
@@ -65,6 +66,7 @@ export async function sendChatMessage(
         message,
         session_id: sessionId,
         customer_id: customerId ?? null,
+        customer_phone: customerPhone ?? null,
       }),
     });
 

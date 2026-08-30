@@ -418,39 +418,39 @@ class MenuService:
             }
             
             all_items = []
-            
-            for keyword_lower in [keyword.lower(), keyword]:
-                for prop_name, search_value in category_mappings.items():
-                    if keyword_lower in prop_name or prop_name in keyword_lower:
-                        try:
-                            # カテゴリでの検索（Category/Subcategoryはselect型なのでselectフィルタを使用）
-                            # プロパティ名でselect型かrich_text型かを判定
-                            filter_type = "select" if search_value[0] in ["Category", "Subcategory"] else "rich_text"
-                            
-                            filters = [{
-                                "property": search_value[0],
-                                filter_type: {"equals": search_value[1]} if filter_type == "select" else {"contains": search_value[1]}
-                            }]
-                            
-                            if in_stock:
-                                filters.append({
-                                    "property": "在庫あり",
-                                    "checkbox": {"equals": True}
-                                })
-                            
-                            pages = self.notion_client.query_database(
-                                database_id=self.menu_db_id,
-                                filter_conditions={"and": filters} if len(filters) > 1 else filters[0],
-                                sorts=[{"property": "Price", "direction": "ascending"}]
-                            )
-                            
-                            items = self._convert_pages_to_menu_items(pages[:limit])
-                            all_items.extend(items)
-                            
-                        except Exception as e:
-                            logger.error(f"カテゴリ検索エラー ({prop_name}): {e}")
-                            continue
-            
+
+            keyword_lower = keyword.lower()
+            for prop_name, search_value in category_mappings.items():
+                if keyword_lower in prop_name or prop_name in keyword_lower:
+                    try:
+                        # カテゴリでの検索（Category/Subcategoryはselect型なのでselectフィルタを使用）
+                        # プロパティ名でselect型かrich_text型かを判定
+                        filter_type = "select" if search_value[0] in ["Category", "Subcategory"] else "rich_text"
+
+                        filters = [{
+                            "property": search_value[0],
+                            filter_type: {"equals": search_value[1]} if filter_type == "select" else {"contains": search_value[1]}
+                        }]
+
+                        if in_stock:
+                            filters.append({
+                                "property": "在庫あり",
+                                "checkbox": {"equals": True}
+                            })
+
+                        pages = self.notion_client.query_database(
+                            database_id=self.menu_db_id,
+                            filter_conditions={"and": filters} if len(filters) > 1 else filters[0],
+                            sorts=[{"property": "Price", "direction": "ascending"}]
+                        )
+
+                        items = self._convert_pages_to_menu_items(pages[:limit])
+                        all_items.extend(items)
+
+                    except Exception as e:
+                        logger.error(f"カテゴリ検索エラー ({prop_name}): {e}")
+                        continue
+
             return all_items
             
         except Exception as e:

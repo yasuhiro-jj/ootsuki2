@@ -419,14 +419,19 @@ class GraphEngine:
     def _recommendation_node(self, state: ConversationState) -> ConversationState:
         """おすすめ提案ノード"""
         logger.info("[DEBUG] おすすめノード開始")
-        
+
         try:
             state["current_step"] = "recommendation"
             logger.info("[DEBUG] ステップ設定完了")
-            
-            state["response"] = "おすすめをご提案します。"
+
+            state["response"] = self._generate_response(
+                state,
+                "お客様におすすめの料理を提案してください。直前の会話でお客様が触れた好み・条件"
+                "（辛さ、系統、飲み物との相性など）があれば必ず踏まえ、理由も添えて具体的な料理名を"
+                "1〜2品挙げてください。特に条件がなければ人気メニューを自然に提案してください。"
+            )
             logger.info("[DEBUG] レスポンス設定完了")
-            
+
             # カスタマイズされた今日のおすすめ選択肢
             custom_options = [
                 "日替わりランチ（月曜～金曜）",
@@ -465,8 +470,14 @@ class GraphEngine:
         try:
             state["current_step"] = "sake_snack"
             logger.info("[DEBUG] ステップ設定完了")
-            
-            state["response"] = "🍶 酒のつまみをご提案します。以下からお選びください。"
+
+            state["response"] = self._generate_response(
+                state,
+                "お客様が求めている酒のつまみを提案してください。直前の会話で既に具体的な料理名を"
+                "提案していた場合は、その内容（辛さ・系統・量など）を踏まえて条件に合う一品を絞り込んで"
+                "答えてください。新規の質問であれば、ビールや日本酒に合うおすすめのつまみを理由と共に"
+                "1〜2品挙げてください。"
+            )
             logger.info("[DEBUG] レスポンス設定完了")
             
             # 酒のつまみ関連の選択肢
@@ -600,7 +611,12 @@ class GraphEngine:
                     text = result.get("text", "")
                     if text:
                         context_parts.append(f"[情報{i}] {text[:200]}...")
-            
+
+            # api.py側で構築済みのコンテキスト（Notion情報・お客様プロフィール等）を反映
+            combined_context = (state.get("context", {}) or {}).get("combined_context", "")
+            if combined_context:
+                context_parts.append(f"\n{combined_context}")
+
             context = "\n".join(context_parts) if context_parts else ""
             
             # システムメッセージ
@@ -624,9 +640,14 @@ class GraphEngine:
                 last_message,
             )
             response = self.llm.invoke(lc_messages)
-            
-            return response.content
-        
+            response_text = (response.content or "").strip()
+
+            if not response_text:
+                logger.warning("[WARN] LLM応答が空文字だったためフォールバック文言を返します")
+                return "申し訳ございません、うまくお答えできませんでした。もう一度質問を送っていただけますか？"
+
+            return response_text
+
         except Exception as e:
             logger.error(f"応答生成エラー: {e}")
             return "申し訳ございません。エラーが発生しました。"

@@ -16,6 +16,7 @@ notion:
     conversation_db: "700563e396c84f8f89adafb90c51ca3f"  # 会話ノードDB
     conversation_history_db: "262e9a7ee5b780939967d01fe7f9fe9e"  # 会話履歴DB（新）
     unknown_keywords_db: "6cccf26b198645f2b08d71fb9b1d01f0"  # 不明キーワード記録DB
+    customer_profile_db: "3cce9a7ee5b78184be0dcb9936b23a7f"  # 顧客プロフィールDB（電話番号ログイン用）
   chatbot_sync:
     store_knowledge_db: ${NOTION_CHATBOT_STORE_KNOWLEDGE_DB_ID}
     menu_db: ${NOTION_CHATBOT_MENU_DB_ID}

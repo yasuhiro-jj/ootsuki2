@@ -4,11 +4,17 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 import { QuickReplyButtons } from './QuickReplyButtons';
+import { CustomerLoginBanner } from './CustomerLoginBanner';
 import { createSession, sendChatMessage, type ChatResponse } from '../lib/api';
 import {
   resolveCustomerMemoryIdentity,
   updateCustomerMemoryConsent,
 } from '../lib/customerMemory';
+import {
+  getStoredCustomerLogin,
+  loginCustomer,
+  type CustomerLoginResult,
+} from '../lib/customerLogin';
 
 interface Message {
   id: string;
@@ -25,6 +31,10 @@ export function ChatWindow() {
   const [customerConsentStatus, setCustomerConsentStatus] = useState<string>('unknown');
   const [loading, setLoading] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
+  const [customerPhone, setCustomerPhone] = useState<string | null>(null);
+  const [showLoginBanner, setShowLoginBanner] = useState(false);
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -48,31 +58,56 @@ export function ChatWindow() {
         return createSession(anonymousCustomerId);
       })
       .then((data) => {
-        if (mounted) {
-          setSessionId(data.session_id);
-          if (data.customer_id) setCustomerId(data.customer_id);
-          setMessages([
-            {
-              id: 'welcome',
-              content:
-                'いらっしゃいませ！おおつきチャットボットでございます。\n伝統の味と心で、皆様のお越しをお待ちしております。\nメニューや店舗情報について、何でもお気軽にお聞かせください。',
-              isUser: false,
-              suggestions: [
-                '日替わりランチ（月曜～金曜）',
-                '寿司ランチ',
-                'おすすめ定食',
-                '海鮮定食',
-                '定食屋メニュー',
-                '逸品料理',
-                '海鮮刺身',
-                '今晩のおすすめ一品',
-                '酒のつまみ',
-                '焼き鳥',
-                '静岡名物料理フェア',
-              ],
-            },
-          ]);
+        if (!mounted) return;
+        setSessionId(data.session_id);
+        if (data.customer_id) setCustomerId(data.customer_id);
+        setMessages([
+          {
+            id: 'welcome',
+            content:
+              'いらっしゃいませ！おおつきチャットボットでございます。\n伝統の味と心で、皆様のお越しをお待ちしております。\nメニューや店舗情報について、何でもお気軽にお聞かせください。',
+            isUser: false,
+            suggestions: [
+              '日替わりランチ（月曜～金曜）',
+              '寿司ランチ',
+              'おすすめ定食',
+              '海鮮定食',
+              '定食屋メニュー',
+              '逸品料理',
+              '海鮮刺身',
+              '今晩のおすすめ一品',
+              '酒のつまみ',
+              '焼き鳥',
+              '静岡名物料理フェア',
+            ],
+          },
+        ]);
+
+        // セッション初期化が終わってから、保存済みの電話番号ログインを確認する
+        // （先にやると、上のsetMessagesで追記済みの「お帰りなさい」メッセージが上書きされてしまうため）
+        const stored = getStoredCustomerLogin();
+        if (!stored) {
+          setShowLoginBanner(true);
+          return;
         }
+        loginCustomer(stored.phone, stored.name)
+          .then((result) => {
+            if (!mounted) return;
+            setCustomerPhone(result.phone_number);
+            if (result.visit_count > 1) {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `welcome-back-${Date.now()}`,
+                  content: `${result.name}様、お帰りなさい！（ご来店${result.visit_count}回目です）`,
+                  isUser: false,
+                },
+              ]);
+            }
+          })
+          .catch(() => {
+            if (mounted) setShowLoginBanner(true);
+          });
       })
       .catch((err) => {
         if (mounted) setInitError(err.message || 'セッションの初期化に失敗しました');
@@ -80,6 +115,34 @@ export function ChatWindow() {
     return () => {
       mounted = false;
     };
+  }, []);
+
+  const handleLogin = useCallback(async (phone: string, name: string) => {
+    setLoginLoading(true);
+    setLoginError(null);
+    try {
+      const result: CustomerLoginResult = await loginCustomer(phone, name);
+      setCustomerPhone(result.phone_number);
+      setShowLoginBanner(false);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `login-${Date.now()}`,
+          content: result.is_new_customer
+            ? `${result.name}様、ご登録ありがとうございます！次回からは好みに合わせたご提案をいたします。`
+            : `${result.name}様、お帰りなさい！（ご来店${result.visit_count}回目です）`,
+          isUser: false,
+        },
+      ]);
+    } catch (err) {
+      setLoginError(err instanceof Error ? err.message : 'ログインに失敗しました');
+    } finally {
+      setLoginLoading(false);
+    }
+  }, []);
+
+  const handleSkipLogin = useCallback(() => {
+    setShowLoginBanner(false);
   }, []);
 
   const handleSend = useCallback(
@@ -95,7 +158,7 @@ export function ChatWindow() {
       setLoading(true);
 
       try {
-        const res: ChatResponse = await sendChatMessage(text, sessionId, customerId);
+        const res: ChatResponse = await sendChatMessage(text, sessionId, customerId, customerPhone);
         if (res.session_id) setSessionId(res.session_id);
 
         const botMsg: Message = {
@@ -117,7 +180,7 @@ export function ChatWindow() {
         setLoading(false);
       }
     },
-    [sessionId, customerId, loading]
+    [sessionId, customerId, customerPhone, loading]
   );
 
   const handleSuggestionClick = useCallback(
@@ -162,7 +225,15 @@ export function ChatWindow() {
 
   return (
     <div className="flex h-full flex-col bg-gradient-to-b from-slate-950/20 to-slate-900/30">
-      {customerId && customerConsentStatus === 'unknown' && (
+      {showLoginBanner && !customerPhone && (
+        <CustomerLoginBanner
+          onLogin={handleLogin}
+          onSkip={handleSkipLogin}
+          loading={loginLoading}
+          error={loginError}
+        />
+      )}
+      {!customerPhone && !showLoginBanner && customerId && customerConsentStatus === 'unknown' && (
         <div className="border-b border-white/15 bg-slate-950/45 px-4 py-3 text-sm text-white backdrop-blur-xl">
           <div className="mb-2 font-medium">以前の注文履歴を、今後のご案内に利用してもよいですか？</div>
           <div className="flex gap-2">

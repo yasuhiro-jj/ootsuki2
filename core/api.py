@@ -11,7 +11,7 @@ import time
 from dataclasses import asdict
 from typing import Optional, Dict, Any, Set, List
 from datetime import datetime
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import JSONResponse
@@ -70,6 +70,10 @@ from .response_compactness import (
     is_what_available_request,
     normalize_customer_reply,
     should_append_line_contact_footer,
+)
+from .beer_recommendation_flow import (
+    BeerRecommendationFlowService,
+    SakeRecommendationFlowService,
 )
 from .conversation_quality import ConversationQualityLog, ConversationQualityLogger
 from .customer_memory import (
@@ -180,6 +184,23 @@ class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
     customer_id: Optional[str] = None
+    customer_phone: Optional[str] = None
+
+
+class CustomerLoginRequest(BaseModel):
+    """電話番号ベースの簡易ログインリクエスト"""
+    phone_number: str
+    name: str
+
+
+class CustomerLoginResponse(BaseModel):
+    phone_number: str
+    name: str
+    visit_count: int
+    is_new_customer: bool
+    favorite_menu: str = ""
+    dislikes_allergies: str = ""
+    preference_notes: str = ""
 
 class SessionCreateRequest(BaseModel):
     """セッション作成リクエスト"""
@@ -409,10 +430,30 @@ def create_app(config: ConfigLoader) -> FastAPI:
 
     _menu_db_id = config.get("notion.database_ids.menu_db")
     shared_menu_service = MenuService(notion_client, _menu_db_id)
+    beer_recommendation_flow = BeerRecommendationFlowService(
+        notion_client=notion_client,
+        config=config,
+        menu_service=shared_menu_service,
+    )
+    sake_recommendation_flow = SakeRecommendationFlowService(
+        notion_client=notion_client,
+        config=config,
+        menu_service=shared_menu_service,
+    )
     notion_knowledge_service = NotionKnowledgeContextService(
         notion_client=notion_client,
         config=config,
         menu_service=shared_menu_service,
+    )
+    from .customer_profile_service import (
+        CustomerProfileService,
+        maybe_learn_and_save_preference,
+        normalize_phone_number,
+    )
+
+    customer_profile_service = CustomerProfileService(
+        notion_client=notion_client,
+        database_id=config.get("notion.database_ids.customer_profile_db"),
     )
     enable_public_notion_direct_responses = (
         os.getenv("ENABLE_PUBLIC_NOTION_KNOWLEDGE_DIRECT_RESPONSES", "")
@@ -790,6 +831,36 @@ def create_app(config: ConfigLoader) -> FastAPI:
             "updated": True,
         }
 
+    @app.post(
+        "/customer/login",
+        response_model=CustomerLoginResponse,
+    )
+    async def login_customer(payload: CustomerLoginRequest):
+        """電話番号+お名前による簡易ログイン。初回は新規作成、2回目以降は既存プロフィールを返す。"""
+        if not customer_profile_service.is_available:
+            raise HTTPException(
+                status_code=503,
+                detail="customer profile service is not configured",
+            )
+        phone = normalize_phone_number(payload.phone_number)
+        if not phone:
+            raise HTTPException(status_code=400, detail="phone_number is required")
+
+        was_existing = customer_profile_service.find_by_phone(phone) is not None
+        profile = customer_profile_service.login(phone, payload.name)
+        if not profile:
+            raise HTTPException(status_code=500, detail="failed to login customer")
+
+        return CustomerLoginResponse(
+            phone_number=profile.phone_number,
+            name=profile.name,
+            visit_count=profile.visit_count,
+            is_new_customer=not was_existing,
+            favorite_menu=profile.favorite_menu,
+            dislikes_allergies=profile.dislikes_allergies,
+            preference_notes=profile.preference_notes,
+        )
+
     @app.get(
         "/admin/customer-memory/{anonymous_customer_id}",
         dependencies=[Depends(require_admin_api_key)],
@@ -996,7 +1067,7 @@ def create_app(config: ConfigLoader) -> FastAPI:
 
     # Chat endpoint
     @app.post("/chat", response_model=ChatResponse)
-    async def chat(request: ChatRequest):
+    async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
         """チャット処理"""
         started_at = time.perf_counter()
         session_id = request.session_id or ""
@@ -1011,6 +1082,114 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 session_id = ai_engine.create_session(request.customer_id)
             _safe_link_customer_session(request.customer_id, session_id)
             
+            session_memory = ai_engine.get_session_memory(session_id)
+
+            customer_profile_context = ""
+            if request.customer_phone:
+                if "customer_profile_context" in session_memory:
+                    customer_profile_context = session_memory.get("customer_profile_context", "")
+                elif customer_profile_service.is_available:
+                    try:
+                        profile = customer_profile_service.find_by_phone(request.customer_phone)
+                    except Exception as exc:
+                        logger.warning("[CustomerProfile] lookup_failed session=%s error=%s", session_id[:8], exc)
+                        profile = None
+                    if profile:
+                        customer_profile_context = profile.as_prompt_context()
+                        ai_engine.save_memory(
+                            session_id,
+                            {
+                                "customer_profile_context": customer_profile_context,
+                                "customer_profile_page_id": profile.page_id,
+                                "customer_profile_favorite_menu": profile.favorite_menu,
+                                "customer_profile_dislikes": profile.dislikes_allergies,
+                            },
+                        )
+                        session_memory = ai_engine.get_session_memory(session_id)
+
+            customer_profile_page_id = session_memory.get("customer_profile_page_id", "")
+            if customer_profile_page_id and user_message.strip():
+                background_tasks.add_task(
+                    maybe_learn_and_save_preference,
+                    llm=ai_engine.llm,
+                    service=customer_profile_service,
+                    page_id=customer_profile_page_id,
+                    user_message=user_message,
+                    current_favorite_menu=session_memory.get("customer_profile_favorite_menu", ""),
+                    current_dislikes_allergies=session_memory.get("customer_profile_dislikes", ""),
+                )
+
+            for recommendation_flow in (beer_recommendation_flow, sake_recommendation_flow):
+                flow_result = recommendation_flow.handle(user_message, session_memory)
+                if flow_result.handled:
+                    memory_updates = recommendation_flow.resolve_flow_memory(flow_result)
+                    if memory_updates:
+                        ai_engine.save_memory(session_id, memory_updates)
+                        session_memory = {**session_memory, **memory_updates}
+
+                    session = ai_engine.get_session(session_id)
+                    if session:
+                        session.add_message("user", request.message)
+                        session.add_message("assistant", flow_result.response)
+
+                    menu_image_url, menu_image_log = resolve_menu_image_for_chat(
+                        shared_menu_service, user_message
+                    )
+                    logger.info(menu_image_log)
+                    line_reply_messages = attach_line_messages_if_image(
+                        flow_result.response, menu_image_url
+                    )
+
+                    if config.get("features.save_conversation", False):
+                        try:
+                            conversation_db_id = config.get("notion.database_ids.conversation_history_db")
+                            if conversation_db_id and conversation_db_id.strip():
+                                notion_client.save_conversation_history(
+                                    database_id=conversation_db_id,
+                                    customer_id=request.customer_id or session_id[:8],
+                                    question=request.message,
+                                    answer=flow_result.response,
+                                    timestamp=datetime.now(),
+                                    intent="recommendation",
+                                    search_keyword=request.message.strip(),
+                                )
+                        except Exception as e:
+                            logger.error(f"[BeerSakeFlow] conversation save failed: {e}")
+
+                    _record_quality_log(
+                        session_id=session_id,
+                        user_id=request.customer_id,
+                        user_message=request.message,
+                        ai_response=flow_result.response,
+                        recent_history=ai_engine.get_llm_conversation_turns(session_id, max_pairs=4),
+                        session_memory=session_memory,
+                        detected_intent="recommendation",
+                        route="store",
+                        route_reason="beer_sake_recommendation_flow",
+                        node="beer_sake_recommendation_flow",
+                        referenced_sources={
+                            "flow_id": recommendation_flow.flow_id,
+                            "selected_recommendation": memory_updates.get(
+                                f"{recommendation_flow.memory_prefix}_selected_recommendation"
+                            ),
+                            "options_count": len(flow_result.options or []),
+                            "menu_image": bool(menu_image_url),
+                            "order_created": False,
+                        },
+                        latency_ms=_elapsed_ms(started_at),
+                        channel="web",
+                    )
+
+                    return ChatResponse(
+                        message=flow_result.response,
+                        session_id=session_id,
+                        timestamp=datetime.now().isoformat(),
+                        options=flow_result.options or [],
+                        suggestions=flow_result.options or None,
+                        image_url=menu_image_url,
+                        line_reply_messages=line_reply_messages,
+                    )
+
             intent_result = intent_classifier.classify(user_message)
             ai_engine.save_memory(
                 session_id,
@@ -1579,12 +1758,29 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 )
 
             if is_other_recommendation_request(user_message, session_memory):
-                response_message = format_other_recommendation_reply()
+                previous_item_name = get_recent_item_name(session_memory)
+                other_recommendation_hint = (
+                    "お客様は直前の提案とは別のメニューを求めています。"
+                    + (
+                        f"直前に提案した「{previous_item_name}」とは違う料理を、"
+                        if previous_item_name
+                        else "これまでの会話の流れに合う料理を、"
+                    )
+                    + "理由も添えて1〜2品、具体的な料理名で提案してください。"
+                )
+                response_message = ai_engine.generate_response(
+                    session_id=session_id,
+                    user_message=request.message,
+                    context=other_recommendation_hint,
+                    response_mode=response_mode,
+                    tone=tone,
+                    intent_result=intent_result,
+                )
                 _safe_record_customer_event(
                     request.customer_id,
                     session_id,
                     EVENT_RECOMMENDATION_SHOWN,
-                    product_name="唐揚げ",
+                    product_name="",
                 )
                 ai_engine.save_memory(
                     session_id,
@@ -1595,10 +1791,6 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     },
                 )
                 session_memory = ai_engine.get_session_memory(session_id)
-                session = ai_engine.get_session(session_id)
-                if session:
-                    session.add_message("user", request.message)
-                    session.add_message("assistant", response_message)
                 _record_quality_log(
                     session_id=session_id,
                     user_id=request.customer_id,
@@ -2363,7 +2555,15 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     "[Live Notion knowledge]\n"
                     f"{live_notion_context}"
                 ).strip()
-            
+
+            customer_profile_context = session_memory.get("customer_profile_context", "")
+            if customer_profile_context:
+                combined_context = (
+                    f"{combined_context}\n\n"
+                    "[お客様プロフィール]\n"
+                    f"{customer_profile_context}"
+                ).strip()
+
             response_options: list = []
             response_message = ""
             agent_used = False
@@ -2423,15 +2623,33 @@ def create_app(config: ConfigLoader) -> FastAPI:
                         response_message = final_state.get("response", "")
                         response_options = final_state.get("options", [])
                         response_source = "langgraph"
+                        messages_already_recorded = False
+
+                        if not response_message or not response_message.strip():
+                            logger.warning(
+                                "[WARN] LangGraph応答が空文字だったため通常モードにフォールバック"
+                            )
+                            response_message = ai_engine.generate_response(
+                                session_id=session_id,
+                                user_message=request.message,
+                                context=combined_context,
+                                response_mode=response_mode,
+                                tone=tone,
+                                intent_result=intent_result,
+                            )
+                            response_options = []
+                            response_source = "ai_engine_fallback_empty_langgraph"
+                            messages_already_recorded = True
                         # 意図を取得（存在する場合）
                         detected_intent = final_state.get("user_intent", "Other")
                         if not detected_intent or detected_intent.strip() == "":
                             detected_intent = "Other"
 
-                        session = ai_engine.get_session(session_id)
-                        if session:
-                            session.add_message("user", request.message)
-                            session.add_message("assistant", response_message)
+                        if not messages_already_recorded:
+                            session = ai_engine.get_session(session_id)
+                            if session:
+                                session.add_message("user", request.message)
+                                session.add_message("assistant", response_message)
 
                         logger.info(
                             f"[OK] LangGraphで応答生成: {final_state.get('current_step')} (options: {len(response_options)}, intent: {detected_intent})"
@@ -2746,6 +2964,84 @@ def create_app(config: ConfigLoader) -> FastAPI:
                         # セッションのstateを取得または作成
                         ai_engine.ensure_session(session_id)
                         conv_turns = ai_engine.get_llm_conversation_turns(session_id)
+
+                        session_memory = ai_engine.get_session_memory(session_id)
+                        recommendation_flow_handled = False
+                        for recommendation_flow in (beer_recommendation_flow, sake_recommendation_flow):
+                            flow_result = recommendation_flow.handle(message, session_memory)
+                            if not flow_result.handled:
+                                continue
+
+                            recommendation_flow_handled = True
+                            memory_updates = recommendation_flow.resolve_flow_memory(flow_result)
+                            if memory_updates:
+                                ai_engine.save_memory(session_id, memory_updates)
+                                session_memory = {**session_memory, **memory_updates}
+
+                            if message.strip():
+                                sess = ai_engine.get_session(session_id)
+                                if sess:
+                                    sess.add_message("user", message)
+                                    sess.add_message("assistant", flow_result.response)
+
+                            if config.get("features.save_conversation", False):
+                                try:
+                                    conversation_db_id = config.get("notion.database_ids.conversation_history_db")
+                                    if conversation_db_id and conversation_db_id.strip():
+                                        notion_client.save_conversation_history(
+                                            database_id=conversation_db_id,
+                                            customer_id=session_id[:8],
+                                            question=message,
+                                            answer=flow_result.response,
+                                            timestamp=datetime.now(),
+                                            intent="recommendation",
+                                            search_keyword=message.strip(),
+                                        )
+                                except Exception as e:
+                                    logger.error(f"[WS][BeerSakeFlow] conversation save failed: {e}")
+
+                            ws_img_url, ws_menu_log = resolve_menu_image_for_chat(
+                                shared_menu_service, message
+                            )
+                            logger.info(ws_menu_log)
+                            response = {
+                                "type": "response",
+                                "message": flow_result.response,
+                                "options": flow_result.options or [],
+                                "timestamp": datetime.now().isoformat(),
+                                "image_url": ws_img_url,
+                                "line_reply_messages": attach_line_messages_if_image(
+                                    flow_result.response, ws_img_url
+                                ),
+                            }
+                            _record_quality_log(
+                                session_id=session_id,
+                                user_id=session_id,
+                                user_message=message,
+                                ai_response=flow_result.response,
+                                recent_history=conv_turns,
+                                session_memory=session_memory,
+                                detected_intent="recommendation",
+                                route="store",
+                                route_reason="beer_sake_recommendation_flow",
+                                node="beer_sake_recommendation_flow",
+                                referenced_sources={
+                                    "flow_id": recommendation_flow.flow_id,
+                                    "selected_recommendation": memory_updates.get(
+                                        f"{recommendation_flow.memory_prefix}_selected_recommendation"
+                                    ),
+                                    "options_count": len(flow_result.options or []),
+                                    "menu_image": bool(ws_img_url),
+                                    "order_created": False,
+                                },
+                                latency_ms=_elapsed_ms(started_at),
+                                channel="websocket",
+                            )
+                            await websocket.send_json(response)
+                            break
+
+                        if recommendation_flow_handled:
+                            continue
 
                         if session_id in ws_manager.session_states:
                             # 既存のstateを取得し、コンテキストを保持
