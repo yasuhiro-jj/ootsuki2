@@ -11,6 +11,16 @@ SNACK_RECOMMENDATION_TERMS = [
     "肴",
 ]
 
+# 「〇〇のおすすめはありますか？」のように、商品名＋存在確認語を含みつつも
+# 実際には「おすすめを教えて」という推薦リクエストである発話を除外するための語彙。
+# これが無いと「定食」＋「あります」のヒットだけで商品存在確認と誤判定されてしまう。
+RECOMMENDATION_INTENT_TERMS = [
+    "おすすめ",
+    "お勧め",
+    "オススメ",
+    "人気",
+]
+
 MENU_EXISTENCE_TERMS = [
     "ある",
     "あります",
@@ -64,6 +74,8 @@ def is_direct_menu_existence_question(message: str) -> bool:
 
     normalized = message.strip().lower()
     if any(word in normalized for word in SNACK_RECOMMENDATION_TERMS):
+        return False
+    if any(word in normalized for word in RECOMMENDATION_INTENT_TERMS):
         return False
 
     return any(term in normalized for term in MENU_PRODUCT_TERMS) and any(
