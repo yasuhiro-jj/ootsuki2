@@ -3246,6 +3246,55 @@ def create_app(config: ConfigLoader) -> FastAPI:
                             )
                             await websocket.send_json(response)
                             continue
+                        if ws_session_memory.get("pending_flow") != "reservation":
+                            ws_matched_conversation_node = _find_matching_conversation_node(
+                                conversation_system, message
+                            )
+                            if ws_matched_conversation_node:
+                                ws_node_response_message = str(
+                                    ws_matched_conversation_node.get("template") or ""
+                                ).strip()
+                                if ws_node_response_message:
+                                    sess = ai_engine.get_session(session_id)
+                                    if sess:
+                                        sess.add_message("user", message)
+                                        sess.add_message("assistant", ws_node_response_message)
+                                    ai_engine.save_memory(
+                                        session_id,
+                                        {
+                                            "active_topic": "conversation_node",
+                                            "detected_intent": "conversation_node",
+                                            "last_assistant_action": f"conversation_node:{ws_matched_conversation_node.get('id', '')}",
+                                        },
+                                    )
+                                    response = {
+                                        "type": "response",
+                                        "message": ws_node_response_message,
+                                        "options": [],
+                                        "timestamp": datetime.now().isoformat(),
+                                        "image_url": None,
+                                        "line_reply_messages": None,
+                                        "response_source": "conversation_node",
+                                    }
+                                    _record_quality_log(
+                                        session_id=session_id,
+                                        user_id=session_id,
+                                        user_message=message,
+                                        ai_response=ws_node_response_message,
+                                        recent_history=conv_turns,
+                                        session_memory=ai_engine.get_session_memory(session_id),
+                                        detected_intent="conversation_node",
+                                        route="conversation_node",
+                                        route_reason="keyword_match",
+                                        node=f"conversation_node:{ws_matched_conversation_node.get('id', '')}",
+                                        referenced_sources={
+                                            "node_id": ws_matched_conversation_node.get("id", "")
+                                        },
+                                        latency_ms=_elapsed_ms(started_at),
+                                        channel="websocket",
+                                    )
+                                    await websocket.send_json(response)
+                                    continue
                         if is_initial_reservation_request(message, ws_session_memory):
                             direct_response = format_initial_reservation_reply()
                             ai_engine.save_memory(
