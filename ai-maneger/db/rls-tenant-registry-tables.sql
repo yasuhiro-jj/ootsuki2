@@ -77,3 +77,42 @@ CREATE POLICY "tenant can select own audit logs"
 CREATE POLICY "tenant can insert own audit logs"
   ON public.tenant_audit_logs FOR INSERT TO authenticated
   WITH CHECK (tenant_key = current_setting('app.tenant_key', true));
+
+-- Marketing Command Center tables.
+-- These tables follow the same tenant boundary as the registry tables.
+ALTER TABLE public.marketing_stores ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.marketing_goals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.marketing_actions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.marketing_action_executions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.marketing_integration_statuses ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "tenant can manage own marketing stores" ON public.marketing_stores;
+DROP POLICY IF EXISTS "tenant can manage own marketing goals" ON public.marketing_goals;
+DROP POLICY IF EXISTS "tenant can manage own marketing actions" ON public.marketing_actions;
+DROP POLICY IF EXISTS "tenant can manage own marketing executions" ON public.marketing_action_executions;
+DROP POLICY IF EXISTS "tenant can manage own marketing integrations" ON public.marketing_integration_statuses;
+
+CREATE POLICY "tenant can manage own marketing stores"
+  ON public.marketing_stores FOR ALL TO authenticated
+  USING (tenant_key = current_setting('app.tenant_key', true))
+  WITH CHECK (tenant_key = current_setting('app.tenant_key', true));
+
+CREATE POLICY "tenant can manage own marketing goals"
+  ON public.marketing_goals FOR ALL TO authenticated
+  USING (tenant_key = current_setting('app.tenant_key', true))
+  WITH CHECK (tenant_key = current_setting('app.tenant_key', true));
+
+CREATE POLICY "tenant can manage own marketing actions"
+  ON public.marketing_actions FOR ALL TO authenticated
+  USING (tenant_key = current_setting('app.tenant_key', true))
+  WITH CHECK (tenant_key = current_setting('app.tenant_key', true));
+
+CREATE POLICY "tenant can manage own marketing executions"
+  ON public.marketing_action_executions FOR ALL TO authenticated
+  USING (tenant_key = current_setting('app.tenant_key', true))
+  WITH CHECK (tenant_key = current_setting('app.tenant_key', true));
+
+CREATE POLICY "tenant can manage own marketing integrations"
+  ON public.marketing_integration_statuses FOR ALL TO authenticated
+  USING (tenant_key = current_setting('app.tenant_key', true))
+  WITH CHECK (tenant_key = current_setting('app.tenant_key', true));

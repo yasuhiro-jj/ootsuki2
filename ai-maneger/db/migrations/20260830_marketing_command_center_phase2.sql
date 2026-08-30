@@ -1,55 +1,5 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-CREATE TABLE IF NOT EXISTS tenant_configs (
-  tenant_key TEXT PRIMARY KEY,
-  notion_token_enc TEXT NOT NULL,
-  project_db_id TEXT NOT NULL,
-  ootsuki_project_page_id TEXT NOT NULL,
-  daily_sales_db_id TEXT NOT NULL,
-  kpi_db_id TEXT NOT NULL,
-  memo_db_id TEXT NOT NULL,
-  line_report_page_id TEXT NOT NULL,
-  product_cost_db_id TEXT NOT NULL,
-  weekly_actions_db_id TEXT NOT NULL,
-  instructions_page_id TEXT NOT NULL DEFAULT '',
-  is_active BOOLEAN NOT NULL DEFAULT TRUE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_tenant_configs_active
-  ON tenant_configs (is_active);
-
-CREATE TABLE IF NOT EXISTS tenant_memberships (
-  tenant_key TEXT NOT NULL,
-  principal_id TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('viewer', 'editor', 'admin', 'owner')),
-  is_active BOOLEAN NOT NULL DEFAULT TRUE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (tenant_key, principal_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_tenant_memberships_active
-  ON tenant_memberships (tenant_key, principal_id, is_active);
-
-CREATE TABLE IF NOT EXISTS tenant_audit_logs (
-  id BIGSERIAL PRIMARY KEY,
-  tenant_key TEXT NOT NULL,
-  principal_id TEXT NOT NULL,
-  role TEXT NOT NULL,
-  action TEXT NOT NULL,
-  resource_type TEXT NOT NULL,
-  resource_id TEXT,
-  path TEXT NOT NULL,
-  method TEXT NOT NULL,
-  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_tenant_audit_logs_lookup
-  ON tenant_audit_logs (tenant_key, created_at DESC);
-
 CREATE TABLE IF NOT EXISTS marketing_stores (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_key TEXT NOT NULL,
@@ -74,25 +24,13 @@ CREATE TABLE IF NOT EXISTS marketing_goals (
   store_id UUID NOT NULL REFERENCES marketing_stores(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   description TEXT,
-  goal_type TEXT NOT NULL CHECK (
-    goal_type IN (
-      'instagram_reach',
-      'instagram_non_follower_reach',
-      'gbp_views',
-      'gbp_actions',
-      'reviews',
-      'reservations',
-      'line_registrations',
-      'sales',
-      'custom'
-    )
-  ),
+  goal_type TEXT NOT NULL,
   target_value NUMERIC,
   current_value NUMERIC,
   unit TEXT,
   start_date DATE,
   end_date DATE,
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed', 'paused')),
+  status TEXT NOT NULL DEFAULT 'active',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -107,15 +45,13 @@ CREATE TABLE IF NOT EXISTS marketing_actions (
   title TEXT NOT NULL,
   reason TEXT NOT NULL,
   evidence JSONB NOT NULL DEFAULT '[]'::jsonb,
-  target_channel TEXT NOT NULL CHECK (target_channel IN ('instagram', 'gbp', 'canva', 'multi')),
+  target_channel TEXT NOT NULL,
   content_theme TEXT NOT NULL,
-  priority TEXT NOT NULL CHECK (priority IN ('high', 'medium', 'low')),
+  priority TEXT NOT NULL,
   target_kpi TEXT NOT NULL,
   recommended_action TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'proposed'
-    CHECK (status IN ('proposed', 'approved', 'in_progress', 'executed', 'measuring', 'completed', 'rejected')),
-  approval_status TEXT NOT NULL DEFAULT 'pending'
-    CHECK (approval_status IN ('pending', 'approved', 'changes_requested', 'rejected')),
+  status TEXT NOT NULL DEFAULT 'proposed',
+  approval_status TEXT NOT NULL DEFAULT 'pending',
   approved_by TEXT,
   approved_at TIMESTAMPTZ,
   revision_note TEXT,
@@ -133,11 +69,6 @@ ALTER TABLE marketing_actions
   ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS revision_note TEXT;
 
-ALTER TABLE marketing_actions
-  DROP CONSTRAINT IF EXISTS marketing_actions_target_channel_check,
-  DROP CONSTRAINT IF EXISTS marketing_actions_status_check,
-  DROP CONSTRAINT IF EXISTS marketing_actions_approval_status_check;
-
 UPDATE marketing_actions
    SET status = CASE
      WHEN status = 'posted' THEN 'executed'
@@ -148,10 +79,18 @@ UPDATE marketing_actions
    END;
 
 ALTER TABLE marketing_actions
+  DROP CONSTRAINT IF EXISTS marketing_actions_target_channel_check,
+  DROP CONSTRAINT IF EXISTS marketing_actions_status_check,
+  DROP CONSTRAINT IF EXISTS marketing_actions_priority_check,
+  DROP CONSTRAINT IF EXISTS marketing_actions_approval_status_check;
+
+ALTER TABLE marketing_actions
   ADD CONSTRAINT marketing_actions_target_channel_check
     CHECK (target_channel IN ('instagram', 'gbp', 'canva', 'multi')),
   ADD CONSTRAINT marketing_actions_status_check
     CHECK (status IN ('proposed', 'approved', 'in_progress', 'executed', 'measuring', 'completed', 'rejected')),
+  ADD CONSTRAINT marketing_actions_priority_check
+    CHECK (priority IN ('high', 'medium', 'low')),
   ADD CONSTRAINT marketing_actions_approval_status_check
     CHECK (approval_status IN ('pending', 'approved', 'changes_requested', 'rejected'));
 
@@ -166,7 +105,7 @@ CREATE TABLE IF NOT EXISTS marketing_action_executions (
   tenant_key TEXT NOT NULL,
   action_id UUID NOT NULL REFERENCES marketing_actions(id) ON DELETE CASCADE,
   store_id UUID REFERENCES marketing_stores(id) ON DELETE SET NULL,
-  channel TEXT NOT NULL CHECK (channel IN ('instagram', 'gbp', 'canva', 'multi')),
+  channel TEXT NOT NULL,
   executed_at TIMESTAMPTZ,
   external_post_id TEXT,
   external_url TEXT,
@@ -179,17 +118,91 @@ CREATE TABLE IF NOT EXISTS marketing_action_executions (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE marketing_action_executions
+  DROP CONSTRAINT IF EXISTS marketing_action_executions_channel_check;
+
+ALTER TABLE marketing_action_executions
+  ADD CONSTRAINT marketing_action_executions_channel_check
+    CHECK (channel IN ('instagram', 'gbp', 'canva', 'multi'));
+
 CREATE INDEX IF NOT EXISTS idx_marketing_action_executions_action
   ON marketing_action_executions (tenant_key, action_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS marketing_integration_statuses (
   tenant_key TEXT NOT NULL,
   store_id UUID NOT NULL REFERENCES marketing_stores(id) ON DELETE CASCADE,
-  service TEXT NOT NULL CHECK (service IN ('instagram', 'gbp', 'canva')),
-  status TEXT NOT NULL CHECK (status IN ('connected', 'disconnected', 'expired', 'error')),
+  service TEXT NOT NULL,
+  status TEXT NOT NULL,
   last_checked_at TIMESTAMPTZ,
   error_message TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (tenant_key, store_id, service)
 );
+
+ALTER TABLE marketing_goals
+  DROP CONSTRAINT IF EXISTS marketing_goals_goal_type_check,
+  DROP CONSTRAINT IF EXISTS marketing_goals_status_check;
+
+ALTER TABLE marketing_goals
+  ADD CONSTRAINT marketing_goals_goal_type_check
+    CHECK (goal_type IN (
+      'instagram_reach',
+      'instagram_non_follower_reach',
+      'gbp_views',
+      'gbp_actions',
+      'reviews',
+      'reservations',
+      'line_registrations',
+      'sales',
+      'custom'
+    )),
+  ADD CONSTRAINT marketing_goals_status_check
+    CHECK (status IN ('active', 'completed', 'paused'));
+
+ALTER TABLE marketing_integration_statuses
+  DROP CONSTRAINT IF EXISTS marketing_integration_statuses_service_check,
+  DROP CONSTRAINT IF EXISTS marketing_integration_statuses_status_check;
+
+ALTER TABLE marketing_integration_statuses
+  ADD CONSTRAINT marketing_integration_statuses_service_check
+    CHECK (service IN ('instagram', 'gbp', 'canva')),
+  ADD CONSTRAINT marketing_integration_statuses_status_check
+    CHECK (status IN ('connected', 'disconnected', 'expired', 'error'));
+
+ALTER TABLE public.marketing_stores ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.marketing_goals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.marketing_actions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.marketing_action_executions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.marketing_integration_statuses ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "tenant can manage own marketing stores" ON public.marketing_stores;
+DROP POLICY IF EXISTS "tenant can manage own marketing goals" ON public.marketing_goals;
+DROP POLICY IF EXISTS "tenant can manage own marketing actions" ON public.marketing_actions;
+DROP POLICY IF EXISTS "tenant can manage own marketing executions" ON public.marketing_action_executions;
+DROP POLICY IF EXISTS "tenant can manage own marketing integrations" ON public.marketing_integration_statuses;
+
+CREATE POLICY "tenant can manage own marketing stores"
+  ON public.marketing_stores FOR ALL TO authenticated
+  USING (tenant_key = current_setting('app.tenant_key', true))
+  WITH CHECK (tenant_key = current_setting('app.tenant_key', true));
+
+CREATE POLICY "tenant can manage own marketing goals"
+  ON public.marketing_goals FOR ALL TO authenticated
+  USING (tenant_key = current_setting('app.tenant_key', true))
+  WITH CHECK (tenant_key = current_setting('app.tenant_key', true));
+
+CREATE POLICY "tenant can manage own marketing actions"
+  ON public.marketing_actions FOR ALL TO authenticated
+  USING (tenant_key = current_setting('app.tenant_key', true))
+  WITH CHECK (tenant_key = current_setting('app.tenant_key', true));
+
+CREATE POLICY "tenant can manage own marketing executions"
+  ON public.marketing_action_executions FOR ALL TO authenticated
+  USING (tenant_key = current_setting('app.tenant_key', true))
+  WITH CHECK (tenant_key = current_setting('app.tenant_key', true));
+
+CREATE POLICY "tenant can manage own marketing integrations"
+  ON public.marketing_integration_statuses FOR ALL TO authenticated
+  USING (tenant_key = current_setting('app.tenant_key', true))
+  WITH CHECK (tenant_key = current_setting('app.tenant_key', true));

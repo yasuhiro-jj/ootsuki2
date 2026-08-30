@@ -1157,4 +1157,28 @@ Claude Code で、この `AI Maneger` の既存エージェント導線を拡張
 - いきなり Notion 自動保存はせず、まずは **下書きを確認して採用する UI** を作る
 - tenant をまたいだ保存や参照を起こさない
 
+## Phase 2: マーケティング施策司令塔（実装状況）
+
+**Phase 2 Status: 部分完了（Completed ではない）**
+
+Instagram実指標の取得が Meta 側の権限不足によりできていないため、指示書の完了基準（Instagram/GBP 実指標が両方表示される E2E 成功）は満たしていません。以下、項目ごとの状況です。
+
+| 項目 | 状態 | 備考 |
+|---|---|---|
+| Supabase 実DB接続 | 完了 | プロジェクトが一時停止していたため再開 + パスワードリセットで復旧 |
+| DB migration 適用 | 完了 | `db/migrations/20260830_marketing_command_center_phase2.sql`。marketing_* 5テーブル作成、RLS有効化 |
+| Seed 実行 | 完了 | tenant_key=`ootsuki`、店舗「食事処おおつき」、Instagram tenant_key=`main`、GBP location ID=`17825904278186631034` |
+| Instagram 内部API接続 | 実装・デプロイ完了 / データ取得不可 | `_deploy_instagram_pinned`（Railway）に `GET /api/internal/marketing/{health,metrics}` を追加。Bearer認証・tenant解決まで正常動作。ただし Meta 側で `instagram_manage_insights` 権限が未付与のため `Application does not have permission for this action` エラーとなり実指標は取得できない。AI Manager 側は偽の0を出さずエラー表示する設計で正しく動作 |
+| GBP 内部API接続 | 完了（実データ取得成功） | `ootsuki-cc-company/meo`（Vercel）に `GET /api/internal/marketing/{health,metrics}` を追加。GBP Performance API v1 + 既存 Review テーブルから実データ取得済み（review_count, average_rating, impressions 等） |
+| 実店舗E2E確認 | 部分成功 | 店舗表示・目標表示・GBP実指標表示・AI施策生成（根拠付き）・承認→実行→評価の状態遷移まで確認済み。Instagram実指標表示のみ未達（上記の理由） |
+| RLS確認 | 実施・重要な制約を確認 | marketing_* 含む全テーブルで `rowsecurity=true` だが、DB接続に使う `postgres` ロールが BYPASSRLS のため RLS ポリシー自体は実効性なし（既存の `tenant_configs` 等と同じ既存パターンで、Phase 2 固有の問題ではない）。ロール変更によるRLS実効化は影響範囲が大きいため見送り、代わりに `lib/marketing/repository.ts` の全11関数をコードレビュー。全SELECT/UPDATE文が `WHERE tenant_key = $1` を含み、全INSERT文がtenant_keyを明示指定、更新系関数もidだけでなくtenant_keyを条件に含めており抜け漏れなし。ブラウザでの `tenant=ootsuki` / `tenant=demo` 切り替えでも分離を確認済み |
+| API障害時の挙動 | 確認済み | Instagram側は実際に権限エラーが発生しており「未取得/エラー表示、GBP は表示継続」を実環境で確認できた |
+| test / build / lint | 全て成功 | `npm test`（21件）, `npm run build`, `npm run lint` |
+
+### 未完了・today's限界
+
+- Instagram の `instagram_manage_insights` 権限申請・付与は Meta 側の審査が必要で、コード側では解決できない
+- Meta 権限が下りるまでの代替として、Instagram 側リポジトリには Graph API 不要の「テキスト貼り付け分析」機能（`/api/insights-paste/analyze`）が既に存在するが、AI Manager への統合は今回は見送り（自動取得ができず、UI追加が必要なため）
+- Canva API 接続・自動生成には一切着手していない（申請中のため意図的に対象外）
+
 実装を再開するときは、まず `docs/claude-code-agent-instruction.md` を Claude Code に渡し、**フェーズ 1 の最小実装**から始める想定です。

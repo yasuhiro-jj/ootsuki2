@@ -168,6 +168,15 @@ export function aggregateMonthToDate(entries: KpiSnapshotEntry[], referenceDate:
   );
 }
 
+export function aggregateMonth(entries: KpiSnapshotEntry[], referenceDate: Date): MonthlyAggregate {
+  const { monthStart, monthEnd } = buildMonthRange(referenceDate);
+  return aggregateMonthEntries(
+    entries.filter((entry) => entry.date && entry.date >= monthStart && entry.date <= monthEnd),
+    monthStart,
+    monthEnd,
+  );
+}
+
 export function aggregateMonthBusinessDays(
   entries: KpiSnapshotEntry[],
   referenceDate: Date,
@@ -393,4 +402,13 @@ export function buildProfitActionAlerts(summary: ProfitActionSummary): ProfitAct
 export function resolveWeekRange(referenceDate: string) {
   const parsed = parseDate(referenceDate) ?? new Date();
   return buildWeekRange(parsed);
+}
+
+export function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunkSize = Math.max(1, Math.floor(size));
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += chunkSize) {
+    chunks.push(items.slice(index, index + chunkSize));
+  }
+  return chunks;
 }

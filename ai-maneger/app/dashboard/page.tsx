@@ -15,9 +15,19 @@ import { WeeklyJudgmentPanel } from "@/components/ootsuki/weekly-judgment-panel"
 import { NotionInstructionsPanel } from "@/components/ootsuki/notion-instructions-panel";
 import { UsenTimeZoneSalesPanel } from "@/components/ootsuki/usen-time-zone-sales-panel";
 import { PosTimeZoneSalesPanel } from "@/components/ootsuki/pos-time-zone-sales-panel";
+import { MarketingCommandCenter } from "@/components/ootsuki/marketing-command-center";
 import { recommendedAgents } from "@/lib/agents";
 import { getCurrentTenantAccessResult } from "@/lib/api/tenant-access";
 import { formatDateTime } from "@/lib/format";
+import { getIntegrationStatuses } from "@/lib/marketing/integration-status";
+import { getMarketingMetricsSnapshot } from "@/lib/marketing/metrics";
+import {
+  buildFallbackMarketingStore,
+  getOrCreateDefaultMarketingStore,
+  listMarketingActions,
+  listMarketingGoals,
+} from "@/lib/marketing/repository";
+import { isTenantConfigStoreEnabled } from "@/lib/tenant-config/repository";
 import {
   aggregateMonthBusinessDays,
   aggregateMonthToDate,
@@ -55,6 +65,7 @@ const BUILD_TIMESTAMP = "v2-20260412-2";
 const dashboardAnchorItems = [
   { href: "#instructions", label: "運用指示書" },
   { href: "#monthly-kpis", label: "今月の数字" },
+  { href: "#marketing-command", label: "マーケ施策司令塔" },
   { href: "#daily-input", label: "今日の日次入力" },
   { href: "#weekly-actions", label: "今週の実行項目" },
   { href: "#project-status", label: "プロジェクト状況" },
@@ -238,6 +249,24 @@ export default async function DashboardPage() {
     )
     .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   const agentChatEnabled = Boolean(process.env.OPENAI_API_KEY?.trim());
+  const marketingStoreResult = await Promise.allSettled([getOrCreateDefaultMarketingStore(access.tenant)]);
+  const marketingStore =
+    marketingStoreResult[0].status === "fulfilled"
+      ? marketingStoreResult[0].value
+      : buildFallbackMarketingStore(access.tenant);
+  const [marketingMetricsResult, marketingActionsResult, marketingGoalsResult] = await Promise.allSettled([
+    getMarketingMetricsSnapshot(marketingStore),
+    listMarketingActions(access.tenant, 20, marketingStore.id),
+    listMarketingGoals(access.tenant, marketingStore.id),
+  ]);
+  const marketingMetrics =
+    marketingMetricsResult.status === "fulfilled" ? marketingMetricsResult.value : [];
+  const marketingActions =
+    marketingActionsResult.status === "fulfilled" ? marketingActionsResult.value : [];
+  const marketingGoals =
+    marketingGoalsResult.status === "fulfilled" ? marketingGoalsResult.value : [];
+  const marketingIntegrationStatuses = await getIntegrationStatuses(marketingStore);
+  const marketingStoreReady = isTenantConfigStoreEnabled();
   const activeTenantConfigResult = await Promise.allSettled([getActiveTenantNotionConfig()]);
   const activeTenantConfig =
     activeTenantConfigResult[0].status === "fulfilled" ? activeTenantConfigResult[0].value : null;
@@ -292,6 +321,23 @@ export default async function DashboardPage() {
           <p className="mt-2 text-sm text-stone-500">
             {monthSummary.monthStart} 〜 {monthSummary.monthEnd}
           </p>
+        </SectionCard>
+      </section>
+
+      <section id="marketing-command" className="mt-6 scroll-mt-6">
+        <SectionCard
+          title="マーケティング施策司令塔"
+          description="Instagram / Google Business Profileの主要指標をAIへ渡し、次に実行する施策をJSONで生成してAI Manager側に保存します。Canva、Instagram、GBPは既存アプリへ遷移する設計のまま維持します。"
+        >
+          <MarketingCommandCenter
+            initialStore={marketingStore}
+            initialGoals={marketingGoals}
+            initialMetrics={marketingMetrics}
+            initialActions={marketingActions}
+            initialIntegrationStatuses={marketingIntegrationStatuses}
+            enabled={agentChatEnabled}
+            storeReady={marketingStoreReady}
+          />
         </SectionCard>
       </section>
 
