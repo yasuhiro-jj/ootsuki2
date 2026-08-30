@@ -1,4 +1,4 @@
-export type MarketingService = "instagram" | "gbp" | "canva";
+export type MarketingService = "instagram" | "gbp" | "canva" | "chatbot";
 
 export type MarketingChannel = MarketingService | "multi";
 

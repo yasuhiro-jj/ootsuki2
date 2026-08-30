@@ -223,13 +223,13 @@ async function inspect(client) {
   }
 }
 
-async function migrate(client) {
-  const sql = fs.readFileSync(migrationPath, "utf8");
+async function migrate(client, targetPath = migrationPath) {
+  const sql = fs.readFileSync(targetPath, "utf8");
   await client.query("BEGIN");
   try {
     await client.query(sql);
     await client.query("COMMIT");
-    console.log("Migration applied:", path.relative(root, migrationPath));
+    console.log("Migration applied:", path.relative(root, targetPath));
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -327,7 +327,10 @@ async function main() {
   const client = await pool.connect();
   try {
     if (command === "inspect") await inspect(client);
-    else if (command === "migrate") await migrate(client);
+    else if (command === "migrate") {
+      const explicitPath = process.argv[3] ? path.resolve(root, process.argv[3]) : migrationPath;
+      await migrate(client, explicitPath);
+    }
     else if (command === "seed") await seed(client);
     else if (command === "update-store-links") await updateStoreLinks(client);
     else if (command === "all") {

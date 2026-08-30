@@ -8,7 +8,7 @@ import {
 import type { MarketingChannel } from "@/types/marketing";
 
 function normalizeChannel(value: unknown): MarketingChannel {
-  if (value === "gbp" || value === "canva" || value === "multi") return value;
+  if (value === "gbp" || value === "canva" || value === "chatbot" || value === "multi") return value;
   return "instagram";
 }
 

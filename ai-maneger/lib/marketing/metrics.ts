@@ -8,6 +8,7 @@ type InternalMetricsResponse = {
   period?: { start?: string; end?: string };
   metrics?: MetricRecord;
   previousMetrics?: MetricRecord;
+  source?: string;
   data?: {
     metrics?: MetricRecord;
     previousMetrics?: MetricRecord;
@@ -118,7 +119,11 @@ function normalizeInstagramMetrics(response: InternalMetricsResponse | null): Ma
     channel: "instagram",
     label: "Instagram",
     status: response ? "connected" : "not_configured",
-    source: response ? "Instagram Internal API" : "not_configured",
+    source: !response
+      ? "not_configured"
+      : response.source === "paste_lab"
+        ? "Instagram インサイト診断ラボ（手動）"
+        : "Instagram Internal API",
     fetchedAt: nowIso(),
     period,
     metrics: [

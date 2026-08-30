@@ -41,8 +41,172 @@ function approvalLabel(action: MarketingAction) {
 function channelLabel(channel: MarketingAction["targetChannel"]) {
   if (channel === "gbp") return "Google";
   if (channel === "canva") return "Canva";
+  if (channel === "chatbot") return "チャットボット";
   if (channel === "multi") return "複数チャネル";
   return "Instagram";
+}
+
+type ChatbotNodeCandidate = {
+  pageId: string;
+  pageUrl: string;
+  nodeName: string;
+  priority?: number;
+  keywords: string[];
+};
+
+function ChatbotChannelPanel({
+  action,
+  disabled,
+  onApplied,
+}: {
+  action: MarketingAction;
+  disabled: boolean;
+  onApplied: (updatedAction: MarketingAction) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [candidates, setCandidates] = useState<ChatbotNodeCandidate[]>([]);
+  const [selected, setSelected] = useState<ChatbotNodeCandidate | null>(null);
+  const [addKeywords, setAddKeywords] = useState("おすすめ,人気");
+  const [newPriority, setNewPriority] = useState("10");
+  const [applying, setApplying] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function searchNodes() {
+    if (!query.trim() || searching) return;
+    setSearching(true);
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/marketing/chatbot-nodes/search?q=${encodeURIComponent(query.trim())}`);
+      const data = (await response.json()) as { ok?: boolean; message?: string; nodes?: ChatbotNodeCandidate[] };
+      if (!response.ok || !data.ok) {
+        setMessage(data.message || "検索に失敗しました。");
+        setCandidates([]);
+        return;
+      }
+      setCandidates(data.nodes || []);
+      if (!data.nodes || data.nodes.length === 0) {
+        setMessage("一致する会話ノードが見つかりませんでした。");
+      }
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "検索に失敗しました。");
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function applyToChatbot() {
+    if (!selected || applying) return;
+    const priorityValue = Number(newPriority);
+    if (!Number.isFinite(priorityValue)) {
+      setMessage("優先度は数値で入力してください。");
+      return;
+    }
+    setApplying(true);
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/marketing/actions/${action.id}/apply-chatbot`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pageId: selected.pageId,
+          newPriority: priorityValue,
+          addKeywords: addKeywords
+            .split(",")
+            .map((k) => k.trim())
+            .filter(Boolean),
+        }),
+      });
+      const data = (await response.json()) as { ok?: boolean; message?: string };
+      if (!response.ok || !data.ok) {
+        setMessage(data.message || "チャットボットへの反映に失敗しました。");
+        return;
+      }
+      setMessage(`「${selected.nodeName}」の優先度・キーワードを更新しました。`);
+      onApplied({ ...action, status: "executed" });
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "通信に失敗しました。");
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3">
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-700">
+        チャットボット（ootsuki2）へ反映
+      </p>
+      <p className="mt-1 text-xs text-violet-800">
+        会話ノードを検索して選び、優先度とキーワードを更新します（承認済みの施策のみ実行できます）。
+      </p>
+      <div className="mt-2 flex gap-2">
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="例: 馬刺し"
+          className="flex-1 rounded-xl border border-stone-900/10 bg-white px-3 py-2 text-sm outline-none"
+        />
+        <button
+          type="button"
+          onClick={() => void searchNodes()}
+          disabled={disabled || searching || !query.trim()}
+          className="rounded-xl border border-violet-300 bg-white px-3 py-2 text-xs font-medium text-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {searching ? "検索中…" : "会話ノードを検索"}
+        </button>
+      </div>
+
+      {candidates.length > 0 ? (
+        <div className="mt-2 grid gap-1">
+          {candidates.map((node) => (
+            <label
+              key={node.pageId}
+              className="flex cursor-pointer items-center justify-between gap-2 rounded-xl bg-white px-3 py-2 text-xs text-stone-700"
+            >
+              <span className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name={`chatbot-node-${action.id}`}
+                  checked={selected?.pageId === node.pageId}
+                  onChange={() => setSelected(node)}
+                />
+                {node.nodeName}（現在の優先度: {node.priority ?? "未設定"}）
+              </span>
+              <span className="text-stone-400">{node.keywords.join(", ")}</span>
+            </label>
+          ))}
+        </div>
+      ) : null}
+
+      {selected ? (
+        <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_100px_auto]">
+          <input
+            value={addKeywords}
+            onChange={(event) => setAddKeywords(event.target.value)}
+            placeholder="追加キーワード（カンマ区切り）"
+            className="rounded-xl border border-stone-900/10 bg-white px-3 py-2 text-sm outline-none"
+          />
+          <input
+            value={newPriority}
+            onChange={(event) => setNewPriority(event.target.value)}
+            inputMode="numeric"
+            placeholder="優先度"
+            className="rounded-xl border border-stone-900/10 bg-white px-3 py-2 text-sm outline-none"
+          />
+          <button
+            type="button"
+            onClick={() => void applyToChatbot()}
+            disabled={disabled || applying}
+            className="rounded-xl bg-violet-700 px-3 py-2 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {applying ? "反映中…" : "チャットボットへ反映"}
+          </button>
+        </div>
+      ) : null}
+
+      {message ? <p className="mt-2 text-xs text-violet-800">{message}</p> : null}
+    </div>
+  );
 }
 
 function integrationLabel(status: IntegrationStatus) {
@@ -457,14 +621,16 @@ export function MarketingCommandCenter({
                     {destination.label}
                   </button>
                 ))}
-                <button
-                  type="button"
-                  onClick={() => void completeExecution(action.id)}
-                  disabled={loading || action.status === "executed" || action.status === "completed"}
-                  className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  投稿完了として登録
-                </button>
+                {action.targetChannel !== "chatbot" ? (
+                  <button
+                    type="button"
+                    onClick={() => void completeExecution(action.id)}
+                    disabled={loading || action.status === "executed" || action.status === "completed"}
+                    className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    投稿完了として登録
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => void evaluateAction(action.id)}
@@ -474,6 +640,16 @@ export function MarketingCommandCenter({
                   投稿後の結果をAI評価
                 </button>
               </div>
+
+              {action.targetChannel === "chatbot" ? (
+                <ChatbotChannelPanel
+                  action={action}
+                  disabled={loading || action.approvalStatus !== "approved"}
+                  onApplied={(updated) =>
+                    setActions((current) => current.map((item) => (item.id === updated.id ? updated : item)))
+                  }
+                />
+              ) : null}
 
               <div className="mt-3 flex flex-wrap gap-2 border-t border-stone-900/10 pt-3">
                 <button

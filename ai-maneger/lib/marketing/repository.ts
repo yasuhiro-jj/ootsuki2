@@ -28,7 +28,7 @@ function toNumber(value: unknown) {
 }
 
 function normalizeChannel(value: unknown): MarketingChannel {
-  if (value === "gbp" || value === "canva" || value === "multi") return value;
+  if (value === "gbp" || value === "canva" || value === "chatbot" || value === "multi") return value;
   return "instagram";
 }
 
@@ -294,6 +294,27 @@ export async function listMarketingActions(
   }
 }
 
+export async function getMarketingActionById(tenantKey: TenantKey, actionId: string): Promise<MarketingAction | null> {
+  if (!isTenantConfigStoreEnabled()) return null;
+  try {
+    return await withTenant(tenantKey, async (client) => {
+      const result = await client.query(
+        `SELECT id, tenant_key, store_id, title, reason, evidence, target_channel, content_theme,
+                priority, target_kpi, recommended_action, status, approval_status, approved_by,
+                approved_at, revision_note, metrics_snapshot, evaluation, created_at, updated_at
+           FROM marketing_actions
+          WHERE tenant_key = $1 AND id = $2
+          LIMIT 1`,
+        [tenantKey, actionId],
+      );
+      return result.rows[0] ? rowToMarketingAction(result.rows[0]) : null;
+    });
+  } catch (error) {
+    if (isMissingTableError(error)) return null;
+    throw error;
+  }
+}
+
 export async function saveMarketingActions(params: {
   tenantKey: TenantKey;
   storeId?: string;
@@ -483,6 +504,50 @@ export async function completeMarketingActionExecution(params: {
         params.executedAt || null,
         params.externalPostId || "",
         params.externalUrl || "",
+      ],
+    );
+    return rowToExecution(result.rows[0]);
+  });
+}
+
+export async function completeChatbotMarketingActionExecution(params: {
+  tenantKey: TenantKey;
+  actionId: string;
+  externalUrl: string;
+  resultSummary: string;
+  metricsBefore: Record<string, unknown>;
+  metricsAfter: Record<string, unknown>;
+}): Promise<MarketingActionExecution | null> {
+  if (!isTenantConfigStoreEnabled()) return null;
+  return withTenant(params.tenantKey, async (client) => {
+    const actionResult = await client.query(
+      `UPDATE marketing_actions
+          SET status = 'executed',
+              updated_at = NOW()
+        WHERE tenant_key = $1 AND id = $2
+      RETURNING id, store_id, target_channel`,
+      [params.tenantKey, params.actionId],
+    );
+    const action = actionResult.rows[0];
+    if (!action) return null;
+
+    const result = await client.query(
+      `INSERT INTO marketing_action_executions (
+        tenant_key, action_id, store_id, channel, executed_at, external_url,
+        metrics_before, metrics_after, result_summary, updated_at
+      ) VALUES ($1, $2, $3, $4, NOW(), $5, $6::jsonb, $7::jsonb, $8, NOW())
+      RETURNING id, tenant_key, action_id, store_id, channel, executed_at, external_post_id,
+                external_url, metrics_before, metrics_after, result_summary, ai_evaluation,
+                score, created_at, updated_at`,
+      [
+        params.tenantKey,
+        params.actionId,
+        action.store_id || null,
+        normalizeChannel(action.target_channel),
+        params.externalUrl,
+        JSON.stringify(params.metricsBefore),
+        JSON.stringify(params.metricsAfter),
+        params.resultSummary,
       ],
     );
     return rowToExecution(result.rows[0]);

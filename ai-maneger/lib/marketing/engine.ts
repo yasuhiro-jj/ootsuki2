@@ -39,7 +39,7 @@ const JSON_INSTRUCTION = `次のJSONだけを返してください。Markdownや
 actionsは2から4件。完全自動投稿はせず、人間承認を前提に提案してください。`;
 
 function normalizeChannel(value: unknown): MarketingChannel {
-  if (value === "gbp" || value === "canva" || value === "multi") return value;
+  if (value === "gbp" || value === "canva" || value === "chatbot" || value === "multi") return value;
   return "instagram";
 }
 

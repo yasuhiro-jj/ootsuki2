@@ -261,6 +261,10 @@ export async function getPage(pageId: string) {
   return notionFetch<NotionPage>(`/pages/${pageId}`);
 }
 
+export async function getPageWithToken(token: string, pageId: string) {
+  return notionFetchWithToken<NotionPage>(token, `/pages/${pageId}`);
+}
+
 export async function createPage(payload: Record<string, unknown>) {
   return notionFetch<NotionPage>("/pages", {
     method: "POST",
@@ -348,6 +352,13 @@ export async function createPageInDatabaseWithToken(
 
 export async function updatePage(pageId: string, payload: Record<string, unknown>) {
   return notionFetch<NotionPage>(`/pages/${pageId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updatePageWithToken(token: string, pageId: string, payload: Record<string, unknown>) {
+  return notionFetchWithToken<NotionPage>(token, `/pages/${pageId}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });

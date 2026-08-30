@@ -98,6 +98,7 @@ export function getMarketingActionDestinations(
   action: MarketingAction,
   store: MarketingStore,
 ): MarketingActionDestination[] {
+  if (action.targetChannel === "chatbot") return [];
   const destinations = [createCanvaDesign(action, store)];
   if (action.targetChannel === "instagram" || action.targetChannel === "multi") {
     destinations.push(createInstagramPost(action, store));
