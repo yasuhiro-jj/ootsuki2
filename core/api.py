@@ -370,6 +370,45 @@ class ConnectionManager:
         return list(self.active_connections.keys())
 
 
+def _find_matching_conversation_node(
+    conversation_system: Any, user_message: str
+) -> Optional[Dict[str, Any]]:
+    """Notion会話ノードDBのキーワードとメッセージを照合し、最も優先度の高い一致ノードを返す。
+
+    優先度は数値が小さいほど優先（Notion側の「優先度」プロパティの慣例に合わせる）。
+    """
+    if not conversation_system or not user_message:
+        return None
+    try:
+        nodes = conversation_system.get_conversation_nodes()
+    except Exception as exc:
+        logger.warning("[ConversationNode] ノード取得エラー: %s", exc)
+        return None
+    if not nodes:
+        return None
+
+    text = user_message.strip()
+    if not text:
+        return None
+
+    best_node: Optional[Dict[str, Any]] = None
+    best_priority: Optional[int] = None
+    for node_data in nodes.values():
+        keywords = node_data.get("keywords") or []
+        template = str(node_data.get("template") or "").strip()
+        if not keywords or not template:
+            continue
+        if any(kw and kw in text for kw in keywords):
+            try:
+                priority = int(node_data.get("priority", 999))
+            except (TypeError, ValueError):
+                priority = 999
+            if best_priority is None or priority < best_priority:
+                best_node = node_data
+                best_priority = priority
+    return best_node
+
+
 def create_app(config: ConfigLoader) -> FastAPI:
     """
     FastAPIアプリケーションを作成
@@ -1403,6 +1442,53 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     image_url=None,
                     line_reply_messages=None,
                 )
+            if session_memory.get("pending_flow") != "reservation":
+                matched_conversation_node = _find_matching_conversation_node(
+                    conversation_system, user_message
+                )
+                if matched_conversation_node:
+                    node_response_message = str(
+                        matched_conversation_node.get("template") or ""
+                    ).strip()
+                    if node_response_message:
+                        session = ai_engine.get_session(session_id)
+                        if session:
+                            session.add_message("user", request.message)
+                            session.add_message("assistant", node_response_message)
+                        ai_engine.save_memory(
+                            session_id,
+                            {
+                                "active_topic": "conversation_node",
+                                "detected_intent": "conversation_node",
+                                "last_assistant_action": f"conversation_node:{matched_conversation_node.get('id', '')}",
+                            },
+                        )
+                        session_memory = ai_engine.get_session_memory(session_id)
+                        _record_quality_log(
+                            session_id=session_id,
+                            user_id=request.customer_id,
+                            user_message=request.message,
+                            ai_response=node_response_message,
+                            recent_history=recent_turns,
+                            session_memory=session_memory,
+                            detected_intent="conversation_node",
+                            route=conversation_route.kind,
+                            route_reason=conversation_route.reason,
+                            node=f"conversation_node:{matched_conversation_node.get('id', '')}",
+                            referenced_sources={"node_id": matched_conversation_node.get("id", "")},
+                            latency_ms=_elapsed_ms(started_at),
+                            channel="web",
+                        )
+                        return ChatResponse(
+                            message=node_response_message,
+                            session_id=session_id,
+                            timestamp=datetime.now().isoformat(),
+                            options=[],
+                            suggestions=None,
+                            image_url=None,
+                            line_reply_messages=None,
+                        )
+
             defer_memory_updates_for_contextual_followup = (
                 is_previous_price_request(user_message, session_memory)
                 or is_contextual_price_request(user_message, session_memory)
