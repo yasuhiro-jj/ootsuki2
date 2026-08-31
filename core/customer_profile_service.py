@@ -62,6 +62,12 @@ class CustomerProfile:
         if self.recent_orders:
             lines.append(f"直近の注文: {self.recent_orders}")
         lines.append("これらの情報を踏まえ、押しつけがましくならない範囲で自然に活用してください。")
+        lines.append(
+            "ただし、今回のお客様の発言がこの記録と矛盾する場合（例: 記録は「辛いもの好き」だが今回"
+            "「辛いのは苦手」と言っている）は、必ず今回の発言を優先してください。その場合、記録が"
+            "古い情報だったことを一言添えて（「以前と好みが変わったのですね、承知しました」等）自然に"
+            "会話に反映してください。"
+        )
         return "\n".join(lines)
 
 
@@ -225,11 +231,39 @@ def merge_preference_text(existing: str, new_item: str, *, max_len: int = 300) -
     return "、".join(parts)[-max_len:]
 
 
-def extract_preference_signal(llm: Any, user_message: str) -> Optional[Dict[str, str]]:
+def remove_preference_fragment(existing: str, fragment: str) -> str:
+    """Drop a specific comma-separated fragment (or best-matching part) from a preference string.
+
+    Used when a new statement contradicts something already recorded, so the stale
+    fragment doesn't keep sitting alongside the new, correct one.
+    """
+    fragment = str(fragment or "").strip()
+    existing = str(existing or "").strip()
+    if not fragment or not existing:
+        return existing
+    if fragment in existing:
+        return existing.replace(fragment, "").strip("、, ").replace("、、", "、")
+    parts = [p.strip() for p in existing.split("、") if p.strip()]
+    kept = [p for p in parts if fragment not in p and p not in fragment]
+    return "、".join(kept)
+
+
+def extract_preference_signal(
+    llm: Any,
+    user_message: str,
+    *,
+    current_favorite_menu: str = "",
+    current_dislikes_allergies: str = "",
+) -> Optional[Dict[str, str]]:
     """Ask the LLM whether the customer's message reveals a food preference or allergy.
 
-    Returns {"type": "preference"|"allergy", "content": "..."} or None when nothing
-    worth remembering was said. Best-effort: any error is swallowed and treated as
+    Also checks the message against what's already on file so a change of heart
+    (e.g. previously "辛いもの好き", now "辛いのは苦手") is surfaced as a
+    contradiction to resolve, instead of silently piling up conflicting notes.
+
+    Returns {"type": "preference"|"allergy", "content": "...", "contradicts": "..."}
+    (contradicts is "" when nothing conflicts) or None when nothing worth
+    remembering was said. Best-effort: any error is swallowed and treated as
     "nothing to remember" so this never breaks the main chat flow.
     """
     text = str(user_message or "").strip()
@@ -238,14 +272,26 @@ def extract_preference_signal(llm: Any, user_message: str) -> Optional[Dict[str,
     try:
         from langchain_core.messages import HumanMessage
 
+        existing_block = (
+            f"好きなもの（記録済み）: {current_favorite_menu or 'なし'}\n"
+            f"苦手なもの・アレルギー（記録済み）: {current_dislikes_allergies or 'なし'}"
+        )
         prompt = (
             "以下はレストランのチャットボットに対するお客様の発言です。\n"
             "この発言から、次回以降の来店でも活用できる「好きな食べ物・味の好み」または"
             "「苦手な食べ物・アレルギー」の情報が読み取れるか判定してください。\n\n"
-            f"発言: 「{text}」\n\n"
-            "読み取れる場合は次のどちらかの形式で1行だけ出力してください（20文字程度に要約）:\n"
-            "PREFERENCE: <好みの内容>\n"
-            "ALLERGY: <苦手なもの・アレルギーの内容>\n\n"
+            f"{existing_block}\n\n"
+            f"今回の発言: 「{text}」\n\n"
+            "読み取れる場合は必ず TYPE と CONTENT の両方を出力してください（省略不可）。\n"
+            "記録済みの内容と矛盾する場合は、CONTRADICTS行も追加してください。\n"
+            "出力形式:\n"
+            "TYPE: PREFERENCE または ALLERGY\n"
+            "CONTENT: <今回の発言から分かる、好み・苦手の内容を20文字程度で要約>\n"
+            "CONTRADICTS: <矛盾する場合のみ。矛盾する「記録済み」の文言をそのまま引用>\n\n"
+            "例（記録済み: 好きなもの=辛いものが好き　今回の発言:「辛いのは苦手です」の場合）:\n"
+            "TYPE: ALLERGY\n"
+            "CONTENT: 辛いものが苦手\n"
+            "CONTRADICTS: 辛いものが好き\n\n"
             "読み取れない場合は NONE とだけ出力してください。挨拶や注文の確定、店舗情報の質問などは"
             "NONEです。"
         )
@@ -253,17 +299,38 @@ def extract_preference_signal(llm: Any, user_message: str) -> Optional[Dict[str,
         raw = str(getattr(response, "content", "") or "").strip()
         if not raw or raw.upper().startswith("NONE"):
             return None
-        if ":" not in raw:
-            return None
-        label, _, content = raw.partition(":")
-        label = label.strip().upper()
-        content = content.strip()
+
+        label = ""
+        content = ""
+        contradicts = ""
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line or ":" not in line:
+                continue
+            key, _, value = line.partition(":")
+            key = key.strip().upper()
+            value = value.strip()
+            if key == "TYPE":
+                label = value.upper()
+            elif key == "CONTENT":
+                content = value
+            elif key == "CONTRADICTS":
+                contradicts = value
+
+        # 旧フォーマット（"PREFERENCE: 内容" のみの1行）にも後方互換で対応
+        if not label and ":" in raw:
+            first_key, _, first_value = raw.partition(":")
+            first_key = first_key.strip().upper()
+            if first_key in ("PREFERENCE", "ALLERGY"):
+                label = first_key
+                content = first_value.strip()
+
         if not content:
             return None
         if label == "PREFERENCE":
-            return {"type": "preference", "content": content}
+            return {"type": "preference", "content": content, "contradicts": contradicts}
         if label == "ALLERGY":
-            return {"type": "allergy", "content": content}
+            return {"type": "allergy", "content": content, "contradicts": contradicts}
         return None
     except Exception as exc:
         logger.debug("[CustomerProfile] preference_extraction_skipped error=%s", exc)
@@ -279,32 +346,45 @@ def maybe_learn_and_save_preference(
     current_favorite_menu: str = "",
     current_dislikes_allergies: str = "",
 ) -> None:
-    """Background-task entry point: detect + persist a preference signal, best-effort."""
+    """Background-task entry point: detect + persist a preference signal, best-effort.
+
+    今回の発言が既存の記録と矛盾する場合は、古い記述を取り除いてから新しい内容を
+    記録する（＝直近の発言を優先する）。
+    """
     if not page_id or not service.is_available:
         return
-    signal = extract_preference_signal(llm, user_message)
+    signal = extract_preference_signal(
+        llm,
+        user_message,
+        current_favorite_menu=current_favorite_menu,
+        current_dislikes_allergies=current_dislikes_allergies,
+    )
     if not signal:
         return
 
+    favorite_menu = current_favorite_menu
+    dislikes_allergies = current_dislikes_allergies
+    contradicts = signal.get("contradicts", "")
+    if contradicts:
+        favorite_menu = remove_preference_fragment(favorite_menu, contradicts)
+        dislikes_allergies = remove_preference_fragment(dislikes_allergies, contradicts)
+
     try:
         if signal["type"] == "allergy":
-            service.save_preferences(
-                page_id,
-                dislikes_allergies=merge_preference_text(
-                    current_dislikes_allergies, signal["content"]
-                ),
-            )
+            dislikes_allergies = merge_preference_text(dislikes_allergies, signal["content"])
         else:
-            service.save_preferences(
-                page_id,
-                favorite_menu=merge_preference_text(
-                    current_favorite_menu, signal["content"]
-                ),
-            )
+            favorite_menu = merge_preference_text(favorite_menu, signal["content"])
+
+        service.save_preferences(
+            page_id,
+            favorite_menu=favorite_menu,
+            dislikes_allergies=dislikes_allergies,
+        )
         logger.info(
-            "[CustomerProfile] preference_saved page_id=%s type=%s",
+            "[CustomerProfile] preference_saved page_id=%s type=%s contradicts=%s",
             page_id[:8],
             signal["type"],
+            bool(contradicts),
         )
     except Exception as exc:
         logger.warning("[CustomerProfile] preference_save_failed error=%s", exc)
