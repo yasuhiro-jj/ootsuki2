@@ -6,7 +6,7 @@ export async function GET(request: Request) {
   const access = await requireTenantAccess(request, "read");
   if (!access.ok) return access.response;
 
-  if (!isChatbotIntegrationConfigured()) {
+  if (!isChatbotIntegrationConfigured(access.tenant)) {
     return NextResponse.json({ ok: false, message: "チャットボット連携が未設定です。", nodes: [] }, { status: 503 });
   }
 
@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const nodes = await findChatbotNodesByName(query);
+    const nodes = await findChatbotNodesByName(access.tenant, query);
     return NextResponse.json({ ok: true, nodes });
   } catch (error) {
     return NextResponse.json(

@@ -8,7 +8,7 @@ export async function POST(request: Request, context: { params: { id: string } }
   const access = await requireTenantAccess(request, "write");
   if (!access.ok) return access.response;
 
-  if (!isChatbotIntegrationConfigured()) {
+  if (!isChatbotIntegrationConfigured(access.tenant)) {
     return NextResponse.json({ ok: false, message: "チャットボット連携が未設定です。" }, { status: 503 });
   }
 
@@ -43,7 +43,7 @@ export async function POST(request: Request, context: { params: { id: string } }
     return NextResponse.json({ ok: false, message: "優先度の数値が不正です。" }, { status: 400 });
   }
 
-  const result = await applyChatbotNodeBoost({ pageId, addKeywords, newPriority });
+  const result = await applyChatbotNodeBoost({ tenantKey: access.tenant, pageId, addKeywords, newPriority });
   if (!result.ok) {
     return NextResponse.json({ ok: false, message: result.message }, { status: 502 });
   }

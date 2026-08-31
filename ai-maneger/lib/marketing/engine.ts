@@ -175,12 +175,12 @@ export function parseGeneratedMarketingActions(reply: string): { diagnosis: stri
  * chatbot向け施策の recommended_action から「」/『』で囲まれたノード名を抽出し、
  * 実在する会話ノードかを検証する。抽出できない・実在しない場合は false（=不採用）。
  */
-async function isVerifiableChatbotAction(recommendedAction: string): Promise<boolean> {
+async function isVerifiableChatbotAction(tenantKey: string, recommendedAction: string): Promise<boolean> {
   const match = recommendedAction.match(/[『「]([^』」]+)[』」]/);
   const nodeName = match?.[1]?.trim();
   if (!nodeName) return false;
   try {
-    const found = await findChatbotNodesByName(nodeName);
+    const found = await findChatbotNodesByName(tenantKey, nodeName);
     return found.length > 0;
   } catch {
     return false;
@@ -211,7 +211,7 @@ export async function generateMarketingActions(params: {
       continue;
     }
     // eslint-disable-next-line no-await-in-loop
-    const verified = await isVerifiableChatbotAction(action.recommendedAction);
+    const verified = await isVerifiableChatbotAction(params.store.tenantKey, action.recommendedAction);
     if (verified) {
       verifiedActions.push(action);
     } else {

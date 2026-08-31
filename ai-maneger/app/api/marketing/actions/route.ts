@@ -51,7 +51,7 @@ export async function POST(request: Request) {
       listMarketingGoals(access.tenant, store.id),
       listMarketingActions(access.tenant, 20, store.id),
       listMarketingExecutions(access.tenant, store.id),
-      getChatbotNodesSummaryForPrompt().catch(() => "（会話ノードDBの取得に失敗しました）"),
+      getChatbotNodesSummaryForPrompt(access.tenant).catch(() => "（会話ノードDBの取得に失敗しました）"),
     ]);
     const integrationStatuses = await getIntegrationStatuses(store);
     await upsertIntegrationStatuses(access.tenant, store.id, integrationStatuses);
