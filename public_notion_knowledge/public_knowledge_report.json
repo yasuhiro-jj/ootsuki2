@@ -1,10 +1,11 @@
 {
   "menu": {
     "total_count": 568,
-    "included_count": 74,
-    "excluded_count": 494,
+    "included_count": 113,
+    "excluded_count": 455,
     "excluded_reasons": {
-      "not_ai_public": 492,
+      "not_ai_public": 452,
+      "not_available_for_public_ai": 1,
       "placeholder_name": 2
     },
     "warnings": []
