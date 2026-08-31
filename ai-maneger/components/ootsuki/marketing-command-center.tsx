@@ -253,6 +253,9 @@ export function MarketingCommandCenter({
   const [goalTitle, setGoalTitle] = useState("");
   const [goalTarget, setGoalTarget] = useState("");
   const [goalUnit, setGoalUnit] = useState("件");
+  // 却下済み・完了済みの施策は既定では隠す。一覧が古い提案で埋まって
+  // 「同じようなものがまだある」ように見えるのを防ぐため。
+  const [showResolvedActions, setShowResolvedActions] = useState(false);
 
   async function generateActions() {
     if (!enabled || !storeReady || loading) return;
@@ -422,6 +425,12 @@ export function MarketingCommandCenter({
   }
 
   const activeGoals = goals.filter((goal) => goal.status === "active");
+  const resolvedActionsCount = actions.filter(
+    (action) => action.approvalStatus === "rejected" || action.status === "completed",
+  ).length;
+  const visibleActions = showResolvedActions
+    ? actions
+    : actions.filter((action) => action.approvalStatus !== "rejected" && action.status !== "completed");
 
   return (
     <div className="grid gap-5">
@@ -564,13 +573,34 @@ export function MarketingCommandCenter({
         </div>
       ) : null}
 
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-stone-600">
+          {showResolvedActions
+            ? `${actions.length}件を表示中（却下・完了済みを含む）`
+            : `${visibleActions.length}件を表示中（却下・完了済み ${resolvedActionsCount}件は非表示）`}
+        </p>
+        {resolvedActionsCount > 0 ? (
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-stone-600">
+            <input
+              type="checkbox"
+              checked={showResolvedActions}
+              onChange={(event) => setShowResolvedActions(event.target.checked)}
+              className="h-4 w-4 accent-blue-600"
+            />
+            却下・完了済みも表示する
+          </label>
+        ) : null}
+      </div>
+
       <div className="grid gap-3 md:grid-cols-2">
-        {actions.length === 0 ? (
+        {visibleActions.length === 0 ? (
           <div className="rounded-2xl border border-stone-900/10 bg-white px-4 py-4 text-sm text-stone-600 md:col-span-2">
-            まだAI施策は保存されていません。店舗目標とInstagram/GBP指標をもとに生成できます。
+            {actions.length === 0
+              ? "まだAI施策は保存されていません。店舗目標とInstagram/GBP指標をもとに生成できます。"
+              : "表示できる施策がありません（却下・完了済みのみです）。上のチェックを入れると表示されます。"}
           </div>
         ) : (
-          actions.map((action) => (
+          visibleActions.map((action) => (
             <article key={action.id} className="rounded-2xl border border-stone-900/10 bg-white px-4 py-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
