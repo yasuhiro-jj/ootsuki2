@@ -26,6 +26,7 @@ from .intent_classifier import IntentClassifier, IntentType
 from .notion_client import NotionClient
 from .notion_knowledge_service import NotionKnowledgeContextService
 from .unknown_keyword_service import UnknownKeywordSearchService
+from .line_contact import log_unknown_keyword_to_notion
 from .conversation_router import (
     classify_conversation_route,
     infer_memory_updates,
@@ -491,6 +492,78 @@ def resolve_conversation_node_shortcut(
         "message": "\n\n".join(templates),
         "node_ids": "+".join(n.get("id", "") for n in matched_nodes),
     }
+
+
+def classify_message_in_scope(llm: Any, user_message: str) -> bool:
+    """この発言が飲食店「食事処おおつき」として答えられる話題かどうかを判定する。
+
+    判定に迷う場合やLLM呼び出しに失敗した場合は、誤って案内を打ち切らないよう
+    True（対応可能＝これまで通りAIが回答する）を返す。
+    """
+    text = str(user_message or "").strip()
+    if not text or len(text) > 400:
+        return True
+    try:
+        from langchain_core.messages import HumanMessage
+
+        prompt = (
+            "あなたは飲食店「食事処おおつき」のチャットボットです。\n"
+            "以下のお客様の発言が、当店のメニュー・店舗情報・予約・営業時間・注文・"
+            "接客に関する話題として答えられる範囲かどうかを判定してください。\n\n"
+            f"発言: 「{text}」\n\n"
+            "判定に迷う場合や、雑談・お店に関する曖昧な話題の場合は必ず IN_SCOPE として"
+            "ください。\n"
+            "交通状況・天気・時事ニュース・他店舗の情報・当店と無関係な専門的な相談など、"
+            "当店のスタッフでも答えようがないほど明らかに範囲外の質問のときだけ"
+            " OUT_OF_SCOPE と答えてください。\n"
+            "IN_SCOPE か OUT_OF_SCOPE のどちらか一語のみを出力してください。"
+        )
+        response = llm.invoke([HumanMessage(content=prompt)])
+        raw = str(getattr(response, "content", "") or "").strip().upper()
+        return "OUT_OF_SCOPE" not in raw
+    except Exception as exc:
+        logger.debug("[LineHandoff] scope_classification_skipped error=%s", exc)
+        return True
+
+
+def build_out_of_scope_handoff_reply() -> str:
+    """AIでは正確に答えられない質問に対して、LINE・お電話への誘導文を作る。"""
+    return (
+        "申し訳ございません、その内容につきましては私では正確にお答えできかねます。\n\n"
+        + LINE_CONTACT_FOOTER
+    )
+
+
+def resolve_out_of_scope_handoff(
+    *,
+    llm: Any,
+    notion_client: Any,
+    config: Any,
+    user_message: str,
+    session_id: Optional[str] = None,
+) -> Optional[str]:
+    """AIが答えられなさそうな質問に対して、LINE誘導の返信を用意する。
+
+    店舗の範囲外と判定できた場合はNotionの不明キーワードDBにも記録し
+    （ベストエフォート、失敗しても致命的にはしない）、スタッフが後で見返せるようにする。
+    範囲内と判定された場合はNone（＝これまで通りAIが自由に回答してよい）を返す。
+    """
+    if classify_message_in_scope(llm, user_message):
+        return None
+
+    reply = build_out_of_scope_handoff_reply()
+    try:
+        log_unknown_keyword_to_notion(
+            question=user_message,
+            context={"reason": "out_of_scope"},
+            response=reply,
+            notion_client=notion_client,
+            config=config,
+            session_id=session_id,
+        )
+    except Exception as exc:
+        logger.warning("[LineHandoff] unknown_keyword_log_failed error=%s", exc)
+    return reply
 
 
 def create_app(config: ConfigLoader) -> FastAPI:
@@ -1526,6 +1599,53 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     image_url=None,
                     line_reply_messages=None,
                 )
+            if session_memory.get("pending_flow") != "reservation":
+                out_of_scope_reply = resolve_out_of_scope_handoff(
+                    llm=ai_engine.llm,
+                    notion_client=notion_client,
+                    config=config,
+                    user_message=user_message,
+                    session_id=session_id,
+                )
+                if out_of_scope_reply:
+                    session = ai_engine.get_session(session_id)
+                    if session:
+                        session.add_message("user", request.message)
+                        session.add_message("assistant", out_of_scope_reply)
+                    ai_engine.save_memory(
+                        session_id,
+                        {
+                            "active_topic": "out_of_scope",
+                            "detected_intent": "out_of_scope",
+                            "last_assistant_action": "line_handoff",
+                        },
+                    )
+                    session_memory = ai_engine.get_session_memory(session_id)
+                    _record_quality_log(
+                        session_id=session_id,
+                        user_id=request.customer_id,
+                        user_message=request.message,
+                        ai_response=out_of_scope_reply,
+                        recent_history=recent_turns,
+                        session_memory=session_memory,
+                        detected_intent="out_of_scope",
+                        route=conversation_route.kind,
+                        route_reason=conversation_route.reason,
+                        node="line_handoff",
+                        referenced_sources={},
+                        latency_ms=_elapsed_ms(started_at),
+                        channel="web",
+                    )
+                    return ChatResponse(
+                        message=out_of_scope_reply,
+                        session_id=session_id,
+                        timestamp=datetime.now().isoformat(),
+                        options=[],
+                        suggestions=None,
+                        image_url=None,
+                        line_reply_messages=None,
+                    )
+
             conversation_node_hit = resolve_conversation_node_shortcut(
                 conversation_system, user_message, session_memory
             )
@@ -2833,7 +2953,13 @@ def create_app(config: ConfigLoader) -> FastAPI:
                                 intent_result=intent_result,
                             )
                         else:
-                            response_message = ai_engine.generate_hypothesis_answer(
+                            response_message = resolve_out_of_scope_handoff(
+                                llm=ai_engine.llm,
+                                notion_client=notion_client,
+                                config=config,
+                                user_message=request.message,
+                                session_id=session_id,
+                            ) or ai_engine.generate_hypothesis_answer(
                                 session_id=session_id,
                                 user_message=request.message,
                                 intent_result=intent_result,
@@ -2851,7 +2977,13 @@ def create_app(config: ConfigLoader) -> FastAPI:
                             intent_result=intent_result,
                         )
                     else:
-                        response_message = ai_engine.generate_hypothesis_answer(
+                        response_message = resolve_out_of_scope_handoff(
+                            llm=ai_engine.llm,
+                            notion_client=notion_client,
+                            config=config,
+                            user_message=request.message,
+                            session_id=session_id,
+                        ) or ai_engine.generate_hypothesis_answer(
                             session_id=session_id,
                             user_message=request.message,
                             intent_result=intent_result,
