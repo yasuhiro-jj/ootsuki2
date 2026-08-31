@@ -168,7 +168,10 @@ function ChatbotChannelPanel({
                   type="radio"
                   name={`chatbot-node-${action.id}`}
                   checked={selected?.pageId === node.pageId}
-                  onChange={() => setSelected(node)}
+                  onChange={() => {
+                    setSelected(node);
+                    setNewPriority(String(node.priority ?? 999));
+                  }}
                 />
                 {node.nodeName}（現在の優先度: {node.priority ?? "未設定"}）
               </span>
@@ -210,7 +213,14 @@ function ChatbotChannelPanel({
 }
 
 function integrationLabel(status: IntegrationStatus) {
-  const service = status.service === "gbp" ? "Google" : status.service === "canva" ? "Canva" : "Instagram";
+  const service =
+    status.service === "gbp"
+      ? "Google"
+      : status.service === "canva"
+        ? "Canva"
+        : status.service === "chatbot"
+          ? "チャットボット"
+          : "Instagram";
   const state =
     status.status === "connected"
       ? "接続済み"
