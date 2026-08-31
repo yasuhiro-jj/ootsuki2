@@ -143,6 +143,13 @@ class MenuService:
         if prop.get("type") == "number":
             return prop.get("number")
         return None
+
+    def _get_checkbox(self, properties: Dict[str, Any], key: str, default: bool = True) -> bool:
+        """checkboxプロパティから値を取得（プロパティが無ければdefaultを返す）"""
+        prop = properties.get(key)
+        if prop is None or prop.get("type") != "checkbox":
+            return default
+        return bool(prop.get("checkbox"))
     
     def _get_rich_text(self, properties: Dict[str, Any], key: str) -> str:
         """rich_textプロパティから値を取得"""
@@ -465,7 +472,7 @@ class MenuService:
         menu_items = []
         for page in pages:
             properties = page.get("properties", {})
-            
+
             menu_item = MenuItemView(
                 name=self._get_title(properties, "Name"),
                 price=self._get_number(properties, "Price"),
@@ -475,10 +482,10 @@ class MenuService:
                 page_id=page.get("id"),
                 image_url=self._resolve_image_url_from_properties(properties),
             )
-            
+
             if menu_item.name:  # 名前がある場合のみ追加
                 menu_items.append(menu_item)
-        
+
         return menu_items
     
     def format_menu_items(self, items: List[MenuItemView]) -> str:
@@ -540,7 +547,19 @@ class MenuService:
                 else:
                     break
 
-            self._all_items_cache = self._convert_pages_to_menu_items(all_pages)
+            # 「在庫あり」「提供可能」がともに明示的にFalseのページは、実体のない
+            # 汎用カテゴリ名のプレースホルダー（例: 商品名だけの「おすすめ定食」
+            # 「寿司ランチ」「焼き鳥」等、価格もカテゴリも未設定）である可能性が
+            # 高いため、商品名の完全一致ショートカットの対象から除外する。
+            # 両方Trueの通常商品や、価格未入力なだけの実在商品は影響を受けない。
+            active_pages = [
+                page
+                for page in all_pages
+                if self._get_checkbox(page.get("properties", {}), "在庫あり", default=True)
+                or self._get_checkbox(page.get("properties", {}), "提供可能", default=True)
+            ]
+
+            self._all_items_cache = self._convert_pages_to_menu_items(active_pages)
             self._all_items_cache_expiry = now + timedelta(seconds=ttl_seconds)
             logger.info(f"[MenuService] 全件キャッシュ更新: {len(self._all_items_cache)}件")
         except Exception as e:
