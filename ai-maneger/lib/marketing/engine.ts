@@ -44,6 +44,7 @@ target_channelがchatbotの施策を出す場合、recommended_actionは必ず�
 - ノード名は[チャットボット会話ノード状況]に載っている名前をそのまま使うこと。「メニュー提案ノード」のような架空・抽象的な名前は禁止。
 - そのノードの優先度がすでに1〜3など十分低い数値（＝十分優先されている）場合は「優先度を上げる」ではなく「優先度を維持する」を選ぶこと（数値が小さいほど優先度が高いことに注意）。
 - [過去施策 / 実行結果]に同じノード名へのchatbot施策が既にある場合、同じノードを繰り返し提案せず、まだ手を付けていない別のノード（[チャットボット会話ノード状況]内の優先度が大きい＝後回しにされているもの）を選ぶこと。
+- 客単価向上・利益改善が目的の場合は、[商品別 粗利率・売上ランキング]の上位商品名と一致する（または対応する）会話ノードを優先して選ぶこと。ランキングの商品名をそのままreasonに引用し、粗利率の数値も根拠として明記すること。
 - 上記形式で書けない場合は、target_channelをchatbot以外にすること。`;
 
 function normalizeChannel(value: unknown): MarketingChannel {
@@ -109,10 +110,11 @@ export function buildMarketingActionPrompt(params: {
   pastActions: MarketingAction[];
   executions: MarketingActionExecution[];
   chatbotNodesSummary?: string;
+  productRecommendationSummary?: string;
 }) {
   return [
     "AI Managerを店舗マーケティング司令塔として使います。",
-    "店舗目標、Instagram指標、GBP指標、過去施策、過去結果、チャットボット会話ノード状況から次に実行する施策を生成してください。",
+    "店舗目標、Instagram指標、GBP指標、過去施策、過去結果、チャットボット会話ノード状況、商品別粗利率データから次に実行する施策を生成してください。",
     "Canva、Instagram、GBPの各アプリは独立したままです。AI Managerは判断、承認、履歴管理、実行指示を担います。",
     "チャットボット（ootsuki2）はNotion会話ノードDBの優先度・キーワードを更新することで提案内容を調整できます。",
     "",
@@ -129,6 +131,10 @@ export function buildMarketingActionPrompt(params: {
     "",
     "[チャットボット会話ノード状況（ootsuki2、カテゴリ別・優先度は小さいほど優先表示）]",
     params.chatbotNodesSummary || "（未取得）",
+    "",
+    "[商品別 粗利率・売上ランキング（Notion ABC分析DBより）]",
+    params.productRecommendationSummary || "（未取得）",
+    "客単価向上や利益改善が目的のchatbot施策では、このランキング上位の商品を優先的に検討してください。",
     "",
     "[将来追加予定の入力]",
     "- 過去投稿: interface準備中",
@@ -194,6 +200,7 @@ export async function generateMarketingActions(params: {
   pastActions: MarketingAction[];
   executions: MarketingActionExecution[];
   chatbotNodesSummary?: string;
+  productRecommendationSummary?: string;
 }) {
   const reply = await generateReply({
     userMessage: buildMarketingActionPrompt(params),
