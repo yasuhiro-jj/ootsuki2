@@ -32,50 +32,76 @@ class StoreInfoService:
     def get_business_hours(self, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
         """
         営業時間情報を取得
-        
+
         Args:
             force_refresh: キャッシュを無視して強制的に再取得
-        
+
         Returns:
             営業時間情報の辞書
         """
-        return self._get_store_info_by_category("営業時間", force_refresh)
-    
+        return self._get_store_info_by_faq_category(
+            "営業時間", force_refresh, exclude_category="特別営業時間"
+        )
+
     def get_special_hours(self, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
         """
         特別営業時間（年末年始など）を取得
-        
+
         Args:
             force_refresh: キャッシュを無視して強制的に再取得
-        
+
         Returns:
             特別営業時間情報の辞書
         """
         return self._get_store_info_by_category("特別営業時間", force_refresh)
-    
+
     def get_holidays(self, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
         """
         定休日情報を取得
-        
+
+        Notion側に「定休日」という独立カテゴリのページは存在せず、定休日は
+        営業時間のメイン情報ページ（FAQカテゴリ=「営業時間」）が持つ
+        `holidays` プロパティに格納されている。そのため、専用カテゴリの
+        ページを探すのではなく、営業時間ページからholidaysプロパティを
+        取り出す。
+
         Args:
             force_refresh: キャッシュを無視して強制的に再取得
-        
+
         Returns:
             定休日情報の辞書
         """
-        return self._get_store_info_by_category("定休日", force_refresh)
-    
+        info = self._get_store_info_by_faq_category(
+            "営業時間", force_refresh, exclude_category="特別営業時間"
+        )
+        if info and info.get("holidays"):
+            return {**info, "content": info["holidays"]}
+        return None
+
     def get_access_info(self, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
         """
         アクセス情報を取得
-        
+
+        「アクセス」というFAQカテゴリのページがあればそれを優先し、
+        なければ営業時間ページが持つ`access`プロパティを使う
+        （現状のNotion運用では住所・アクセスは営業時間ページにまとめて
+        入力されているため）。
+
         Args:
             force_refresh: キャッシュを無視して強制的に再取得
-        
+
         Returns:
             アクセス情報の辞書
         """
-        return self._get_store_info_by_category("アクセス", force_refresh)
+        info = self._get_store_info_by_faq_category("アクセス", force_refresh)
+        if info and info.get("content"):
+            return info
+        info = self._get_store_info_by_faq_category(
+            "営業時間", force_refresh, exclude_category="特別営業時間"
+        )
+        if info and info.get("access"):
+            return {**info, "content": info["access"]}
+        return None
     
     def get_all_store_info(self, force_refresh: bool = False) -> List[Dict[str, Any]]:
         """
@@ -156,11 +182,79 @@ class StoreInfoService:
                 return info
             
             return None
-        
+
         except Exception as e:
             logger.error(f"{category}情報取得エラー: {e}")
             return None
-    
+
+    def _get_store_info_by_faq_category(
+        self,
+        faq_category: str,
+        force_refresh: bool = False,
+        exclude_category: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        FAQカテゴリ別に店舗情報を取得
+
+        Notionの店舗DBは「カテゴリ」（通常情報/特別営業時間）と
+        「FAQカテゴリ」（営業時間/駐車場/アクセス等のトピック）という
+        2つの別プロパティを持つ。営業時間・アクセスなどトピック別の
+        情報は「FAQカテゴリ」の方で管理されているため、こちらを使う。
+
+        年末年始などの特別営業時間ページも同じFAQカテゴリ="営業時間"を
+        持つため、通常営業時間だけを取得したい場合は`exclude_category`に
+        "特別営業時間"を渡して除外する。
+
+        Args:
+            faq_category: FAQカテゴリ名（例: "営業時間", "アクセス"）
+            force_refresh: キャッシュを無視して強制的に再取得
+            exclude_category: 除外したい「カテゴリ」の値（任意）
+
+        Returns:
+            店舗情報の辞書
+        """
+        cache_key = f"faq_category_{faq_category}_excl_{exclude_category}"
+        if not force_refresh and self._is_cache_valid() and cache_key in self._cache:
+            logger.info(f"キャッシュから{faq_category}情報を取得")
+            return self._cache[cache_key]
+
+        try:
+            faq_filter = {
+                "property": "FAQカテゴリ",
+                "select": {
+                    "equals": faq_category
+                }
+            }
+            if exclude_category:
+                filter_conditions = {
+                    "and": [
+                        faq_filter,
+                        {
+                            "property": "カテゴリ",
+                            "select": {"does_not_equal": exclude_category},
+                        },
+                    ]
+                }
+            else:
+                filter_conditions = faq_filter
+
+            results = self.notion_client.query_database(
+                self.store_db_id,
+                filter_conditions=filter_conditions
+            )
+
+            if results:
+                info = self._parse_store_info_page(results[0])
+                self._cache[cache_key] = info
+                self._cache_timestamp = datetime.now().timestamp()
+                return info
+
+            return None
+
+        except Exception as e:
+            logger.error(f"FAQカテゴリ={faq_category}情報取得エラー: {e}")
+            return None
+
     def _parse_store_info_page(self, page: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         Notionページを店舗情報に変換
@@ -185,17 +279,38 @@ class StoreInfoService:
                 if title_prop:
                     item_name = title_prop[0].get("plain_text", "")
             
-            # カテゴリ（Select）
+            # カテゴリ（Select）- 「通常情報」/「特別営業時間」の粗い区分
             category = ""
             if "カテゴリ" in properties:
                 select_prop = properties["カテゴリ"].get("select")
                 if select_prop:
                     category = select_prop.get("name", "")
-            
+
+            # FAQカテゴリ（Select）- 「営業時間」/「アクセス」等のトピック区分
+            faq_category = ""
+            if "FAQカテゴリ" in properties:
+                select_prop = properties["FAQカテゴリ"].get("select")
+                if select_prop:
+                    faq_category = select_prop.get("name", "")
+
+            # holidays / access（Rich Text）- 定休日・アクセスは営業時間ページに
+            # 別プロパティとして持たせているため、カテゴリ判定と関係なく常に取得する
+            holidays_text = ""
+            if "holidays" in properties:
+                rich_text_prop = properties["holidays"].get("rich_text", [])
+                if rich_text_prop:
+                    holidays_text = rich_text_prop[0].get("plain_text", "")
+
+            access_text = ""
+            if "access" in properties:
+                rich_text_prop = properties["access"].get("rich_text", [])
+                if rich_text_prop:
+                    access_text = rich_text_prop[0].get("plain_text", "")
+
             # 内容（Rich Text）- 複数のプロパティ名に対応
             content = ""
-            # カテゴリに応じて適切なプロパティを選択
-            if category == "営業時間" or category == "特別営業時間":
+            # カテゴリ・FAQカテゴリに応じて適切なプロパティを選択
+            if category in ("営業時間", "特別営業時間") or faq_category == "営業時間":
                 # 営業時間系は business_hours を優先
                 if "business_hours" in properties:
                     rich_text_prop = properties["business_hours"].get("rich_text", [])
@@ -205,7 +320,7 @@ class StoreInfoService:
                     rich_text_prop = properties["内容"].get("rich_text", [])
                     if rich_text_prop:
                         content = rich_text_prop[0].get("plain_text", "")
-            elif category == "アクセス":
+            elif faq_category == "アクセス":
                 # アクセス情報は access を優先
                 if "access" in properties:
                     rich_text_prop = properties["access"].get("rich_text", [])
@@ -250,7 +365,10 @@ class StoreInfoService:
             return {
                 "item_name": item_name,
                 "category": category,
+                "faq_category": faq_category,
                 "content": content,
+                "holidays": holidays_text,
+                "access": access_text,
                 "valid_from": valid_from,
                 "valid_until": valid_until,
                 "priority": priority,

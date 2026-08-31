@@ -674,10 +674,16 @@ def create_app(config: ConfigLoader) -> FastAPI:
     )
     
     # CORS設定
+    # allow_origins=["*"]（全許可）と allow_credentials=True の組み合わせは
+    # ブラウザの仕様上無効（Access-Control-Allow-Originにワイルドカードと
+    # 認証情報を同時に許可できない）で、実際にVercel本番フロントエンドからの
+    # 全リクエストがCORSでブロックされる不具合が発生していた。
+    # フロントエンドはCookie等の資格情報を送っていない（fetchにcredentials
+    # オプションを指定していない）ため、allow_credentialsは不要。
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
-        allow_credentials=True,
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
