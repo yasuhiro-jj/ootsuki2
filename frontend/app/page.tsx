@@ -11,15 +11,26 @@ export default function Home() {
         <section className="flex h-[100dvh] w-full flex-col md:h-[85vh] md:min-h-[560px] md:max-h-[820px] md:rounded-3xl md:border md:border-amber-900/10 md:bg-white/75 md:shadow-[0_20px_80px_rgba(71,45,24,0.18)] md:backdrop-blur-2xl"
           style={{ paddingTop: 'env(safe-area-inset-top)' }}
         >
-          <header className="shrink-0 overflow-hidden border-b border-amber-900/10 bg-gradient-to-r from-[#a85632]/95 via-[#8f4d2d]/95 to-[#6f3c26]/95 px-4 py-3 text-white md:px-8 md:py-6">
+          <header className="relative shrink-0 overflow-hidden border-b border-amber-900/10 bg-gradient-to-r from-[#a85632]/95 via-[#8f4d2d]/95 to-[#6f3c26]/95 px-4 py-3 text-white md:px-8 md:py-6">
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(255,255,255,0.18),transparent_50%)]" />
-            <div className="relative">
-              <h1 className="text-center text-lg font-bold tracking-wide md:text-3xl">
-                おおつきチャットボット
-              </h1>
-              <p className="mt-0.5 text-center text-[11px] text-white/90 md:mt-2 md:text-base">
-                伝統の味と心でおもてなし。何でもお気軽にお聞きください
-              </p>
+            <div className="relative flex items-center gap-2">
+              <div className="min-w-0 flex-1 text-center">
+                <h1 className="truncate text-lg font-bold tracking-wide md:text-3xl">
+                  おおつきチャットボット
+                </h1>
+                <p className="mt-0.5 truncate text-[11px] text-white/90 md:mt-2 md:text-base">
+                  伝統の味と心でおもてなし。何でもお気軽にお聞きください
+                </p>
+              </div>
+              <a
+                href="https://j2vwf7ca.autosns.app/addfriend/s/rrgjaO8SXk/@241usmjy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex shrink-0 items-center gap-1 rounded-full bg-[#06C755] px-2.5 py-1.5 text-[10px] font-bold text-white shadow-lg shadow-black/20 transition-transform hover:-translate-y-0.5 md:px-4 md:py-2 md:text-sm"
+              >
+                <span aria-hidden>💬</span>
+                <span className="whitespace-nowrap">LINEで質問</span>
+              </a>
             </div>
           </header>
 
