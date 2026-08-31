@@ -458,6 +458,41 @@ def _find_matching_conversation_nodes(
     return tied_matches[:max_nodes]
 
 
+def resolve_conversation_node_shortcut(
+    conversation_system: Any,
+    user_message: str,
+    session_memory: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """会話ノードの固定文言をそのまま使ってよいかどうかをまとめて判定する。
+
+    HTTP `/chat` と WebSocket `/ws` の両方から呼ばれる共通ロジック。
+    以前はこの判定（優先度タイの複数ノード結合・否定語ガード）を両経路に
+    別々に実装していたため、片方だけ修正して他方に反映し忘れる不具合が
+    実際に発生した。判定を一箇所にまとめることで、今後の修正が自動的に
+    両経路へ反映されるようにする。
+
+    戻り値: マッチしなかった場合はNone。マッチした場合は
+    {"message": 結合済み応答文, "node_ids": "id1+id2"} を返す。
+    呼び出し側（HTTP/WS）は、セッション保存やレスポンス形式などの
+    transport固有の処理だけを行えばよい。
+    """
+    if session_memory.get("pending_flow") == "reservation":
+        return None
+    if _message_has_negation_or_exclusion(user_message):
+        return None
+
+    matched_nodes = _find_matching_conversation_nodes(conversation_system, user_message)
+    templates = [str(n.get("template") or "").strip() for n in matched_nodes]
+    templates = [t for t in templates if t]
+    if not templates:
+        return None
+
+    return {
+        "message": "\n\n".join(templates),
+        "node_ids": "+".join(n.get("id", "") for n in matched_nodes),
+    }
+
+
 def create_app(config: ConfigLoader) -> FastAPI:
     """
     FastAPIアプリケーションを作成
@@ -1491,59 +1526,49 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     image_url=None,
                     line_reply_messages=None,
                 )
-            if (
-                session_memory.get("pending_flow") != "reservation"
-                and not _message_has_negation_or_exclusion(user_message)
-            ):
-                matched_conversation_nodes = _find_matching_conversation_nodes(
-                    conversation_system, user_message
+            conversation_node_hit = resolve_conversation_node_shortcut(
+                conversation_system, user_message, session_memory
+            )
+            if conversation_node_hit:
+                node_response_message = conversation_node_hit["message"]
+                node_ids = conversation_node_hit["node_ids"]
+                session = ai_engine.get_session(session_id)
+                if session:
+                    session.add_message("user", request.message)
+                    session.add_message("assistant", node_response_message)
+                ai_engine.save_memory(
+                    session_id,
+                    {
+                        "active_topic": "conversation_node",
+                        "detected_intent": "conversation_node",
+                        "last_assistant_action": f"conversation_node:{node_ids}",
+                    },
                 )
-                node_templates = [
-                    str(n.get("template") or "").strip() for n in matched_conversation_nodes
-                ]
-                node_templates = [t for t in node_templates if t]
-                if node_templates:
-                    node_response_message = "\n\n".join(node_templates)
-                    node_ids = "+".join(
-                        n.get("id", "") for n in matched_conversation_nodes
-                    )
-                    session = ai_engine.get_session(session_id)
-                    if session:
-                        session.add_message("user", request.message)
-                        session.add_message("assistant", node_response_message)
-                    ai_engine.save_memory(
-                        session_id,
-                        {
-                            "active_topic": "conversation_node",
-                            "detected_intent": "conversation_node",
-                            "last_assistant_action": f"conversation_node:{node_ids}",
-                        },
-                    )
-                    session_memory = ai_engine.get_session_memory(session_id)
-                    _record_quality_log(
-                        session_id=session_id,
-                        user_id=request.customer_id,
-                        user_message=request.message,
-                        ai_response=node_response_message,
-                        recent_history=recent_turns,
-                        session_memory=session_memory,
-                        detected_intent="conversation_node",
-                        route=conversation_route.kind,
-                        route_reason=conversation_route.reason,
-                        node=f"conversation_node:{node_ids}",
-                        referenced_sources={"node_ids": node_ids},
-                        latency_ms=_elapsed_ms(started_at),
-                        channel="web",
-                    )
-                    return ChatResponse(
-                        message=node_response_message,
-                        session_id=session_id,
-                        timestamp=datetime.now().isoformat(),
-                        options=[],
-                        suggestions=None,
-                        image_url=None,
-                        line_reply_messages=None,
-                    )
+                session_memory = ai_engine.get_session_memory(session_id)
+                _record_quality_log(
+                    session_id=session_id,
+                    user_id=request.customer_id,
+                    user_message=request.message,
+                    ai_response=node_response_message,
+                    recent_history=recent_turns,
+                    session_memory=session_memory,
+                    detected_intent="conversation_node",
+                    route=conversation_route.kind,
+                    route_reason=conversation_route.reason,
+                    node=f"conversation_node:{node_ids}",
+                    referenced_sources={"node_ids": node_ids},
+                    latency_ms=_elapsed_ms(started_at),
+                    channel="web",
+                )
+                return ChatResponse(
+                    message=node_response_message,
+                    session_id=session_id,
+                    timestamp=datetime.now().isoformat(),
+                    options=[],
+                    suggestions=None,
+                    image_url=None,
+                    line_reply_messages=None,
+                )
 
             defer_memory_updates_for_contextual_followup = (
                 is_previous_price_request(user_message, session_memory)
@@ -3302,61 +3327,50 @@ def create_app(config: ConfigLoader) -> FastAPI:
                             )
                             await websocket.send_json(response)
                             continue
-                        if (
-                            ws_session_memory.get("pending_flow") != "reservation"
-                            and not _message_has_negation_or_exclusion(message)
-                        ):
-                            ws_matched_conversation_nodes = _find_matching_conversation_nodes(
-                                conversation_system, message
+                        ws_conversation_node_hit = resolve_conversation_node_shortcut(
+                            conversation_system, message, ws_session_memory
+                        )
+                        if ws_conversation_node_hit:
+                            ws_node_response_message = ws_conversation_node_hit["message"]
+                            ws_node_ids = ws_conversation_node_hit["node_ids"]
+                            sess = ai_engine.get_session(session_id)
+                            if sess:
+                                sess.add_message("user", message)
+                                sess.add_message("assistant", ws_node_response_message)
+                            ai_engine.save_memory(
+                                session_id,
+                                {
+                                    "active_topic": "conversation_node",
+                                    "detected_intent": "conversation_node",
+                                    "last_assistant_action": f"conversation_node:{ws_node_ids}",
+                                },
                             )
-                            ws_node_templates = [
-                                str(n.get("template") or "").strip()
-                                for n in ws_matched_conversation_nodes
-                            ]
-                            ws_node_templates = [t for t in ws_node_templates if t]
-                            if ws_node_templates:
-                                ws_node_response_message = "\n\n".join(ws_node_templates)
-                                ws_node_ids = "+".join(
-                                    n.get("id", "") for n in ws_matched_conversation_nodes
-                                )
-                                sess = ai_engine.get_session(session_id)
-                                if sess:
-                                    sess.add_message("user", message)
-                                    sess.add_message("assistant", ws_node_response_message)
-                                ai_engine.save_memory(
-                                    session_id,
-                                    {
-                                        "active_topic": "conversation_node",
-                                        "detected_intent": "conversation_node",
-                                        "last_assistant_action": f"conversation_node:{ws_node_ids}",
-                                    },
-                                )
-                                response = {
-                                    "type": "response",
-                                    "message": ws_node_response_message,
-                                    "options": [],
-                                    "timestamp": datetime.now().isoformat(),
-                                    "image_url": None,
-                                    "line_reply_messages": None,
-                                    "response_source": "conversation_node",
-                                }
-                                _record_quality_log(
-                                    session_id=session_id,
-                                    user_id=session_id,
-                                    user_message=message,
-                                    ai_response=ws_node_response_message,
-                                    recent_history=conv_turns,
-                                    session_memory=ai_engine.get_session_memory(session_id),
-                                    detected_intent="conversation_node",
-                                    route="conversation_node",
-                                    route_reason="keyword_match",
-                                    node=f"conversation_node:{ws_node_ids}",
-                                    referenced_sources={"node_ids": ws_node_ids},
-                                    latency_ms=_elapsed_ms(started_at),
-                                    channel="websocket",
-                                )
-                                await websocket.send_json(response)
-                                continue
+                            response = {
+                                "type": "response",
+                                "message": ws_node_response_message,
+                                "options": [],
+                                "timestamp": datetime.now().isoformat(),
+                                "image_url": None,
+                                "line_reply_messages": None,
+                                "response_source": "conversation_node",
+                            }
+                            _record_quality_log(
+                                session_id=session_id,
+                                user_id=session_id,
+                                user_message=message,
+                                ai_response=ws_node_response_message,
+                                recent_history=conv_turns,
+                                session_memory=ai_engine.get_session_memory(session_id),
+                                detected_intent="conversation_node",
+                                route="conversation_node",
+                                route_reason="keyword_match",
+                                node=f"conversation_node:{ws_node_ids}",
+                                referenced_sources={"node_ids": ws_node_ids},
+                                latency_ms=_elapsed_ms(started_at),
+                                channel="websocket",
+                            )
+                            await websocket.send_json(response)
+                            continue
                         if is_initial_reservation_request(message, ws_session_memory):
                             direct_response = format_initial_reservation_reply()
                             ai_engine.save_memory(
