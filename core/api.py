@@ -109,13 +109,17 @@ PHONE_CONTACT_TEL_URL = "tel:0545522124"
 LINE_CONTACT_URL = "https://j2vwf7ca.autosns.app/addfriend/s/rrgjaO8SXk/@241usmjy"
 LINE_CONTACT_FOOTER = (
     "詳しくはLINEもしくは、お電話でお問い合わせください：<br>"
-    "お電話<br>"
-    f'&nbsp;&nbsp;<a href="{PHONE_CONTACT_TEL_URL}">{PHONE_CONTACT_NUMBER}</a><br>'
-    "LINE(24時間受付中)<br>"
-    "&nbsp;&nbsp;↓<br>"
-    f'&nbsp;&nbsp;<a href="{LINE_CONTACT_URL}" target="_blank" rel="noopener noreferrer">'
-    "こちらから友達追加"
-    "</a><br><br>"
+    f'<a href="{LINE_CONTACT_URL}" target="_blank" rel="noopener noreferrer" '
+    'style="display:block;margin:10px 0 8px;padding:13px 16px;border-radius:14px;'
+    'background:#06C755;color:#ffffff;font-size:15px;font-weight:700;'
+    'text-align:center;text-decoration:none;box-shadow:0 2px 6px rgba(6,199,85,0.35);">'
+    "💬&nbsp; LINEで友だち追加して質問する"
+    "</a>"
+    f'<a href="{PHONE_CONTACT_TEL_URL}" '
+    'style="display:block;margin:0 0 10px;padding:13px 16px;border-radius:14px;'
+    'border:1.5px solid #94a3b8;background:#ffffff;color:#334155;font-size:15px;'
+    f'font-weight:700;text-align:center;text-decoration:none;">📞&nbsp; お電話 {PHONE_CONTACT_NUMBER}'
+    "</a>"
     "メニューは下記のボタンをタップしてご覧ください<br>"
     '<a href="https://fuji-ootsuki.com/" target="_blank" rel="noopener noreferrer" '
     'style="display:inline-block;margin-top:6px;padding:5px 14px;border-radius:20px;'
