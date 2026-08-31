@@ -295,28 +295,28 @@ export default async function DashboardPage() {
 
       <section id="monthly-kpis" className="grid scroll-mt-6 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <SectionCard>
-          <p className="text-sm text-stone-500">今月売上（累計）</p>
+          <p className="text-sm text-stone-500">当月売上（累計）</p>
           <p className="mt-3 text-4xl font-bold">{formatYen(monthSummary.sales)}</p>
           <p className="mt-2 text-sm text-stone-500">
             昨対比 {formatPercentDelta(monthSummary.salesYoY)}
           </p>
         </SectionCard>
         <SectionCard>
-          <p className="text-sm text-stone-500">今月客数（累計）</p>
+          <p className="text-sm text-stone-500">当月客数（累計）</p>
           <p className="mt-3 text-4xl font-bold">{formatCount(monthSummary.customers)}</p>
           <p className="mt-2 text-sm text-stone-500">
             昨対比 {formatPercentDelta(monthSummary.customersYoY)}
           </p>
         </SectionCard>
         <SectionCard>
-          <p className="text-sm text-stone-500">今月客単価</p>
+          <p className="text-sm text-stone-500">当月客単価</p>
           <p className="mt-3 text-4xl font-bold">{formatYen(monthSummary.averageSpend)}</p>
           <p className="mt-2 text-sm text-stone-500">
             昨対比 {formatPercentDelta(monthSummary.averageSpendYoY)}
           </p>
         </SectionCard>
         <SectionCard>
-          <p className="text-sm text-stone-500">今月の入力済み日数</p>
+          <p className="text-sm text-stone-500">当月の入力済み日数</p>
           <p className="mt-3 text-4xl font-bold">{monthSummary.totalDays}</p>
           <p className="mt-2 text-sm text-stone-500">
             {monthSummary.monthStart} 〜 {monthSummary.monthEnd}
