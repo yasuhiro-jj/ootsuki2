@@ -1,4 +1,5 @@
 import { generateReply } from "@/lib/agent-chat";
+import { findChatbotNodesByName } from "@/lib/marketing/chatbot-integration";
 import { formatMetricsForPrompt } from "@/lib/marketing/metrics";
 import type {
   MarketingActionEvidence,
@@ -32,12 +33,18 @@ const JSON_INSTRUCTION = `次のJSONだけを返してください。Markdownや
       "content_theme": "投稿テーマ",
       "priority": "high または medium または low",
       "target_kpi": "改善したいKPI",
-      "recommended_action": "既存アプリで実行する具体アクション。target_channelがchatbotの場合は、[チャットボット会話ノード状況]に実在するカテゴリ・ノード名から対象を1つ具体的に指定し、追加すべきキーワードと優先度の変更方向（上げる/維持）を明記すること。存在しないノード名を作り出さないこと"
+      "recommended_action": "既存アプリで実行する具体アクション"
     }
   ]
 }
 actionsは2から4件。完全自動投稿はせず、人間承認を前提に提案してください。
-chatbot向けの施策は、実際にはNotion会話ノードを人間が検索して確定してから反映するため、recommended_actionの指定はあくまで方針提案として扱われます。`;
+
+target_channelがchatbotの施策を出す場合、recommended_actionは必ず次の形式に厳密に従うこと:
+「『（実在するノード名をそのまま1つだけ、鉤括弧つきで引用）』ノードの優先度を（上げる/維持する）。理由: ...。追加キーワード: ...」
+- ノード名は[チャットボット会話ノード状況]に載っている名前をそのまま使うこと。「メニュー提案ノード」のような架空・抽象的な名前は禁止。
+- そのノードの優先度がすでに1〜3など十分低い数値（＝十分優先されている）場合は「優先度を上げる」ではなく「優先度を維持する」を選ぶこと（数値が小さいほど優先度が高いことに注意）。
+- [過去施策 / 実行結果]に同じノード名へのchatbot施策が既にある場合、同じノードを繰り返し提案せず、まだ手を付けていない別のノード（[チャットボット会話ノード状況]内の優先度が大きい＝後回しにされているもの）を選ぶこと。
+- 上記形式で書けない場合は、target_channelをchatbot以外にすること。`;
 
 function normalizeChannel(value: unknown): MarketingChannel {
   if (value === "gbp" || value === "canva" || value === "chatbot" || value === "multi") return value;
@@ -164,6 +171,22 @@ export function parseGeneratedMarketingActions(reply: string): { diagnosis: stri
   };
 }
 
+/**
+ * chatbot向け施策の recommended_action から「」/『』で囲まれたノード名を抽出し、
+ * 実在する会話ノードかを検証する。抽出できない・実在しない場合は false（=不採用）。
+ */
+async function isVerifiableChatbotAction(recommendedAction: string): Promise<boolean> {
+  const match = recommendedAction.match(/[『「]([^』」]+)[』」]/);
+  const nodeName = match?.[1]?.trim();
+  if (!nodeName) return false;
+  try {
+    const found = await findChatbotNodesByName(nodeName);
+    return found.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 export async function generateMarketingActions(params: {
   store: MarketingStore;
   goals: MarketingGoal[];
@@ -179,5 +202,27 @@ export async function generateMarketingActions(params: {
       "あなたは店舗マーケティングの運用責任者です。目標達成に効く施策を優先し、根拠、承認前提、既存アプリで実行できる粒度を必ず含めてください。",
     jsonInstruction: JSON_INSTRUCTION,
   });
-  return parseGeneratedMarketingActions(reply);
+  const parsed = parseGeneratedMarketingActions(reply);
+
+  const verifiedActions: MarketingActionInput[] = [];
+  for (const action of parsed.actions) {
+    if (action.targetChannel !== "chatbot") {
+      verifiedActions.push(action);
+      continue;
+    }
+    // eslint-disable-next-line no-await-in-loop
+    const verified = await isVerifiableChatbotAction(action.recommendedAction);
+    if (verified) {
+      verifiedActions.push(action);
+    } else {
+      // eslint-disable-next-line no-console
+      console.warn("[marketing-engine] dropped unverifiable chatbot action:", action.title, action.recommendedAction);
+    }
+  }
+
+  if (verifiedActions.length === 0) {
+    throw new Error("保存できる施策が生成されませんでした（会話ノードの実在確認後）");
+  }
+
+  return { diagnosis: parsed.diagnosis, actions: verifiedActions };
 }
