@@ -331,6 +331,16 @@ export async function saveMarketingActions(params: {
   return withTenant(params.tenantKey, async (client) => {
     const saved: MarketingAction[] = [];
     for (const action of params.actions) {
+      const targetStoreId = action.storeId || defaultStoreId;
+      // 同じチャネルの古い未承認提案が残っていると重複表示になるため、
+      // 新規提案を保存する前に却下扱いにしておく。
+      await client.query(
+        `UPDATE marketing_actions
+            SET status = 'rejected', approval_status = 'rejected', updated_at = NOW()
+          WHERE tenant_key = $1 AND store_id = $2 AND target_channel = $3
+            AND status = 'proposed' AND approval_status = 'pending'`,
+        [params.tenantKey, targetStoreId, action.targetChannel],
+      );
       const result = await client.query(
         `INSERT INTO marketing_actions (
           tenant_key, store_id, title, reason, evidence, target_channel, content_theme, priority,
@@ -341,7 +351,7 @@ export async function saveMarketingActions(params: {
                   approved_at, revision_note, metrics_snapshot, evaluation, created_at, updated_at`,
         [
           params.tenantKey,
-          action.storeId || defaultStoreId,
+          targetStoreId,
           action.title,
           action.reason,
           JSON.stringify(action.evidence || []),
