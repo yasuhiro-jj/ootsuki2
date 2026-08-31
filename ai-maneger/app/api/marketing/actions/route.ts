@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { logTenantAudit } from "@/lib/api/audit";
 import { requireTenantAccess } from "@/lib/api/tenant-access";
 import { generateMarketingActions } from "@/lib/marketing/engine";
+import { getChatbotNodesSummaryForPrompt } from "@/lib/marketing/chatbot-integration";
 import { getMarketingMetricsSnapshot } from "@/lib/marketing/metrics";
 import {
   getOrCreateDefaultMarketingStore,
@@ -45,11 +46,12 @@ export async function POST(request: Request) {
 
   try {
     const store = await getOrCreateDefaultMarketingStore(access.tenant);
-    const [metricsSnapshot, goals, pastActions, executions] = await Promise.all([
+    const [metricsSnapshot, goals, pastActions, executions, chatbotNodesSummary] = await Promise.all([
       getMarketingMetricsSnapshot(store),
       listMarketingGoals(access.tenant, store.id),
       listMarketingActions(access.tenant, 20, store.id),
       listMarketingExecutions(access.tenant, store.id),
+      getChatbotNodesSummaryForPrompt().catch(() => "（会話ノードDBの取得に失敗しました）"),
     ]);
     const integrationStatuses = await getIntegrationStatuses(store);
     await upsertIntegrationStatuses(access.tenant, store.id, integrationStatuses);
@@ -60,6 +62,7 @@ export async function POST(request: Request) {
       metricsSnapshot,
       pastActions,
       executions,
+      chatbotNodesSummary,
     });
     const actions = await saveMarketingActions({
       tenantKey: access.tenant,

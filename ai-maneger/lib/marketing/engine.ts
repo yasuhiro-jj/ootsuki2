@@ -28,15 +28,16 @@ const JSON_INSTRUCTION = `次のJSONだけを返してください。Markdownや
           "explanation": "根拠の説明"
         }
       ],
-      "target_channel": "instagram または gbp または canva または multi",
+      "target_channel": "instagram または gbp または canva または chatbot または multi",
       "content_theme": "投稿テーマ",
       "priority": "high または medium または low",
       "target_kpi": "改善したいKPI",
-      "recommended_action": "既存アプリで実行する具体アクション"
+      "recommended_action": "既存アプリで実行する具体アクション。target_channelがchatbotの場合は、[チャットボット会話ノード状況]に実在するカテゴリ・ノード名から対象を1つ具体的に指定し、追加すべきキーワードと優先度の変更方向（上げる/維持）を明記すること。存在しないノード名を作り出さないこと"
     }
   ]
 }
-actionsは2から4件。完全自動投稿はせず、人間承認を前提に提案してください。`;
+actionsは2から4件。完全自動投稿はせず、人間承認を前提に提案してください。
+chatbot向けの施策は、実際にはNotion会話ノードを人間が検索して確定してから反映するため、recommended_actionの指定はあくまで方針提案として扱われます。`;
 
 function normalizeChannel(value: unknown): MarketingChannel {
   if (value === "gbp" || value === "canva" || value === "chatbot" || value === "multi") return value;
@@ -100,11 +101,13 @@ export function buildMarketingActionPrompt(params: {
   metricsSnapshot: MarketingChannelMetrics[];
   pastActions: MarketingAction[];
   executions: MarketingActionExecution[];
+  chatbotNodesSummary?: string;
 }) {
   return [
     "AI Managerを店舗マーケティング司令塔として使います。",
-    "店舗目標、Instagram指標、GBP指標、過去施策、過去結果から次に実行する施策を生成してください。",
+    "店舗目標、Instagram指標、GBP指標、過去施策、過去結果、チャットボット会話ノード状況から次に実行する施策を生成してください。",
     "Canva、Instagram、GBPの各アプリは独立したままです。AI Managerは判断、承認、履歴管理、実行指示を担います。",
+    "チャットボット（ootsuki2）はNotion会話ノードDBの優先度・キーワードを更新することで提案内容を調整できます。",
     "",
     `[店舗]\nid=${params.store.id}\nname=${params.store.name}\ninstagramAccountId=${params.store.instagramAccountId || "未設定"}\ngbpLocationId=${params.store.gbpLocationId || "未設定"}\ncanvaBrandId=${params.store.canvaBrandId || "未設定"}`,
     "",
@@ -116,6 +119,9 @@ export function buildMarketingActionPrompt(params: {
     "",
     "[過去施策 / 実行結果]",
     formatPastActionsForPrompt(params.pastActions, params.executions),
+    "",
+    "[チャットボット会話ノード状況（ootsuki2、カテゴリ別・優先度は小さいほど優先表示）]",
+    params.chatbotNodesSummary || "（未取得）",
     "",
     "[将来追加予定の入力]",
     "- 過去投稿: interface準備中",
@@ -164,6 +170,7 @@ export async function generateMarketingActions(params: {
   metricsSnapshot: MarketingChannelMetrics[];
   pastActions: MarketingAction[];
   executions: MarketingActionExecution[];
+  chatbotNodesSummary?: string;
 }) {
   const reply = await generateReply({
     userMessage: buildMarketingActionPrompt(params),
