@@ -334,12 +334,17 @@ export async function saveMarketingActions(params: {
       const targetStoreId = action.storeId || defaultStoreId;
       // 同じチャネルの古い未承認提案が残っていると重複表示になるため、
       // 新規提案を保存する前に却下扱いにしておく。
+      // store_id で厳密一致させると、get-or-create の競合等でtenantに
+      // 複数のmarketing_storesレコードが存在した場合に一致せず、古い
+      // pending提案が却下されずに残ってしまう（重複提案の主因）。
+      // ここでは tenant_key + target_channel のみで判定し、store_idの
+      // ズレに影響されないようにする。
       await client.query(
         `UPDATE marketing_actions
             SET status = 'rejected', approval_status = 'rejected', updated_at = NOW()
-          WHERE tenant_key = $1 AND store_id = $2 AND target_channel = $3
+          WHERE tenant_key = $1 AND target_channel = $2
             AND status = 'proposed' AND approval_status = 'pending'`,
-        [params.tenantKey, targetStoreId, action.targetChannel],
+        [params.tenantKey, action.targetChannel],
       );
       const result = await client.query(
         `INSERT INTO marketing_actions (
