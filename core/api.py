@@ -7,6 +7,7 @@ FastAPIベースの汎用APIフレームワーク
 import logging
 import asyncio
 import os
+import re
 import time
 from dataclasses import asdict
 from typing import Optional, Dict, Any, Set, List
@@ -463,6 +464,49 @@ def _find_matching_conversation_nodes(
     return tied_matches[:max_nodes]
 
 
+_RESERVATION_TIME_RE = re.compile(r"\d{1,2}\s*時")
+_RESERVATION_COUNT_RE = re.compile(r"\d{1,2}\s*名")
+
+
+def _looks_like_reservation_details(user_message: str) -> bool:
+    """発言そのものが予約の詳細（日時・人数）を伝えていそうかを判定する。
+
+    「予約をお願いします」に対してNotion側の会話ノードが（コード側の
+    `active_topic="reservation"`設定より先に）静的な予約案内テンプレートで
+    応答してしまうケースがあり、その場合セッションメモリ上は予約フロー中と
+    認識されない。そのため、セッション状態に頼らず発言内容そのものからも
+    「◯時」「◯名」が同時に含まれる＝予約の日時・人数を伝えている可能性が
+    高い発言を検出し、メニュー名の断片一致でショートカットが誤発火しない
+    ようにする。
+    """
+    text = str(user_message or "")
+    return bool(_RESERVATION_TIME_RE.search(text) and _RESERVATION_COUNT_RE.search(text))
+
+
+def _is_reservation_flow_active(
+    session_memory: Optional[Dict[str, Any]], user_message: str = ""
+) -> bool:
+    """予約フローの最中かどうかを判定する。
+
+    予約は「予約をお願いします」の直後（まだ`pending_flow`は立っておらず
+    `active_topic`だけが"reservation"になっている段階）で、日時・人数・
+    お名前などの詳細をお客様が答える2ターン目が最も壊れやすい。
+    この時点でメニュー名の断片（例:「ねぎとろ丼が好きな田中です」の「ねぎとろ」）
+    を含む発言をメニュー案内や会話ノードのショートカットに奪われると、
+    予約対話が中断されてしまうため、`pending_flow`と`active_topic`の
+    どちらが"reservation"でもスキップする。それに加えて、セッション状態が
+    まだ更新されていない場合に備え、発言自体が予約の日時・人数を伝えて
+    いそうな場合もスキップする（`_looks_like_reservation_details`）。
+    """
+    if session_memory:
+        if (
+            session_memory.get("pending_flow") == "reservation"
+            or session_memory.get("active_topic") == "reservation"
+        ):
+            return True
+    return _looks_like_reservation_details(user_message)
+
+
 def resolve_conversation_node_shortcut(
     conversation_system: Any,
     user_message: str,
@@ -481,7 +525,7 @@ def resolve_conversation_node_shortcut(
     呼び出し側（HTTP/WS）は、セッション保存やレスポンス形式などの
     transport固有の処理だけを行えばよい。
     """
-    if session_memory.get("pending_flow") == "reservation":
+    if _is_reservation_flow_active(session_memory, user_message):
         return None
     if _message_has_negation_or_exclusion(user_message):
         return None
@@ -496,6 +540,48 @@ def resolve_conversation_node_shortcut(
         "message": "\n\n".join(templates),
         "node_ids": "+".join(n.get("id", "") for n in matched_nodes),
     }
+
+
+def resolve_specific_menu_item_shortcut(
+    menu_service: Any,
+    user_message: str,
+    session_memory: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
+    """発言に実在するメニュー名がそのまま含まれる場合、その商品の価格・説明文を
+    使って直接回答する。
+
+    会話ノードの汎用テンプレートは「盛り合わせ」「丼」「唐揚げ」のような
+    曖昧なキーワードで無関係な複数ノードにマッチしてしまうため、
+    「〇〇ってどんな感じですか？」のような自然な聞き方をされると、
+    実際に聞かれた商品とは違う商品の説明を返してしまう不具合があった。
+    ここでは会話ノード判定より先に、発言中にNotion登録済みの完全な商品名が
+    そのまま含まれているかを直接チェックし、含まれていればその商品固有の
+    情報（価格・説明文）を確実に優先させる。
+
+    予約フロー中は`resolve_conversation_node_shortcut`と同様にスキップする
+    （予約の日時・人数などの入力にメニュー名の断片が偶然含まれるケースで、
+    予約対話を中断させないため）。
+    """
+    if _is_reservation_flow_active(session_memory, user_message):
+        return None
+    if not menu_service:
+        return None
+    try:
+        items = menu_service.find_menu_items_mentioned_in_text(user_message)
+    except Exception as exc:
+        logger.debug("[MenuItemShortcut] lookup_skipped error=%s", exc)
+        return None
+    items = [it for it in (items or []) if it and it.name]
+    if not items:
+        return None
+    try:
+        formatted = menu_service.format_menu_items(items)
+    except Exception as exc:
+        logger.debug("[MenuItemShortcut] format_skipped error=%s", exc)
+        return None
+    if not formatted:
+        return None
+    return f"{formatted}\nいかがですか？"
 
 
 def classify_message_in_scope(llm: Any, user_message: str) -> bool:
@@ -1649,6 +1735,48 @@ def create_app(config: ConfigLoader) -> FastAPI:
                         image_url=None,
                         line_reply_messages=None,
                     )
+
+            menu_item_shortcut_reply = resolve_specific_menu_item_shortcut(
+                shared_menu_service, user_message, session_memory
+            )
+            if menu_item_shortcut_reply:
+                session = ai_engine.get_session(session_id)
+                if session:
+                    session.add_message("user", request.message)
+                    session.add_message("assistant", menu_item_shortcut_reply)
+                ai_engine.save_memory(
+                    session_id,
+                    {
+                        "active_topic": "menu_item_direct",
+                        "detected_intent": "menu_item_direct",
+                        "last_assistant_action": "menu_item_direct",
+                    },
+                )
+                session_memory = ai_engine.get_session_memory(session_id)
+                _record_quality_log(
+                    session_id=session_id,
+                    user_id=request.customer_id,
+                    user_message=request.message,
+                    ai_response=menu_item_shortcut_reply,
+                    recent_history=recent_turns,
+                    session_memory=session_memory,
+                    detected_intent="menu_item_direct",
+                    route=conversation_route.kind,
+                    route_reason=conversation_route.reason,
+                    node="menu_item_direct",
+                    referenced_sources={},
+                    latency_ms=_elapsed_ms(started_at),
+                    channel="web",
+                )
+                return ChatResponse(
+                    message=menu_item_shortcut_reply,
+                    session_id=session_id,
+                    timestamp=datetime.now().isoformat(),
+                    options=[],
+                    suggestions=None,
+                    image_url=None,
+                    line_reply_messages=None,
+                )
 
             conversation_node_hit = resolve_conversation_node_shortcut(
                 conversation_system, user_message, session_memory
@@ -3458,6 +3586,48 @@ def create_app(config: ConfigLoader) -> FastAPI:
                                     "guard_result": ws_orchestration_decision.guard_result,
                                     "actual_response": response_message,
                                 },
+                                latency_ms=_elapsed_ms(started_at),
+                                channel="websocket",
+                            )
+                            await websocket.send_json(response)
+                            continue
+                        ws_menu_item_shortcut_reply = resolve_specific_menu_item_shortcut(
+                            shared_menu_service, message, ws_session_memory
+                        )
+                        if ws_menu_item_shortcut_reply:
+                            sess = ai_engine.get_session(session_id)
+                            if sess:
+                                sess.add_message("user", message)
+                                sess.add_message("assistant", ws_menu_item_shortcut_reply)
+                            ai_engine.save_memory(
+                                session_id,
+                                {
+                                    "active_topic": "menu_item_direct",
+                                    "detected_intent": "menu_item_direct",
+                                    "last_assistant_action": "menu_item_direct",
+                                },
+                            )
+                            response = {
+                                "type": "response",
+                                "message": ws_menu_item_shortcut_reply,
+                                "options": [],
+                                "timestamp": datetime.now().isoformat(),
+                                "image_url": None,
+                                "line_reply_messages": None,
+                                "response_source": "menu_item_direct",
+                            }
+                            _record_quality_log(
+                                session_id=session_id,
+                                user_id=session_id,
+                                user_message=message,
+                                ai_response=ws_menu_item_shortcut_reply,
+                                recent_history=conv_turns,
+                                session_memory=ai_engine.get_session_memory(session_id),
+                                detected_intent="menu_item_direct",
+                                route="menu_item_direct",
+                                route_reason="exact_name_match",
+                                node="menu_item_direct",
+                                referenced_sources={},
                                 latency_ms=_elapsed_ms(started_at),
                                 channel="websocket",
                             )

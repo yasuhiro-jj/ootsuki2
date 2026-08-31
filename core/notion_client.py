@@ -27,6 +27,7 @@ class NotionClient:
         self.api_key = api_key or os.getenv("NOTION_API_KEY")
         self.client = None
         self._property_key_cache: Dict[str, Dict[str, str]] = {}
+        self._data_source_id_cache: Dict[str, str] = {}
         
         self._initialize_client()
     
@@ -46,6 +47,46 @@ class NotionClient:
             import traceback
             logger.error(f"トレースバック: {traceback.format_exc()}")
     
+    def _query_database_compat(self, database_id: str, **query_params: Any) -> Dict[str, Any]:
+        """Query a Notion database/data source across SDK API versions."""
+        if not self.client:
+            return {}
+
+        databases = getattr(self.client, "databases", None)
+        database_query = getattr(databases, "query", None) if databases else None
+        if callable(database_query):
+            return database_query(database_id=database_id, **query_params)
+
+        data_sources = getattr(self.client, "data_sources", None)
+        data_source_query = getattr(data_sources, "query", None) if data_sources else None
+        if callable(data_source_query):
+            data_source_id = self._resolve_data_source_id(database_id)
+            return data_source_query(data_source_id=data_source_id, **query_params)
+
+        raise AttributeError("Notion SDK does not expose databases.query or data_sources.query")
+
+    def _resolve_data_source_id(self, database_id: str) -> str:
+        """Return the first data source ID for a Notion database ID when available."""
+        cached = self._data_source_id_cache.get(database_id)
+        if cached:
+            return cached
+
+        try:
+            databases = getattr(self.client, "databases", None) if self.client else None
+            retrieve = getattr(databases, "retrieve", None) if databases else None
+            if callable(retrieve):
+                database = retrieve(database_id=database_id)
+                data_sources = database.get("data_sources") or []
+                first = data_sources[0].get("id") if data_sources else None
+                if first:
+                    self._data_source_id_cache[database_id] = first
+                    return first
+        except Exception as exc:
+            logger.debug("[Notion] data source id resolution skipped for %s: %s", database_id, exc)
+
+        self._data_source_id_cache[database_id] = database_id
+        return database_id
+
     def query_database(
         self,
         database_id: str,
@@ -74,7 +115,7 @@ class NotionClient:
             if sorts:
                 query_params["sorts"] = sorts
             
-            response = self.client.databases.query(
+            response = self._query_database_compat(
                 database_id=database_id,
                 **query_params
             )
@@ -110,7 +151,7 @@ class NotionClient:
                 if start_cursor:
                     query_params["start_cursor"] = start_cursor
                 
-                response = self.client.databases.query(
+                response = self._query_database_compat(
                     database_id=database_id,
                     **query_params
                 )
@@ -714,7 +755,7 @@ class NotionClient:
             # プロパティタイプに応じてフィルタを作成
             filter_condition = self._create_property_filter(property_name, property_value)
             
-            response = self.client.databases.query(
+            response = self._query_database_compat(
                 database_id=database_id,
                 filter=filter_condition
             )
@@ -755,7 +796,7 @@ class NotionClient:
                     "and": filters
                 }
             
-            response = self.client.databases.query(
+            response = self._query_database_compat(
                 database_id=database_id,
                 filter=filter_condition
             )
@@ -912,7 +953,7 @@ class NotionClient:
         
         try:
             # 完全一致で検索
-            response = self.client.databases.query(
+            response = self._query_database_compat(
                 database_id=database_id,
                 filter={
                     "property": "Name",
@@ -928,7 +969,7 @@ class NotionClient:
                 return results[0]
             
             # 部分一致で検索
-            response = self.client.databases.query(
+            response = self._query_database_compat(
                 database_id=database_id,
                 filter={
                     "property": "Name",
@@ -946,7 +987,7 @@ class NotionClient:
             # 「刺身」→「刺」に変換して検索（「まぐろ刺身」→「まぐろ刺」）
             if "刺身" in menu_name:
                 menu_name_variant = menu_name.replace("刺身", "刺")
-                response = self.client.databases.query(
+                response = self._query_database_compat(
                     database_id=database_id,
                     filter={
                         "property": "Name",
@@ -961,7 +1002,7 @@ class NotionClient:
                     return results[0]
                 
                 # 部分一致でも試す
-                response = self.client.databases.query(
+                response = self._query_database_compat(
                     database_id=database_id,
                     filter={
                         "property": "Name",
@@ -1020,7 +1061,7 @@ class NotionClient:
             search_keywords.sort(key=len, reverse=True)
             
             for keyword in search_keywords:
-                response = self.client.databases.query(
+                response = self._query_database_compat(
                     database_id=database_id,
                     filter={
                         "property": "Name",
@@ -1046,7 +1087,7 @@ class NotionClient:
             logger.info(f"[CrossSell] デバッグ: 刺身関連メニューを検索中...")
             
             # 「刺身」を含むメニューを全て取得
-            debug_response = self.client.databases.query(
+            debug_response = self._query_database_compat(
                 database_id=database_id,
                 filter={
                     "property": "Name",
@@ -1418,7 +1459,8 @@ class NotionClient:
                 if start_cursor:
                     query_params["start_cursor"] = start_cursor
                 
-                response = self.client.databases.query(**query_params)
+                query_database_id = query_params.pop("database_id")
+                response = self._query_database_compat(query_database_id, **query_params)
                 results = response.get("results", [])
                 
                 # 取得したページを処理
@@ -1563,4 +1605,3 @@ class NotionClient:
             import traceback
             logger.error(f"[ConversationNodes] トレースバック: {traceback.format_exc()}")
             return []
-

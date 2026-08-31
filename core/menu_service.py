@@ -8,6 +8,7 @@ import os
 import re
 import logging
 import unicodedata
+from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
@@ -121,7 +122,9 @@ class MenuService:
         """
         self.notion_client = notion_client
         self.menu_db_id = menu_db_id or os.getenv("NOTION_DS_MENU")
-        
+        self._all_items_cache: List["MenuItemView"] = []
+        self._all_items_cache_expiry: Optional[datetime] = None
+
         if not self.menu_db_id:
             logger.warning("メニューDBのIDが設定されていません")
     
@@ -508,7 +511,131 @@ class MenuService:
                 lines.append(f"- {name} ｜ {price}")
         
         return "\n".join(lines)
-    
+
+    def get_all_menu_items_cached(self, ttl_seconds: int = 300) -> List["MenuItemView"]:
+        """メニュー全件を取得し、一定時間メモリにキャッシュする。
+
+        商品名の直接一致検索（resolve_specific_menu_item_by_name）で、568件規模の
+        メニューを毎回Notionへ問い合わせるのは重いため、5分程度キャッシュする。
+        """
+        now = datetime.now()
+        if self._all_items_cache and self._all_items_cache_expiry and now < self._all_items_cache_expiry:
+            return self._all_items_cache
+
+        if not self.menu_db_id or not self.notion_client:
+            return self._all_items_cache
+
+        try:
+            all_pages: List[Dict[str, Any]] = []
+            cursor = None
+            while True:
+                kwargs: Dict[str, Any] = {"database_id": self.menu_db_id, "page_size": 100}
+                if cursor:
+                    kwargs["start_cursor"] = cursor
+                response = self.notion_client._query_database_compat(**kwargs)
+                results = (response or {}).get("results", [])
+                all_pages.extend(results)
+                if (response or {}).get("has_more"):
+                    cursor = response.get("next_cursor")
+                else:
+                    break
+
+            self._all_items_cache = self._convert_pages_to_menu_items(all_pages)
+            self._all_items_cache_expiry = now + timedelta(seconds=ttl_seconds)
+            logger.info(f"[MenuService] 全件キャッシュ更新: {len(self._all_items_cache)}件")
+        except Exception as e:
+            logger.warning(f"[MenuService] 全件取得エラー（キャッシュ流用）: {e}")
+
+        return self._all_items_cache
+
+    _TRAILING_QUESTION_SUFFIXES = (
+        "ってどんな感じですか", "ってどんな感じ", "はどんな感じですか", "はどんな感じ",
+        "について教えてください", "について教えて", "について",
+        "はおいしいですか", "は美味しいですか", "はどうですか", "はいかがですか",
+        "はありますか", "ありますか",
+        "を教えてください", "を教えて",
+        "って何ですか", "とは何ですか",
+        "はいくらですか", "はいくら", "の値段は", "の価格は",
+    )
+    # 「ねぎとろ丼」のように、実際の登録名には「まぐろ」「ランチ」等の装飾的な
+    # 接頭辞が付いていて完全一致しない複合名を、逆方向（登録名の中に発言のコア
+    # フレーズが含まれるか）で救うための、料理カテゴリを示す語尾の許可リスト。
+    _DISH_SUFFIX_HINTS = (
+        "丼", "弁当", "定食", "セット", "巻き", "汁", "天ぷら", "刺身",
+        "揚げ", "焼き", "盛り", "盛合わせ", "盛り合わせ",
+    )
+
+    @classmethod
+    def _extract_core_phrase(cls, text: str) -> str:
+        core = str(text or "").strip()
+        core = core.rstrip("？?！!。.、, ")
+        changed = True
+        while changed:
+            changed = False
+            for suffix in cls._TRAILING_QUESTION_SUFFIXES:
+                if len(core) > len(suffix) and core.endswith(suffix):
+                    core = core[: -len(suffix)].rstrip("？?！!。.、, ")
+                    changed = True
+        return core.strip()
+
+    def find_menu_items_mentioned_in_text(
+        self, text: str, max_items: int = 3
+    ) -> List["MenuItemView"]:
+        """発言文の中に、実在するメニュー名がそのまま含まれているかを直接判定する。
+
+        「刺身盛り合わせってどんな感じですか？」のような自然な言い回しでは、質問文から
+        商品名だけを正確に切り出すのは難しい。その代わりに「メニュー名が発言に含まれて
+        いるか」を全件チェックし、最も長く一致した商品名を採用する（より具体的な名前を
+        優先するため）。
+
+        「ねぎとろ丼」のように、発言中のフレーズ自体は登録名の一部にしかならない
+        （実際の登録名は「まぐろねぎとろ丼」「ランチねぎとろ丼」等）場合に備えて、
+        末尾の質問表現を除いたコアフレーズが登録名に含まれるかも逆方向でチェックする。
+        ただし誤検出を避けるため、コアフレーズが料理カテゴリを示す語（丼・弁当など）で
+        終わっている場合に限り、かつ一致件数が少数（max_items以下）の場合のみ採用する。
+        """
+        normalized_text = str(text or "").strip()
+        if not normalized_text or len(normalized_text) > 200:
+            return []
+
+        all_items = self.get_all_menu_items_cached()
+
+        forward_matches: List["MenuItemView"] = []
+        best_len = 0
+        for item in all_items:
+            name = (item.name or "").strip()
+            if len(name) < 3:
+                continue
+            if name in normalized_text:
+                if len(name) > best_len:
+                    forward_matches = [item]
+                    best_len = len(name)
+                elif len(name) == best_len:
+                    forward_matches.append(item)
+
+        core = self._extract_core_phrase(normalized_text)
+        reverse_matches: List["MenuItemView"] = []
+        if len(core) >= 4 and core.endswith(self._DISH_SUFFIX_HINTS):
+            candidates = [
+                item for item in all_items if core in (item.name or "").strip()
+            ]
+            if 0 < len(candidates) <= max_items:
+                reverse_matches = candidates
+
+        # forwardが発言全体（コアフレーズ）より短い場合、それは「ねぎとろ丼」に対する
+        # 「ねぎとろ」のような、より具体性の低い部分一致にすぎない可能性が高い。
+        # その場合、より具体的な複合名を捉えられているreverse側を優先する。
+        if reverse_matches and best_len < len(core):
+            return reverse_matches[:max_items]
+        if forward_matches:
+            return forward_matches[:max_items]
+        return reverse_matches[:max_items]
+
+    def find_menu_item_mentioned_in_text(self, text: str) -> Optional["MenuItemView"]:
+        """`find_menu_items_mentioned_in_text` の単一結果版（後方互換用）。"""
+        items = self.find_menu_items_mentioned_in_text(text, max_items=1)
+        return items[0] if items else None
+
     def get_and_format_menu(
         self,
         keyword: str,
