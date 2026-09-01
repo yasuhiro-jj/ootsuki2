@@ -28,7 +28,9 @@ import {
   listMarketingGoals,
 } from "@/lib/marketing/repository";
 import { isTenantConfigStoreEnabled } from "@/lib/tenant-config/repository";
+import { MonthSelectForm } from "@/components/ootsuki/month-select-form";
 import {
+  aggregateMonth,
   aggregateMonthBusinessDays,
   aggregateMonthToDate,
   aggregateWeek,
@@ -91,7 +93,11 @@ function todayInTokyo() {
   }).format(new Date());
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams?: { month?: string };
+}) {
   let access;
   try {
     access = await getCurrentTenantAccessResult("read");
@@ -190,11 +196,28 @@ export default async function DashboardPage() {
     };
   }
   const weekSummary = attachYearOverYear(attachWeekOverWeek(currentWeek, previousWeek), sameWeekLastYear);
-  const currentMonth = aggregateMonthToDate(entries, now);
-  const previousMonthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
-  const previousMonth = aggregateMonthBusinessDays(entries, previousMonthDate, currentMonth.totalDays);
-  const lastYearMonthDate = new Date(Date.UTC(now.getUTCFullYear() - 1, now.getUTCMonth(), 1));
-  let sameMonthLastYear = aggregateMonthBusinessDays(entries, lastYearMonthDate, currentMonth.totalDays);
+  const nowMonthKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+  const rawMonthParam = searchParams?.month?.trim() || "";
+  const selectedMonthKey = /^\d{4}-\d{2}$/.test(rawMonthParam) ? rawMonthParam : nowMonthKey;
+  const isCurrentMonthSelected = selectedMonthKey === nowMonthKey;
+  const [selectedYear, selectedMonthNum] = selectedMonthKey.split("-").map(Number);
+  const monthReferenceDate = new Date(Date.UTC(selectedYear, selectedMonthNum - 1, 15));
+
+  const currentMonth = isCurrentMonthSelected
+    ? aggregateMonthToDate(entries, now)
+    : aggregateMonth(entries, monthReferenceDate);
+  const previousMonthDate = new Date(
+    Date.UTC(monthReferenceDate.getUTCFullYear(), monthReferenceDate.getUTCMonth() - 1, 15),
+  );
+  const previousMonth = isCurrentMonthSelected
+    ? aggregateMonthBusinessDays(entries, previousMonthDate, currentMonth.totalDays)
+    : aggregateMonth(entries, previousMonthDate);
+  const lastYearMonthDate = new Date(
+    Date.UTC(monthReferenceDate.getUTCFullYear() - 1, monthReferenceDate.getUTCMonth(), 15),
+  );
+  let sameMonthLastYear = isCurrentMonthSelected
+    ? aggregateMonthBusinessDays(entries, lastYearMonthDate, currentMonth.totalDays)
+    : aggregateMonth(entries, lastYearMonthDate);
   const currentMonthDailyEntries = entries.filter(
     (entry) => entry.date && entry.date >= currentMonth.monthStart && entry.date <= currentMonth.monthEnd,
   );
@@ -219,6 +242,16 @@ export default async function DashboardPage() {
     attachMonthOverMonth(currentMonth, previousMonth),
     sameMonthLastYear,
   );
+  const availableMonthKeys = Array.from(
+    new Set(
+      entries
+        .map((entry) => entry.date?.slice(0, 7))
+        .filter((key): key is string => Boolean(key && /^\d{4}-\d{2}$/.test(key))),
+    ),
+  ).sort((a, b) => b.localeCompare(a));
+  if (!availableMonthKeys.includes(nowMonthKey)) {
+    availableMonthKeys.unshift(nowMonthKey);
+  }
   const metricAlerts = buildMetricAlerts(monthSummary, "今月");
   const profitActionAlerts = buildProfitActionAlerts(monthSummary);
   const latestWeeklyReview = latestWeeklyReviews[0];
@@ -272,6 +305,9 @@ export default async function DashboardPage() {
     activeTenantConfigResult[0].status === "fulfilled" ? activeTenantConfigResult[0].value : null;
   const weeklyActionsConfigReady = Boolean(activeTenantConfig?.weeklyActionsDbId);
   const salesOverviewConfigReady = Boolean(activeTenantConfig?.dailySalesDbId && activeTenantConfig?.kpiDbId);
+  const monthDisplayLabel = isCurrentMonthSelected
+    ? "今月"
+    : `${selectedYear}年${selectedMonthNum}月`;
   const dashboardTitle = access.tenant === "demo" ? "デモダッシュボード" : "おおつき ダッシュボード";
   const projectDisplayName = access.tenant === "demo" ? "デモ店" : project.name;
   const canWriteMemo = access.role === "editor" || access.role === "admin" || access.role === "owner";
@@ -294,29 +330,32 @@ export default async function DashboardPage() {
       </section>
 
       <section id="monthly-kpis" className="grid scroll-mt-6 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="md:col-span-2 xl:col-span-4">
+          <MonthSelectForm months={availableMonthKeys} selected={selectedMonthKey} currentMonthKey={nowMonthKey} />
+        </div>
         <SectionCard>
-          <p className="text-sm text-stone-500">今月売上（累計）</p>
+          <p className="text-sm text-stone-500">{monthDisplayLabel}売上（累計）</p>
           <p className="mt-3 text-4xl font-bold">{formatYen(monthSummary.sales)}</p>
           <p className="mt-2 text-sm text-stone-500">
             昨対比 {formatPercentDelta(monthSummary.salesYoY)}
           </p>
         </SectionCard>
         <SectionCard>
-          <p className="text-sm text-stone-500">今月客数（累計）</p>
+          <p className="text-sm text-stone-500">{monthDisplayLabel}客数（累計）</p>
           <p className="mt-3 text-4xl font-bold">{formatCount(monthSummary.customers)}</p>
           <p className="mt-2 text-sm text-stone-500">
             昨対比 {formatPercentDelta(monthSummary.customersYoY)}
           </p>
         </SectionCard>
         <SectionCard>
-          <p className="text-sm text-stone-500">今月客単価</p>
+          <p className="text-sm text-stone-500">{monthDisplayLabel}客単価</p>
           <p className="mt-3 text-4xl font-bold">{formatYen(monthSummary.averageSpend)}</p>
           <p className="mt-2 text-sm text-stone-500">
             昨対比 {formatPercentDelta(monthSummary.averageSpendYoY)}
           </p>
         </SectionCard>
         <SectionCard>
-          <p className="text-sm text-stone-500">今月の入力済み日数</p>
+          <p className="text-sm text-stone-500">{monthDisplayLabel}の入力済み日数</p>
           <p className="mt-3 text-4xl font-bold">{monthSummary.totalDays}</p>
           <p className="mt-2 text-sm text-stone-500">
             {monthSummary.monthStart} 〜 {monthSummary.monthEnd}
