@@ -111,6 +111,7 @@ export function buildMarketingActionPrompt(params: {
   executions: MarketingActionExecution[];
   chatbotNodesSummary?: string;
   productRecommendationSummary?: string;
+  deadStockSummary?: string;
   timeZoneSalesSummary?: string;
 }) {
   return [
@@ -136,6 +137,10 @@ export function buildMarketingActionPrompt(params: {
     "[商品別 粗利率・売上ランキング（Notion ABC分析DBより）]",
     params.productRecommendationSummary || "（未取得）",
     "客単価向上や利益改善が目的のchatbot施策では、このランキング上位の商品を優先的に検討してください。",
+    "",
+    "[見直し候補商品（死に筋、ABC-Zランク相当）]",
+    params.deadStockSummary || "（未取得）",
+    "この一覧は施策のtarget_channelには使わず、diagnosisの中でメニュー構成・原価・仕入れ量の見直しが必要な商品として言及するに留めてください（該当がなければ触れなくてよい）。",
     "",
     "[時間帯別売上・客数（USEN/POS CSVより）]",
     params.timeZoneSalesSummary || "（未取得）",
@@ -206,6 +211,7 @@ export async function generateMarketingActions(params: {
   executions: MarketingActionExecution[];
   chatbotNodesSummary?: string;
   productRecommendationSummary?: string;
+  deadStockSummary?: string;
   timeZoneSalesSummary?: string;
 }) {
   const reply = await generateReply({

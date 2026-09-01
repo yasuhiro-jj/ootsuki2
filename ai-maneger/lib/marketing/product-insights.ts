@@ -101,3 +101,32 @@ export async function getProductRecommendationSummaryForPrompt(tenant: TenantKey
     ...lines,
   ].join("\n");
 }
+
+// 原価がかかっているのに販売数量がこの件数以下の商品を「見直し候補」とみなす（ABC-Zランク相当）。
+const DEAD_STOCK_SALES_QTY_THRESHOLD = 2;
+
+/**
+ * AI施策生成プロンプトに渡す「原価がかかっているのに、ほとんど売れていない商品」の要約。
+ * ABC-Z分析の死に筋（Zランク）に相当し、メニューカット・原価見直し・値付け変更の判断材料になる。
+ */
+export async function getDeadStockSummaryForPrompt(tenant: TenantKey): Promise<string> {
+  const items = await getProductProfitability(tenant);
+  if (items.length === 0) return "（商品別売上・原価データは未接続、または取得に失敗しました）";
+
+  const candidates = items
+    .filter((item) => isLikelyFood(item.name) && item.salesQty <= DEAD_STOCK_SALES_QTY_THRESHOLD)
+    .sort((a, b) => a.salesQty - b.salesQty)
+    .slice(0, 10);
+
+  if (candidates.length === 0) return "（見直し候補となるフードメニューは見つかりませんでした）";
+
+  const lines = candidates.map(
+    (item) =>
+      `- ${item.name}: 販売実績${item.salesQty}件（売価${item.avgPrice}円/原価${item.estCost}円、粗利率${item.marginRate}%）`,
+  );
+
+  return [
+    "販売数量が極端に少ない見直し候補フードメニュー（死に筋。メニューカット・原価見直し・値付け変更の材料）:",
+    ...lines,
+  ].join("\n");
+}
