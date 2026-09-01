@@ -11,6 +11,18 @@ import type { AgentChatResponse } from "@/types/chat";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
+/** 日別行の営業日から最も件数の多い年月（YYYY-MM）を対象月として採用する。 */
+function detectMonthFromSummary(summary: PosTimeZoneMetricSummary): string {
+  const counts = new Map<string, number>();
+  for (const row of summary.dailyAnalysisRows) {
+    if (!row.date) continue;
+    const month = row.date.slice(0, 7);
+    counts.set(month, (counts.get(month) || 0) + 1);
+  }
+  const [topMonth] = [...counts.entries()].sort((left, right) => right[1] - left[1]);
+  return topMonth?.[0] || "";
+}
+
 function formatHour(hourKey: string) {
   // "11-14" はそのまま表示。 "11:00" などは短くする
   if (/^\d{2}:\d{2}$/.test(hourKey)) return hourKey.replace(":00", "時");
@@ -207,6 +219,7 @@ export function PosTimeZoneSalesPanel() {
     setSavingSummary(true);
     setSaveSummaryStatus("AI Managerに保存しています...");
     try {
+      const month = detectMonthFromSummary(salesSummary) || detectMonthFromSummary(customersSummary);
       const requests = [
         fetch("/api/time-zone-sales/save", {
           method: "POST",
@@ -217,6 +230,7 @@ export function PosTimeZoneSalesPanel() {
             total: salesSummary.total,
             hourlyTotals: salesSummary.hourlyTotals,
             peakHours: salesSummary.peakHours,
+            month,
           }),
         }),
         fetch("/api/time-zone-sales/save", {
@@ -228,6 +242,7 @@ export function PosTimeZoneSalesPanel() {
             total: customersSummary.total,
             hourlyTotals: customersSummary.hourlyTotals,
             peakHours: customersSummary.peakHours,
+            month,
           }),
         }),
       ];

@@ -55,3 +55,53 @@ export async function getTimeZoneSalesSummaryForPrompt(tenant: TenantKey): Promi
   cache.set(tenant, { expiresAt: Date.now() + CACHE_TTL_MS, text });
   return text;
 }
+
+export type TimeZoneSalesHourly = { hour: string; value: number };
+
+export type TimeZoneSalesEntry = {
+  target: "売上" | "客数";
+  source: string;
+  total: number;
+  peakText: string;
+  hourlyTotals: TimeZoneSalesHourly[];
+};
+
+export type TimeZoneSalesMonth = {
+  month: string;
+  entries: TimeZoneSalesEntry[];
+};
+
+/** 時間帯別売上DBの全件を対象月ごとにグループ化して返す（ダッシュボード表示用）。 */
+export async function getTimeZoneSalesMonthsData(tenant: TenantKey): Promise<TimeZoneSalesMonth[]> {
+  const dbId = timeZoneSalesDbId(tenant);
+  if (!dbId) return [];
+
+  const config = await getTenantNotionConfig(tenant);
+  if (!config.notionToken) return [];
+
+  const pages = await queryDatabaseAllWithToken(config.notionToken, dbId, {}).catch(() => null);
+  if (!pages) return [];
+
+  const byMonth = new Map<string, TimeZoneSalesMonth>();
+  for (const page of pages) {
+    const month = getPropertyText(page.properties, ["対象月"]);
+    if (!month) continue;
+    const targetRaw = getPropertyText(page.properties, ["対象"]);
+    const target: "売上" | "客数" = targetRaw === "客数" ? "客数" : "売上";
+    const source = getPropertyText(page.properties, ["ソース"]) || "-";
+    const total = getPropertyNumber(page.properties, ["合計"]) ?? 0;
+    const peakText = getPropertyText(page.properties, ["ピーク時間帯"]) || "-";
+    let hourlyTotals: TimeZoneSalesHourly[] = [];
+    try {
+      hourlyTotals = JSON.parse(getPropertyText(page.properties, ["時間帯別内訳JSON"]) || "[]");
+    } catch {
+      hourlyTotals = [];
+    }
+
+    const bucket = byMonth.get(month) || { month, entries: [] };
+    bucket.entries.push({ target, source, total, peakText, hourlyTotals });
+    byMonth.set(month, bucket);
+  }
+
+  return Array.from(byMonth.values()).sort((a, b) => b.month.localeCompare(a.month));
+}

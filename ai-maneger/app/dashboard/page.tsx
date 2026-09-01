@@ -15,12 +15,14 @@ import { WeeklyJudgmentPanel } from "@/components/ootsuki/weekly-judgment-panel"
 import { NotionInstructionsPanel } from "@/components/ootsuki/notion-instructions-panel";
 import { UsenTimeZoneSalesPanel } from "@/components/ootsuki/usen-time-zone-sales-panel";
 import { PosTimeZoneSalesPanel } from "@/components/ootsuki/pos-time-zone-sales-panel";
+import { TimeZoneSalesHistoryPanel } from "@/components/ootsuki/time-zone-sales-history-panel";
 import { MarketingCommandCenter } from "@/components/ootsuki/marketing-command-center";
 import { recommendedAgents } from "@/lib/agents";
 import { getCurrentTenantAccessResult } from "@/lib/api/tenant-access";
 import { formatDateTime } from "@/lib/format";
 import { getIntegrationStatuses } from "@/lib/marketing/integration-status";
 import { getMarketingMetricsSnapshot } from "@/lib/marketing/metrics";
+import { getTimeZoneSalesMonthsData } from "@/lib/marketing/time-zone-sales-insights";
 import {
   buildFallbackMarketingStore,
   getOrCreateDefaultMarketingStore,
@@ -76,6 +78,7 @@ const dashboardAnchorItems = [
   { href: "#sales-overview", label: "売上早見表" },
   { href: "#usen-time-zone", label: "USEN時間帯別売上" },
   { href: "#pos-time-zone", label: "POS時間帯別売上" },
+  { href: "#time-zone-sales-history", label: "時間帯別売上（月別）" },
   { href: "#profit-alerts", label: "利益アラート" },
   { href: "#ai-assistant", label: "AI運用アシスタント" },
   { href: "#agent-hub", label: "エージェント呼び出し" },
@@ -299,6 +302,9 @@ export default async function DashboardPage({
   const marketingGoals =
     marketingGoalsResult.status === "fulfilled" ? marketingGoalsResult.value : [];
   const marketingIntegrationStatuses = await getIntegrationStatuses(marketingStore);
+  const timeZoneSalesMonthsResult = await Promise.allSettled([getTimeZoneSalesMonthsData(access.tenant)]);
+  const timeZoneSalesMonths =
+    timeZoneSalesMonthsResult[0].status === "fulfilled" ? timeZoneSalesMonthsResult[0].value : [];
   const marketingStoreReady = isTenantConfigStoreEnabled();
   const activeTenantConfigResult = await Promise.allSettled([getActiveTenantNotionConfig()]);
   const activeTenantConfig =
@@ -553,6 +559,15 @@ export default async function DashboardPage({
           description="POSレジの時間帯別CSV（売上・客数）をアップロードし、時間帯別の合計と客単価（売上÷客数）を確認できます。"
         >
           <PosTimeZoneSalesPanel />
+        </SectionCard>
+      </section>
+
+      <section id="time-zone-sales-history" className="mt-6 scroll-mt-6">
+        <SectionCard
+          title="時間帯別売上（月別）"
+          description="上のUSEN/POSパネルで保存した時間帯別データを、月ごとに選んで確認できます。"
+        >
+          <TimeZoneSalesHistoryPanel months={timeZoneSalesMonths} />
         </SectionCard>
       </section>
 

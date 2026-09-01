@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { logTenantAudit } from "@/lib/api/audit";
 import { requireTenantAccess } from "@/lib/api/tenant-access";
-import { createPageInDatabase } from "@/lib/notion/client";
+import { createPageInDatabase, queryDatabaseAll, updatePage } from "@/lib/notion/client";
 
 export const runtime = "nodejs";
 
@@ -16,6 +16,7 @@ interface SaveTimeZoneSalesBody {
   total?: number;
   hourlyTotals?: HourlyEntry[];
   peakHours?: HourlyEntry[];
+  month?: string;
 }
 
 function timeZoneSalesDbId(): string {
@@ -49,28 +50,53 @@ export async function POST(request: Request) {
   }
 
   const today = new Date().toISOString().slice(0, 10);
-  const label = `${today} ${source} ${target}`;
+  const month = /^\d{4}-\d{2}$/.test(body.month || "") ? (body.month as string) : today.slice(0, 7);
+  const label = `${month} ${source} ${target}`;
   const peakText = peakHours.length > 0 ? peakHours.map((p) => `${p.hour}(${Math.round(p.value)})`).join(", ") : "-";
 
+  const properties = {
+    "営業日ラベル": { title: [{ text: { content: label } }] },
+    "営業日": { date: { start: today } },
+    "対象": { select: { name: target } },
+    "ソース": { select: { name: source } },
+    "対象月": { rich_text: [{ text: { content: month } }] },
+    "合計": { number: total },
+    "ピーク時間帯": { rich_text: [{ text: { content: peakText } }] },
+    "時間帯別内訳JSON": { rich_text: [{ text: { content: JSON.stringify(hourlyTotals) } }] },
+  };
+
   try {
-    const page = await createPageInDatabase(dbId, {
-      "営業日ラベル": { title: [{ text: { content: label } }] },
-      "営業日": { date: { start: today } },
-      "対象": { select: { name: target } },
-      "ソース": { select: { name: source } },
-      "合計": { number: total },
-      "ピーク時間帯": { rich_text: [{ text: { content: peakText } }] },
-      "時間帯別内訳JSON": { rich_text: [{ text: { content: JSON.stringify(hourlyTotals) } }] },
-    });
+    // 同じ対象月・対象・ソースの組み合わせが既にあれば上書き更新し、再アップロードのたびに重複が積み上がらないようにする。
+    const existingPages = await queryDatabaseAll(dbId, {
+      filter: {
+        and: [
+          { property: "対象月", rich_text: { equals: month } },
+          { property: "対象", select: { equals: target } },
+          { property: "ソース", select: { equals: source } },
+        ],
+      },
+    }).catch(() => []);
+
+    let pageUrl = "";
+    let pageId = "";
+    if (existingPages[0]) {
+      const updated = await updatePage(existingPages[0].id, { properties });
+      pageUrl = updated.url || "";
+      pageId = existingPages[0].id;
+    } else {
+      const created = await createPageInDatabase(dbId, properties);
+      pageUrl = created.url || "";
+      pageId = created.id;
+    }
 
     await logTenantAudit(request, access, {
       action: "time_zone_sales.save",
       resourceType: "time-zone-sales",
-      resourceId: page.id,
-      metadata: { target, source, total },
+      resourceId: pageId,
+      metadata: { target, source, total, month },
     });
 
-    return NextResponse.json({ ok: true, pageUrl: page.url || "" });
+    return NextResponse.json({ ok: true, pageUrl });
   } catch (error) {
     return NextResponse.json(
       { ok: false, message: error instanceof Error ? error.message : "保存に失敗しました。" },

@@ -42,6 +42,18 @@ function getWeekday(dateText?: string) {
   return WEEKDAY_LABELS[date.getUTCDay()];
 }
 
+/** 日別行の営業日から最も件数の多い年月（YYYY-MM）を対象月として採用する。 */
+function detectMonthFromRows(rows: UsenTimeZoneSalesRow[]): string {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    if (row.rowType !== "daily" || !row.businessDate) continue;
+    const month = row.businessDate.slice(0, 7);
+    counts.set(month, (counts.get(month) || 0) + 1);
+  }
+  const [topMonth] = [...counts.entries()].sort((left, right) => right[1] - left[1]);
+  return topMonth?.[0] || new Date().toISOString().slice(0, 7);
+}
+
 function getPeakFromHourly(hourlySales: Record<string, number>) {
   const [peak] = Object.entries(hourlySales).sort((left, right) => right[1] - left[1]);
   return {
@@ -202,6 +214,7 @@ export function UsenTimeZoneSalesPanel() {
     setSaveSummaryStatus("AI Managerに保存しています...");
     try {
       const target = /金額|売上/.test(summary.target) ? "売上" : "客数";
+      const month = detectMonthFromRows(summary.rows);
       const response = await fetch("/api/time-zone-sales/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -211,6 +224,7 @@ export function UsenTimeZoneSalesPanel() {
           total: summary.total,
           hourlyTotals: summary.hourlyTotals,
           peakHours: summary.peakHours,
+          month,
         }),
       });
       const data = (await response.json()) as { ok: boolean; message?: string };
