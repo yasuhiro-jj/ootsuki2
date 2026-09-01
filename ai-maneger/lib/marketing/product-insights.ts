@@ -6,6 +6,7 @@ const PRODUCT_NAME_ALIASES = ["商品名"];
 const AVG_PRICE_ALIASES = ["平均単価"];
 const EST_COST_ALIASES = ["想定原価"];
 const SALES_QTY_ALIASES = ["売上数量"];
+const MONTH_ALIASES = ["対象月"];
 
 // ドリンク・割り材・集計用のダミー行など、フードのおすすめとしては不適切なものを除外する簡易キーワード。
 // カテゴリ列が未入力のNotion DBのため、商品名からの簡易判定で代用する。
@@ -33,21 +34,23 @@ export type ProductProfitabilityItem = {
   marginRate: number;
 };
 
+type RawProductRow = ProductProfitabilityItem & { month: string };
+
 function abcAnalysisDbId(tenant: TenantKey): string {
   if (tenant === "demo") return (process.env.NOTION_DEMO_ABC_ANALYSIS_DB_ID || "").trim();
   return (process.env.NOTION_OOTSUKI_ABC_ANALYSIS_DB_ID || "").trim();
 }
 
 const CACHE_TTL_MS = 30 * 60 * 1000;
-const cache = new Map<string, { expiresAt: number; items: ProductProfitabilityItem[] }>();
+const rawCache = new Map<string, { expiresAt: number; rows: RawProductRow[] }>();
 
-/** ABC分析DB（商品別売上・想定原価・平均単価）から、商品ごとの粗利率を計算して返す。 */
-export async function getProductProfitability(tenant: TenantKey): Promise<ProductProfitabilityItem[]> {
+/** ABC分析DBの全行を対象月付きで取得する（内部用、月ごとのフィルタ前）。 */
+async function getAllProductRows(tenant: TenantKey): Promise<RawProductRow[]> {
   const dbId = abcAnalysisDbId(tenant);
   if (!dbId) return [];
 
-  const cached = cache.get(tenant);
-  if (cached && cached.expiresAt > Date.now()) return cached.items;
+  const cached = rawCache.get(tenant);
+  if (cached && cached.expiresAt > Date.now()) return cached.rows;
 
   const config = await getTenantNotionConfig(tenant);
   if (!config.notionToken) return [];
@@ -55,31 +58,55 @@ export async function getProductProfitability(tenant: TenantKey): Promise<Produc
   const pages = await queryDatabaseAllWithToken(config.notionToken, dbId, {}).catch(() => null);
   if (!pages) return [];
 
-  const byName = new Map<string, ProductProfitabilityItem>();
+  const rows: RawProductRow[] = [];
   for (const page of pages) {
     const name = getPropertyText(page.properties, PRODUCT_NAME_ALIASES);
     const avgPrice = getPropertyNumber(page.properties, AVG_PRICE_ALIASES);
     const estCost = getPropertyNumber(page.properties, EST_COST_ALIASES);
     const salesQty = getPropertyNumber(page.properties, SALES_QTY_ALIASES) ?? 0;
+    const month = getPropertyText(page.properties, MONTH_ALIASES) || "不明";
     // 想定原価が0円の行はレジ集計上のダミー行（税区分・LINEクーポン等）である可能性が高いため除外する。
     if (!name || !avgPrice || avgPrice <= 0 || !estCost || estCost <= 0) continue;
 
     const marginRate = Math.round((1 - estCost / avgPrice) * 1000) / 10;
-    const existing = byName.get(name);
-    if (existing) {
-      existing.salesQty += salesQty;
-      continue;
-    }
-    byName.set(name, { name, avgPrice, estCost, salesQty, marginRate });
+    rows.push({ name, avgPrice, estCost, salesQty, marginRate, month });
   }
 
-  const items = Array.from(byName.values());
-  cache.set(tenant, { expiresAt: Date.now() + CACHE_TTL_MS, items });
-  return items;
+  rawCache.set(tenant, { expiresAt: Date.now() + CACHE_TTL_MS, rows });
+  return rows;
+}
+
+/** ABC分析DBに保存されている対象月の一覧（新しい順）を返す。 */
+export async function getAvailableProductMonths(tenant: TenantKey): Promise<string[]> {
+  const rows = await getAllProductRows(tenant);
+  return Array.from(new Set(rows.map((row) => row.month))).sort((a, b) => b.localeCompare(a));
 }
 
 /**
- * AI施策生成プロンプトに渡す「粗利率が高く、かつ一定数売れている商品」の要約。
+ * ABC分析DB（商品別売上・想定原価・平均単価）から、商品ごとの粗利率を計算して返す。
+ * month を省略すると、保存されている中で最新の対象月のデータを使う。
+ */
+export async function getProductProfitability(tenant: TenantKey, month?: string): Promise<ProductProfitabilityItem[]> {
+  const rows = await getAllProductRows(tenant);
+  if (rows.length === 0) return [];
+
+  const targetMonth = month ?? (await getAvailableProductMonths(tenant))[0];
+  const byName = new Map<string, ProductProfitabilityItem>();
+  for (const row of rows) {
+    if (row.month !== targetMonth) continue;
+    const existing = byName.get(row.name);
+    if (existing) {
+      existing.salesQty += row.salesQty;
+      continue;
+    }
+    byName.set(row.name, { name: row.name, avgPrice: row.avgPrice, estCost: row.estCost, salesQty: row.salesQty, marginRate: row.marginRate });
+  }
+
+  return Array.from(byName.values());
+}
+
+/**
+ * AI施策生成プロンプトに渡す「粗利率が高く、かつ一定数売れている商品」の要約（最新月のみ）。
  * ドリンク・割り材は除外し、フードメニューのみを対象にする。
  */
 export async function getProductRecommendationSummaryForPrompt(tenant: TenantKey): Promise<string> {
@@ -106,7 +133,7 @@ export async function getProductRecommendationSummaryForPrompt(tenant: TenantKey
 const DEAD_STOCK_SALES_QTY_THRESHOLD = 2;
 
 /**
- * AI施策生成プロンプトに渡す「原価がかかっているのに、ほとんど売れていない商品」の要約。
+ * AI施策生成プロンプトに渡す「原価がかかっているのに、ほとんど売れていない商品」の要約（最新月のみ）。
  * ABC-Z分析の死に筋（Zランク）に相当し、メニューカット・原価見直し・値付け変更の判断材料になる。
  */
 export async function getDeadStockSummaryForPrompt(tenant: TenantKey): Promise<string> {
@@ -129,4 +156,35 @@ export async function getDeadStockSummaryForPrompt(tenant: TenantKey): Promise<s
     "販売数量が極端に少ない見直し候補フードメニュー（死に筋。メニューカット・原価見直し・値付け変更の材料）:",
     ...lines,
   ].join("\n");
+}
+
+export type ProductInsightsMonth = {
+  month: string;
+  topMargin: ProductProfitabilityItem[];
+  deadStock: ProductProfitabilityItem[];
+};
+
+/** ダッシュボード表示用: 対象月ごとに粗利率TOP10・見直し候補TOP10をまとめて返す。 */
+export async function getProductInsightsMonths(tenant: TenantKey): Promise<ProductInsightsMonth[]> {
+  const months = await getAvailableProductMonths(tenant);
+  const results: ProductInsightsMonth[] = [];
+
+  for (const month of months) {
+    const items = await getProductProfitability(tenant, month);
+    const foodItems = items.filter((item) => isLikelyFood(item.name));
+
+    const topMargin = [...foodItems]
+      .filter((item) => item.salesQty >= 5)
+      .sort((a, b) => b.marginRate - a.marginRate)
+      .slice(0, 10);
+
+    const deadStock = [...foodItems]
+      .filter((item) => item.salesQty <= DEAD_STOCK_SALES_QTY_THRESHOLD)
+      .sort((a, b) => a.salesQty - b.salesQty)
+      .slice(0, 10);
+
+    results.push({ month, topMargin, deadStock });
+  }
+
+  return results;
 }

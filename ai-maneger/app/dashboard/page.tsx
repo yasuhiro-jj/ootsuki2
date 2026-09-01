@@ -16,6 +16,7 @@ import { NotionInstructionsPanel } from "@/components/ootsuki/notion-instruction
 import { UsenTimeZoneSalesPanel } from "@/components/ootsuki/usen-time-zone-sales-panel";
 import { PosTimeZoneSalesPanel } from "@/components/ootsuki/pos-time-zone-sales-panel";
 import { TimeZoneSalesHistoryPanel } from "@/components/ootsuki/time-zone-sales-history-panel";
+import { ProductInsightsHistoryPanel } from "@/components/ootsuki/product-insights-history-panel";
 import { MarketingCommandCenter } from "@/components/ootsuki/marketing-command-center";
 import { recommendedAgents } from "@/lib/agents";
 import { getCurrentTenantAccessResult } from "@/lib/api/tenant-access";
@@ -23,6 +24,7 @@ import { formatDateTime } from "@/lib/format";
 import { getIntegrationStatuses } from "@/lib/marketing/integration-status";
 import { getMarketingMetricsSnapshot } from "@/lib/marketing/metrics";
 import { getTimeZoneSalesMonthsData } from "@/lib/marketing/time-zone-sales-insights";
+import { getProductInsightsMonths } from "@/lib/marketing/product-insights";
 import {
   buildFallbackMarketingStore,
   getOrCreateDefaultMarketingStore,
@@ -79,6 +81,7 @@ const dashboardAnchorItems = [
   { href: "#usen-time-zone", label: "USEN時間帯別売上" },
   { href: "#pos-time-zone", label: "POS時間帯別売上" },
   { href: "#time-zone-sales-history", label: "時間帯別売上（月別）" },
+  { href: "#product-insights-history", label: "商品別粗利率・見直し候補（月別）" },
   { href: "#profit-alerts", label: "利益アラート" },
   { href: "#ai-assistant", label: "AI運用アシスタント" },
   { href: "#agent-hub", label: "エージェント呼び出し" },
@@ -305,6 +308,9 @@ export default async function DashboardPage({
   const timeZoneSalesMonthsResult = await Promise.allSettled([getTimeZoneSalesMonthsData(access.tenant)]);
   const timeZoneSalesMonths =
     timeZoneSalesMonthsResult[0].status === "fulfilled" ? timeZoneSalesMonthsResult[0].value : [];
+  const productInsightsMonthsResult = await Promise.allSettled([getProductInsightsMonths(access.tenant)]);
+  const productInsightsMonths =
+    productInsightsMonthsResult[0].status === "fulfilled" ? productInsightsMonthsResult[0].value : [];
   const marketingStoreReady = isTenantConfigStoreEnabled();
   const activeTenantConfigResult = await Promise.allSettled([getActiveTenantNotionConfig()]);
   const activeTenantConfig =
@@ -568,6 +574,15 @@ export default async function DashboardPage({
           description="上のUSEN/POSパネルで保存した時間帯別データを、月ごとに選んで確認できます。"
         >
           <TimeZoneSalesHistoryPanel months={timeZoneSalesMonths} />
+        </SectionCard>
+      </section>
+
+      <section id="product-insights-history" className="mt-6 scroll-mt-6">
+        <SectionCard
+          title="商品別粗利率・見直し候補（月別）"
+          description="ABC分析DBの商品データから、月ごとに粗利率が高いおすすめ候補と、見直しが必要な死に筋商品を確認できます。"
+        >
+          <ProductInsightsHistoryPanel months={productInsightsMonths} />
         </SectionCard>
       </section>
 
