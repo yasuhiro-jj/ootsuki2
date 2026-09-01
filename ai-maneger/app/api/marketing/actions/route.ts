@@ -4,6 +4,7 @@ import { requireTenantAccess } from "@/lib/api/tenant-access";
 import { generateMarketingActions } from "@/lib/marketing/engine";
 import { getChatbotNodesSummaryForPrompt } from "@/lib/marketing/chatbot-integration";
 import { getProductRecommendationSummaryForPrompt } from "@/lib/marketing/product-insights";
+import { getTimeZoneSalesSummaryForPrompt } from "@/lib/marketing/time-zone-sales-insights";
 import { getMarketingMetricsSnapshot } from "@/lib/marketing/metrics";
 import {
   getOrCreateDefaultMarketingStore,
@@ -47,17 +48,27 @@ export async function POST(request: Request) {
 
   try {
     const store = await getOrCreateDefaultMarketingStore(access.tenant);
-    const [metricsSnapshot, goals, pastActions, executions, chatbotNodesSummary, productRecommendationSummary] =
-      await Promise.all([
-        getMarketingMetricsSnapshot(store),
-        listMarketingGoals(access.tenant, store.id),
-        listMarketingActions(access.tenant, 20, store.id),
-        listMarketingExecutions(access.tenant, store.id),
-        getChatbotNodesSummaryForPrompt(access.tenant).catch(() => "（会話ノードDBの取得に失敗しました）"),
-        getProductRecommendationSummaryForPrompt(access.tenant).catch(
-          () => "（商品別粗利率データの取得に失敗しました）",
-        ),
-      ]);
+    const [
+      metricsSnapshot,
+      goals,
+      pastActions,
+      executions,
+      chatbotNodesSummary,
+      productRecommendationSummary,
+      timeZoneSalesSummary,
+    ] = await Promise.all([
+      getMarketingMetricsSnapshot(store),
+      listMarketingGoals(access.tenant, store.id),
+      listMarketingActions(access.tenant, 20, store.id),
+      listMarketingExecutions(access.tenant, store.id),
+      getChatbotNodesSummaryForPrompt(access.tenant).catch(() => "（会話ノードDBの取得に失敗しました）"),
+      getProductRecommendationSummaryForPrompt(access.tenant).catch(
+        () => "（商品別粗利率データの取得に失敗しました）",
+      ),
+      getTimeZoneSalesSummaryForPrompt(access.tenant).catch(
+        () => "（時間帯別売上データの取得に失敗しました）",
+      ),
+    ]);
     const integrationStatuses = await getIntegrationStatuses(store);
     await upsertIntegrationStatuses(access.tenant, store.id, integrationStatuses);
 
@@ -69,6 +80,7 @@ export async function POST(request: Request) {
       executions,
       chatbotNodesSummary,
       productRecommendationSummary,
+      timeZoneSalesSummary,
     });
     const actions = await saveMarketingActions({
       tenantKey: access.tenant,

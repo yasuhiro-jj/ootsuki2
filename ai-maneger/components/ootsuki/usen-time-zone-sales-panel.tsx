@@ -168,6 +168,8 @@ export function UsenTimeZoneSalesPanel() {
   const [advice, setAdvice] = useState("");
   const [adviceStatus, setAdviceStatus] = useState("");
   const [loadingAdvice, setLoadingAdvice] = useState(false);
+  const [savingSummary, setSavingSummary] = useState(false);
+  const [saveSummaryStatus, setSaveSummaryStatus] = useState("");
 
   const dailyAnalysisRows = useMemo(
     () => (summary ? buildDailyAnalysis(summary.rows) : []),
@@ -192,6 +194,35 @@ export function UsenTimeZoneSalesPanel() {
     const parsedSummary = summarizeUsenTimeZoneSales(rows);
     setSummary(parsedSummary);
     setStatus(`${rows.length}行を読み込みました。${buildInsight(parsedSummary)}`);
+  }
+
+  async function saveSummaryToAiManager() {
+    if (!summary) return;
+    setSavingSummary(true);
+    setSaveSummaryStatus("AI Managerに保存しています...");
+    try {
+      const target = /金額|売上/.test(summary.target) ? "売上" : "客数";
+      const response = await fetch("/api/time-zone-sales/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target,
+          source: "USEN",
+          total: summary.total,
+          hourlyTotals: summary.hourlyTotals,
+          peakHours: summary.peakHours,
+        }),
+      });
+      const data = (await response.json()) as { ok: boolean; message?: string };
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "保存に失敗しました。");
+      }
+      setSaveSummaryStatus("AI Managerに保存しました。今後のマーケ施策生成の参考データになります。");
+    } catch (error) {
+      setSaveSummaryStatus(error instanceof Error ? error.message : "保存に失敗しました。");
+    } finally {
+      setSavingSummary(false);
+    }
   }
 
   async function requestAdvice() {
@@ -269,6 +300,21 @@ export function UsenTimeZoneSalesPanel() {
               </p>
             </div>
           </div>
+
+          <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3">
+            <button
+              type="button"
+              onClick={saveSummaryToAiManager}
+              disabled={savingSummary}
+              className="rounded-xl border border-violet-300 bg-white px-4 py-2 text-sm font-medium text-violet-700 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {savingSummary ? "保存中..." : "この集計をAI Managerの参照データとして保存"}
+            </button>
+            <p className="text-xs text-violet-800">
+              保存すると、マーケ施策司令塔のAI施策生成でピーク時間帯を根拠に使えるようになります。
+            </p>
+          </div>
+          {saveSummaryStatus ? <p className="text-xs text-stone-600">{saveSummaryStatus}</p> : null}
 
           <div className="overflow-auto rounded-2xl border border-stone-900/10 bg-white">
             <table className="min-w-full text-sm">

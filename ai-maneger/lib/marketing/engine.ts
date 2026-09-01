@@ -111,6 +111,7 @@ export function buildMarketingActionPrompt(params: {
   executions: MarketingActionExecution[];
   chatbotNodesSummary?: string;
   productRecommendationSummary?: string;
+  timeZoneSalesSummary?: string;
 }) {
   return [
     "AI Managerを店舗マーケティング司令塔として使います。",
@@ -135,6 +136,10 @@ export function buildMarketingActionPrompt(params: {
     "[商品別 粗利率・売上ランキング（Notion ABC分析DBより）]",
     params.productRecommendationSummary || "（未取得）",
     "客単価向上や利益改善が目的のchatbot施策では、このランキング上位の商品を優先的に検討してください。",
+    "",
+    "[時間帯別売上・客数（USEN/POS CSVより）]",
+    params.timeZoneSalesSummary || "（未取得）",
+    "客数不足や回転率が目的の施策では、ピーク時間帯とその前後の傾向を根拠に含めてください。",
     "",
     "[将来追加予定の入力]",
     "- 過去投稿: interface準備中",
@@ -201,6 +206,7 @@ export async function generateMarketingActions(params: {
   executions: MarketingActionExecution[];
   chatbotNodesSummary?: string;
   productRecommendationSummary?: string;
+  timeZoneSalesSummary?: string;
 }) {
   const reply = await generateReply({
     userMessage: buildMarketingActionPrompt(params),
