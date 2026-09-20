@@ -14,30 +14,36 @@ function read(value?: string) {
 
 /**
  * Supabase の db.*.supabase.co が AAAA のみのとき、pg の getaddrinfo が ENOTFOUND になることがある。
- * resolve6 / resolve4 で取ったアドレスをホストに埋め込んで接続する。
+ * resolve6 / resolve4 で取ったアドレスを host に直接渡す（connectionString へ埋め戻すと、
+ * pg 側の再パースで IPv6 の角カッコ付きホストがそのまま getaddrinfo に渡り ENOTFOUND になるため、
+ * 文字列の埋め戻しはせず Pool の個別オプションとして渡す）。
  */
-export async function resolvePostgresConnectionString(raw: string): Promise<string> {
+export async function resolvePostgresPoolOptions(raw: string) {
   const unquoted = raw.replace(/^["']|["']$/g, "");
-  try {
-    const url = new URL(unquoted.replace(/^postgresql:/i, "http:"));
-    const hostname = url.hostname;
-    if (!hostname) return unquoted;
+  const url = new URL(unquoted.replace(/^postgresql:/i, "http:"));
+  // URL.hostname は IPv6 を "[::1]" の形で返すが、pg / net には角カッコ無しで渡す必要がある
+  const hostname = url.hostname.replace(/^\[|\]$/g, "");
 
-    const v6 = await dnsPromises.resolve6(hostname).catch(() => [] as string[]);
-    if (v6.length > 0) {
-      url.hostname = `[${v6[0]}]`;
-      return url.toString().replace(/^http:/i, "postgresql:");
-    }
-
+  // Vercel(Lambda) の egress は IPv4 が前提なので A レコードを優先し、AAAA のみの場合だけ IPv6 を使う
+  let host = hostname;
+  if (hostname) {
     const v4 = await dnsPromises.resolve4(hostname).catch(() => [] as string[]);
     if (v4.length > 0) {
-      url.hostname = v4[0];
-      return url.toString().replace(/^http:/i, "postgresql:");
+      host = v4[0];
+    } else {
+      const v6 = await dnsPromises.resolve6(hostname).catch(() => [] as string[]);
+      if (v6.length > 0) host = v6[0];
     }
-  } catch {
-    // fall through
   }
-  return unquoted;
+
+  return {
+    host,
+    port: url.port ? Number(url.port) : 5432,
+    user: decodeURIComponent(url.username),
+    password: decodeURIComponent(url.password),
+    database: url.pathname.replace(/^\//, "") || "postgres",
+    ssl: { rejectUnauthorized: false },
+  };
 }
 
 export async function getPool(): Promise<Pool> {
@@ -48,8 +54,8 @@ export async function getPool(): Promise<Pool> {
       if (!raw) {
         throw new Error("TENANT_CONFIG_DB_URL が未設定です");
       }
-      const connectionString = await resolvePostgresConnectionString(raw);
-      pool = new Pool({ connectionString });
+      const options = await resolvePostgresPoolOptions(raw);
+      pool = new Pool(options);
       return pool;
     })();
   }
