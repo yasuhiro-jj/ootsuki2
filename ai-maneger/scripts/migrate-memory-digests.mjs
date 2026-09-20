@@ -1,36 +1,10 @@
-import dns from "node:dns";
-import dnsPromises from "node:dns/promises";
 import pg from "pg";
 import nextEnv from "@next/env";
+import { resolvePostgresConnectionOptions } from "./postgres-connection-options.mjs";
 
-dns.setDefaultResultOrder("verbatim");
 nextEnv.loadEnvConfig(process.cwd());
 
 const { Client } = pg;
-
-async function resolvePostgresConnectionString(raw) {
-  const unquoted = raw.replace(/^["']|["']$/g, "");
-  try {
-    const url = new URL(unquoted.replace(/^postgresql:/i, "http:"));
-    const hostname = url.hostname;
-    if (!hostname) return unquoted;
-
-    const v6 = await dnsPromises.resolve6(hostname).catch(() => []);
-    if (v6.length > 0) {
-      url.hostname = `[${v6[0]}]`;
-      return url.toString().replace(/^https:/i, "postgresql:");
-    }
-
-    const v4 = await dnsPromises.resolve4(hostname).catch(() => []);
-    if (v4.length > 0) {
-      url.hostname = v4[0];
-      return url.toString().replace(/^https:/i, "postgresql:");
-    }
-  } catch {
-    // ignore
-  }
-  return unquoted;
-}
 
 const dbUrlRaw = process.env.TENANT_CONFIG_DB_URL?.trim();
 if (!dbUrlRaw) {
@@ -60,8 +34,7 @@ CREATE INDEX IF NOT EXISTS idx_tenant_memory_digests_embedding
   USING hnsw (embedding vector_cosine_ops);
 `;
 
-const connectionString = await resolvePostgresConnectionString(dbUrlRaw);
-const client = new Client({ connectionString });
+const client = new Client(await resolvePostgresConnectionOptions(dbUrlRaw));
 
 try {
   await client.connect();

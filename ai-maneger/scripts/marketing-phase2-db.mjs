@@ -1,12 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import dns from "node:dns";
-import dnsPromises from "node:dns/promises";
 import pg from "pg";
+import { resolvePostgresConnectionOptions, resolvePostgresHost } from "./postgres-connection-options.mjs";
 
 const { Pool } = pg;
-dns.setDefaultResultOrder("verbatim");
 const root = process.cwd();
 const envPath = path.join(root, ".env.local");
 const migrationPath = path.join(root, "db", "migrations", "20260830_marketing_command_center_phase2.sql");
@@ -33,67 +31,8 @@ function requireDbUrl() {
   return value.replace(/^["']|["']$/g, "");
 }
 
-async function resolvePostgresConnectionString(raw) {
-  const unquoted = raw.replace(/^["']|["']$/g, "");
-  try {
-    const url = new URL(unquoted.replace(/^postgresql:/i, "http:"));
-    const hostname = url.hostname;
-    if (!hostname) return unquoted;
-
-    const v6 = await dnsPromises.resolve6(hostname).catch(() => []);
-    if (v6.length > 0) {
-      url.hostname = `[${v6[0]}]`;
-      return url.toString().replace(/^http:/i, "postgresql:");
-    }
-
-    const v4 = await dnsPromises.resolve4(hostname).catch(() => []);
-    if (v4.length > 0) {
-      url.hostname = v4[0];
-      return url.toString().replace(/^http:/i, "postgresql:");
-    }
-  } catch {
-    return unquoted;
-  }
-  return unquoted;
-}
-
 async function buildPoolConfig(raw) {
-  const value = raw.replace(/^["']|["']$/g, "");
-  if (!value.startsWith("postgresql://") && !value.startsWith("postgres://")) {
-    return { connectionString: await resolvePostgresConnectionString(value) };
-  }
-
-  const withoutProtocol = value.replace(/^postgres(?:ql)?:\/\//i, "");
-  const atIndex = withoutProtocol.lastIndexOf("@");
-  if (atIndex < 0) return { connectionString: value };
-
-  const auth = withoutProtocol.slice(0, atIndex);
-  const hostAndPath = withoutProtocol.slice(atIndex + 1);
-  const colonIndex = auth.indexOf(":");
-  const user = colonIndex >= 0 ? auth.slice(0, colonIndex) : auth;
-  const password = colonIndex >= 0 ? auth.slice(colonIndex + 1) : "";
-  const slashIndex = hostAndPath.indexOf("/");
-  const hostPort = slashIndex >= 0 ? hostAndPath.slice(0, slashIndex) : hostAndPath;
-  const pathAndQuery = slashIndex >= 0 ? hostAndPath.slice(slashIndex + 1) : "postgres";
-  const [database, query = ""] = pathAndQuery.split("?");
-  const lastColon = hostPort.lastIndexOf(":");
-  const host = lastColon >= 0 ? hostPort.slice(0, lastColon) : hostPort;
-  const port = lastColon >= 0 ? Number(hostPort.slice(lastColon + 1)) : 5432;
-  const params = new URLSearchParams(query);
-
-  const v6 = await dnsPromises.resolve6(host.replace(/^\[|\]$/g, "")).catch(() => []);
-  const v4 = await dnsPromises.resolve4(host.replace(/^\[|\]$/g, "")).catch(() => []);
-  const resolvedHost = v6[0] || v4[0] || host.replace(/^\[|\]$/g, "");
-
-  return {
-    user,
-    password,
-    host: resolvedHost,
-    originalHost: host.replace(/^\[|\]$/g, ""),
-    port,
-    database: database || "postgres",
-    ssl: params.get("sslmode") ? { rejectUnauthorized: false } : undefined,
-  };
+  return resolvePostgresConnectionOptions(raw);
 }
 
 function maskConfig(config) {
@@ -115,16 +54,17 @@ function maskConfig(config) {
   };
 }
 
-function poolConfigForMode(baseConfig, mode) {
+async function poolConfigForMode(baseConfig, mode) {
   const projectRef = String(baseConfig.user || "").includes(".")
     ? String(baseConfig.user).split(".").slice(1).join(".")
     : String(baseConfig.originalHost || "").match(/^db\.([^.]+)\.supabase\.co$/)?.[1] || "";
   if (mode === "direct" && projectRef) {
+    const directHost = `db.${projectRef}.supabase.co`;
     return {
       ...baseConfig,
       user: "postgres",
-      host: `db.${projectRef}.supabase.co`,
-      originalHost: `db.${projectRef}.supabase.co`,
+      host: await resolvePostgresHost(directHost),
+      originalHost: directHost,
       port: 5432,
     };
   }
@@ -155,7 +95,7 @@ async function testConnection(config) {
 async function diagnose() {
   const base = await buildPoolConfig(requireDbUrl());
   for (const mode of ["transaction", "session", "direct"]) {
-    const config = poolConfigForMode(base, mode);
+    const config = await poolConfigForMode(base, mode);
     const masked = maskConfig(config);
     console.log(`\n[${mode}]`);
     console.log(JSON.stringify(masked, null, 2));
