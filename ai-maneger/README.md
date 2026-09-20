@@ -1057,6 +1057,14 @@ Vercel 本番で `ootsuki` と `demo` のダッシュボード分離を確認済
 
 **補足:** `ai-maneger.vercel.app` など **別プロジェクト／別環境変数の URL** は、認証情報や Notion 設定が異なるため、一方のドメインでは通っても別ドメインでは失敗することがある。
 
+### TENANT_CONFIG_DB_URL の設定と反映
+
+- Supabase の **Connect → Session pooler** から URI をコピーします。Vercel では IPv4 対応の Session pooler を使用し、ホスト・ポート 5432・ユーザー名 postgres.<project-ref> は表示された値をそのまま使います。
+- Vercel の **Production** 環境に TENANT_CONFIG_DB_URL を **Secret** として設定します。Preview の値は Production には適用されません。
+- 値を追加・変更した後は、最新の **Production** デプロイを再デプロイします。既存デプロイには環境変数の変更が反映されません。
+- ランタイムログに DB ユーザー名が postgres のまま出る場合、pooler の URI が Production デプロイで使われていないか、URI のユーザー名が誤っています。接続文字列やパスワードはログ、リポジトリ、チャットに出さないでください。
+- アプリは IPv6 専用の Supabase Direct 接続、pooler の project-ref 欠落、既知のプレースホルダー設定を検出した場合、設定方法を示すエラーを出します。
+
 ### Vercel 本番で必要だった項目
 
 - 個別認証: `APP_AUTH_SESSION_SECRET`, `APP_AUTH_USERS_JSON`

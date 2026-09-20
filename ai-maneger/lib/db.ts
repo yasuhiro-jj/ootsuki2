@@ -20,11 +20,29 @@ function read(value?: string) {
  */
 export async function resolvePostgresPoolOptions(raw: string) {
   const unquoted = raw.replace(/^["']|["']$/g, "");
-  const url = new URL(unquoted.replace(/^postgresql:/i, "http:"));
+  if (!/^postgres(?:ql)?:\/\//i.test(unquoted)) {
+    throw new Error("TENANT_CONFIG_DB_URL は postgresql:// 形式で設定してください。");
+  }
+
+  const url = new URL(unquoted.replace(/^postgresql:/i, "http:").replace(/^postgres:/i, "http:"));
   // URL.hostname は IPv6 を "[::1]" の形で返すが、pg / net には角カッコ無しで渡す必要がある
   const hostname = url.hostname.replace(/^\[|\]$/g, "");
+  const username = decodeURIComponent(url.username);
+  const password = decodeURIComponent(url.password);
+  const isSupabaseDirectHost = /^db\.[^.]+\.supabase\.(?:co|com)$/i.test(hostname);
+  const isSupabasePoolerHost = /\.pooler\.supabase\.com$/i.test(hostname);
 
-  // Vercel(Lambda) の egress は IPv4 が前提なので A レコードを優先し、AAAA のみの場合だけ IPv6 を使う
+  if (hostname === "base" || /^db\.(?:abcdefghijklmnop|your-project-ref)\.supabase\.co$/i.test(hostname)) {
+    throw new Error("TENANT_CONFIG_DB_URL のホストがプレースホルダーです。Supabase Connect の実際の接続文字列を設定してください。");
+  }
+  if (/YOUR[-_ ]?PASSWORD|\[PASSWORD\]/i.test(password)) {
+    throw new Error("TENANT_CONFIG_DB_URL にパスワードのプレースホルダーが残っています。");
+  }
+  if (isSupabasePoolerHost && !username.includes(".")) {
+    throw new Error("Supabase Session pooler のユーザー名には project-ref が必要です。Connect に表示された postgres.<project-ref> を使ってください。");
+  }
+
+  // Vercel 関数からは IPv4 を優先する。Direct 接続が IPv6 専用なら、曖昧な socket エラーを避けて pooler を案内する。
   let host = hostname;
   if (hostname) {
     const v4 = await dnsPromises.resolve4(hostname).catch(() => [] as string[]);
@@ -32,6 +50,9 @@ export async function resolvePostgresPoolOptions(raw: string) {
       host = v4[0];
     } else {
       const v6 = await dnsPromises.resolve6(hostname).catch(() => [] as string[]);
+      if (v6.length > 0 && process.env.VERCEL === "1" && isSupabaseDirectHost) {
+        throw new Error("TENANT_CONFIG_DB_URL の Supabase Direct 接続は IPv6 専用です。Vercel では Connect の Session pooler (port 5432) を使用してください。");
+      }
       if (v6.length > 0) host = v6[0];
     }
   }
@@ -39,8 +60,8 @@ export async function resolvePostgresPoolOptions(raw: string) {
   return {
     host,
     port: url.port ? Number(url.port) : 5432,
-    user: decodeURIComponent(url.username),
-    password: decodeURIComponent(url.password),
+    user: username,
+    password,
     database: url.pathname.replace(/^\//, "") || "postgres",
     ssl: { rejectUnauthorized: false },
   };
