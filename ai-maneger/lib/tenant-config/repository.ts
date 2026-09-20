@@ -26,30 +26,34 @@ export function isTenantConfigStoreEnabled() {
 
 /**
  * Supabase の db.*.supabase.co が AAAA のみのとき、pg の getaddrinfo が ENOTFOUND になることがある。
- * resolve6 / resolve4 で取ったアドレスをホストに埋め込んで接続する。
+ * resolve6 / resolve4 で取ったアドレスを host に直接渡す（connectionString へ埋め戻すと、
+ * pg 側の再パースで IPv6 の角カッコ付きホストがそのまま getaddrinfo に渡り ENOTFOUND になるため、
+ * 文字列の埋め戻しはせず Pool の個別オプションとして渡す）。
  */
-async function resolvePostgresConnectionString(raw: string): Promise<string> {
+async function resolvePostgresPoolOptions(raw: string) {
   const unquoted = raw.replace(/^["']|["']$/g, "");
-  try {
-    const url = new URL(unquoted.replace(/^postgresql:/i, "http:"));
-    const hostname = url.hostname;
-    if (!hostname) return unquoted;
+  const url = new URL(unquoted.replace(/^postgresql:/i, "http:"));
+  const hostname = url.hostname;
 
+  let host = hostname;
+  if (hostname) {
     const v6 = await dnsPromises.resolve6(hostname).catch(() => [] as string[]);
     if (v6.length > 0) {
-      url.hostname = `[${v6[0]}]`;
-      return url.toString().replace(/^http:/i, "postgresql:");
+      host = v6[0];
+    } else {
+      const v4 = await dnsPromises.resolve4(hostname).catch(() => [] as string[]);
+      if (v4.length > 0) host = v4[0];
     }
-
-    const v4 = await dnsPromises.resolve4(hostname).catch(() => [] as string[]);
-    if (v4.length > 0) {
-      url.hostname = v4[0];
-      return url.toString().replace(/^http:/i, "postgresql:");
-    }
-  } catch {
-    // fall through
   }
-  return unquoted;
+
+  return {
+    host,
+    port: url.port ? Number(url.port) : 5432,
+    user: decodeURIComponent(url.username),
+    password: decodeURIComponent(url.password),
+    database: url.pathname.replace(/^\//, "") || "postgres",
+    ssl: { rejectUnauthorized: false },
+  };
 }
 
 async function getPool(): Promise<Pool> {
@@ -60,8 +64,8 @@ async function getPool(): Promise<Pool> {
       if (!raw) {
         throw new Error("TENANT_CONFIG_DB_URL が未設定です");
       }
-      const connectionString = await resolvePostgresConnectionString(raw);
-      pool = new Pool({ connectionString });
+      const options = await resolvePostgresPoolOptions(raw);
+      pool = new Pool(options);
       return pool;
     })();
   }
