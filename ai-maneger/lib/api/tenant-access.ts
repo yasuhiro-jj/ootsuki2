@@ -224,7 +224,8 @@ export async function getCurrentTenantAccessResult(
       headerStore.get(AUTH_USER_HEADER)?.trim() || verifyAuthSessionToken(cookieStore.get("auth_session")?.value)?.sub || null;
 
     return await tenantAccessEvaluator(tenant ?? null, principalId, action);
-  } catch {
+  } catch (error) {
+    console.error("[tenant-access] getCurrentTenantAccessResult failed", error);
     return {
       ok: false,
       status: 500,
@@ -279,7 +280,8 @@ export async function getCurrentAccessContext(request?: Request): Promise<Curren
       principalId,
       role: membership?.role || null,
     };
-  } catch {
+  } catch (error) {
+    console.error("[tenant-access] getCurrentAccessContext failed", error);
     return { tenant: null, principalId: null, role: null };
   }
 }
