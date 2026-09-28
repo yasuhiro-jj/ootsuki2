@@ -6,6 +6,8 @@ import { applyOperations, scrubUnconnectedSamples } from "@/lib/os/live-mode";
 import { applyNotionReportOverlays } from "@/lib/os/notion-report";
 import { loadNotionReportOverlay } from "@/lib/os/notion-report-sources";
 import { applyNotionSales } from "@/lib/os/sales-kpis";
+import { applyWebAnalyticsOverlays } from "@/lib/os/web-analytics";
+import { loadWebAnalyticsBundle } from "@/lib/os/web-analytics-sources";
 import type { TenantKey } from "@/lib/tenant-config/types";
 import type { OsDashboardData } from "@/types/os";
 import { osSampleData } from "@/mock/os-sample";
@@ -46,6 +48,7 @@ export async function getOsDashboardData(tenantKey: string): Promise<OsDashboard
     data = await applyReportSources(data, tenantKey);
     data = scrubUnconnectedSamples(data);
   }
+  data = await applyWebAnalytics(data, tenantKey);
   try {
     const decisions = await listOsDecisions(tenantKey);
     return applyStoredDecisions(data, decisions);
@@ -58,6 +61,18 @@ export async function getOsDashboardData(tenantKey: string): Promise<OsDashboard
 function asTenantKey(tenantKey: string): TenantKey | null {
   if (tenantKey === "ootsuki" || tenantKey === "demo") return tenantKey;
   return null;
+}
+
+async function applyWebAnalytics(data: OsDashboardData, tenantKey: string) {
+  const tenant = asTenantKey(tenantKey);
+  if (!tenant) return data;
+  try {
+    const bundle = await loadWebAnalyticsBundle(tenant);
+    return applyWebAnalyticsOverlays(data, bundle);
+  } catch (error) {
+    console.warn("[os] Notion の検索・アクセスを読めなかったため、SEO/GA4 は未接続のままにします:", error);
+    return data;
+  }
 }
 
 async function applyReportSources(data: OsDashboardData, tenantKey: string) {
