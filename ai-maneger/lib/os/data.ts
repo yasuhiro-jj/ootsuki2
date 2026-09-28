@@ -3,7 +3,12 @@ import { getKpiEntries, getLatestDecisionMemoEntries, getWeeklyActionPlan } from
 import { listOsDecisions } from "@/lib/os/decision-store";
 import { applyStoredDecisions } from "@/lib/os/decisions";
 import { applyOperations, scrubUnconnectedSamples } from "@/lib/os/live-mode";
+import { applyNotionReportOverlays } from "@/lib/os/notion-report";
+import { loadNotionReportOverlay } from "@/lib/os/notion-report-sources";
 import { applyNotionSales } from "@/lib/os/sales-kpis";
+import { applyWebAnalyticsOverlays } from "@/lib/os/web-analytics";
+import { loadWebAnalyticsBundle } from "@/lib/os/web-analytics-sources";
+import type { TenantKey } from "@/lib/tenant-config/types";
 import type { OsDashboardData } from "@/types/os";
 import { osSampleData } from "@/mock/os-sample";
 
@@ -14,7 +19,7 @@ import { osSampleData } from "@/mock/os-sample";
  * TODO（Supabase / withTenant(tenantKey, ...) で取得）:
  *  - tasks      : SELECT * FROM tasks WHERE tenant_key=$1 AND meeting_date=$2 ORDER BY priority_score DESC LIMIT 5
  *  - panels     : metrics_snapshots（source 別の最新値＋前期間）＋ findings（status IN ('open','promoted')）
- *  - kpis       : 日次売上は getKpiEntries()（Notion）。取れない日はサンプルのまま
+ *  - kpis       : 日次売上は getKpiEntries()（Notion）。ドリンク比率・原価率・FL・ピークは別DB。無い項目は未接続
  *  - agents     : agent_runs（agent_key 別の最新）＋ findings 件数 ＋ decisions の承認率
  *  - grokBots   : connectors(source_type='grok_bot') ＋ agent_runs(trigger='grok_bot')
  *  - timeline   : task_events ORDER BY created_at DESC LIMIT 20
@@ -40,13 +45,44 @@ export async function getOsDashboardData(tenantKey: string): Promise<OsDashboard
   }
   if (live) {
     data = await applyLiveOperations(data);
+    data = await applyReportSources(data, tenantKey);
     data = scrubUnconnectedSamples(data);
   }
+  data = await applyWebAnalytics(data, tenantKey);
   try {
     const decisions = await listOsDecisions(tenantKey);
     return applyStoredDecisions(data, decisions);
   } catch (error) {
     console.warn("[os] 保存済みの判断を読めなかったため、サンプルの判断のまま表示します:", error);
+    return data;
+  }
+}
+
+function asTenantKey(tenantKey: string): TenantKey | null {
+  if (tenantKey === "ootsuki" || tenantKey === "demo") return tenantKey;
+  return null;
+}
+
+async function applyWebAnalytics(data: OsDashboardData, tenantKey: string) {
+  const tenant = asTenantKey(tenantKey);
+  if (!tenant) return data;
+  try {
+    const bundle = await loadWebAnalyticsBundle(tenant);
+    return applyWebAnalyticsOverlays(data, bundle);
+  } catch (error) {
+    console.warn("[os] Notion の検索・アクセスを読めなかったため、SEO/GA4 は未接続のままにします:", error);
+    return data;
+  }
+}
+
+async function applyReportSources(data: OsDashboardData, tenantKey: string) {
+  const tenant = asTenantKey(tenantKey);
+  if (!tenant) return data;
+  try {
+    const overlay = await loadNotionReportOverlay(tenant);
+    return applyNotionReportOverlays(data, overlay);
+  } catch (error) {
+    console.warn("[os] 時間帯・商品別・推移試算表を読めなかったため、その項目は未接続のままにします:", error);
     return data;
   }
 }
