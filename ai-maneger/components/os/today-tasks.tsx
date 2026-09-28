@@ -29,15 +29,19 @@ function TaskCard({ task, rank, onDecide }: { task: Task; rank: number; onDecide
   const [reason, setReason] = useState("");
   const [holdUntil, setHoldUntil] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const agent = AGENT_META[task.agentKey];
   const decidable = task.state === "PROPOSED" || task.state === "DETECTED";
 
   async function submit(decision: DecisionType) {
     setBusy(true);
+    setError("");
     try {
       await onDecide(task.id, decision, { reasonText: reason || undefined, holdUntil: holdUntil || undefined });
       setOpen(null);
       setReason("");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "判断の保存に失敗しました");
     } finally {
       setBusy(false);
     }
@@ -154,6 +158,7 @@ function TaskCard({ task, rank, onDecide }: { task: Task; rank: number; onDecide
               </button>
             </div>
           ) : null}
+          {error ? <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-800">{error}</p> : null}
         </div>
       ) : null}
     </article>

@@ -16,6 +16,5 @@ export const metadata = {
 export default async function OsDashboardPage() {
   const tenantKey = await getActiveTenantKey();
   const data = await getOsDashboardData(tenantKey);
-  // 判断APIが実装されるまでは apiBase を渡さない（画面内だけで状態が変わる）
-  return <OsDashboard initialData={data} /* apiBase="/api/os" */ />;
+  return <OsDashboard initialData={data} apiBase="/api/os" />;
 }
