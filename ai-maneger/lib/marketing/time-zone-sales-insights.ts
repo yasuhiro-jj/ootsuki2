@@ -72,8 +72,8 @@ export type TimeZoneSalesMonth = {
 };
 
 /** 時間帯別売上DBの全件を対象月ごとにグループ化して返す（ダッシュボード表示用）。 */
-export async function getTimeZoneSalesMonthsData(tenant: TenantKey): Promise<TimeZoneSalesMonth[]> {
-  const dbId = timeZoneSalesDbId(tenant);
+export async function getTimeZoneSalesMonthsData(tenant: TenantKey, databaseId?: string): Promise<TimeZoneSalesMonth[]> {
+  const dbId = (databaseId || timeZoneSalesDbId(tenant)).trim();
   if (!dbId) return [];
 
   const config = await getTenantNotionConfig(tenant);

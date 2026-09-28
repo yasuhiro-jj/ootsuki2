@@ -4,6 +4,7 @@ import {
   calculateAverageSpend,
 } from "@/lib/ootsuki";
 import { num, pct, yen } from "@/lib/os/format";
+import { selectDailySalesEntries } from "@/lib/os/notion-report";
 import type { OsDashboardData } from "@/types/os";
 import type { KpiSnapshotEntry } from "@/types/ootsuki";
 
@@ -72,11 +73,11 @@ export function applyNotionSales(
   entries: KpiSnapshotEntry[],
   now = new Date(),
 ): OsDashboardData {
-  const daily = entries.filter((entry) => entry.date);
+  const daily = selectDailySalesEntries(entries);
   if (daily.length === 0) return data;
 
   const today = jstCalendarDate(now);
-  const todayUtc = utcDate(today.year, today.month, today.day);
+  const todayUtc = monthReferenceUtc(daily, today);
   const yesterdayIso = addUtcDays(today.iso, -1);
   const latest = [...daily].sort((left, right) => (right.date || "").localeCompare(left.date || ""))[0];
   const yesterday = daily.find((entry) => entry.date === yesterdayIso) ?? daily
@@ -279,6 +280,28 @@ export function applyNotionSales(
   }
 
   return next;
+}
+
+/** 当月で売上が入っている最終日までを累計の終点にする。先付けの空日で日割りを薄めない。 */
+function monthReferenceUtc(
+  daily: KpiSnapshotEntry[],
+  today: { iso: string; year: number; month: number; day: number },
+) {
+  const monthStart = `${today.year}-${String(today.month).padStart(2, "0")}-01`;
+  const last = daily
+    .filter(
+      (entry) =>
+        entry.date &&
+        entry.date >= monthStart &&
+        entry.date <= today.iso &&
+        (entry.sales > 0 || entry.customers > 0),
+    )
+    .map((entry) => entry.date as string)
+    .sort()
+    .at(-1);
+  if (!last) return utcDate(today.year, today.month, today.day);
+  const [year, month, day] = last.split("-").map(Number);
+  return utcDate(year, month, day);
 }
 
 function weightedMargin(entries: KpiSnapshotEntry[]) {
