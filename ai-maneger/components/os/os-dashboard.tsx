@@ -25,7 +25,16 @@ export function OsDashboard({ initialData, apiBase }: OsDashboardProps) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ decision, ...payload }),
         });
-        if (!res.ok) throw new Error("判断の保存に失敗しました");
+        if (!res.ok) {
+          let message = "判断の保存に失敗しました";
+          try {
+            const body = (await res.json()) as { message?: string };
+            if (typeof body.message === "string" && body.message.trim()) message = body.message;
+          } catch {
+            // 本文が JSON でないときは既定の文言を出す
+          }
+          throw new Error(message);
+        }
       }
       const now = new Date().toISOString();
       setData((prev) => {
