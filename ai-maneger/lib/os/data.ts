@@ -48,6 +48,7 @@ export async function getOsDashboardData(tenantKey: string): Promise<OsDashboard
     data = await applyReportSources(data, tenantKey);
     data = scrubUnconnectedSamples(data);
   }
+  // 日次が取れなくても Notion の GSC/GA4 があれば SEO/アクセスだけ実績に差し替える（scrub の後）
   data = await applyWebAnalytics(data, tenantKey);
   try {
     const decisions = await listOsDecisions(tenantKey);

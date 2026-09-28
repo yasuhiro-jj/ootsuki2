@@ -42,20 +42,28 @@ function shortRange(start: string, end: string) {
   return `${fmt(start)}〜${fmt(end)}`;
 }
 
-/** Notion の「順位が落ちた検索語」テキストをパースする。 */
+function parseRankDropSegment(trimmed: string) {
+  const bullet = trimmed.replace(/^[・•\-\s]+/, "").trim();
+  if (!bullet) return null;
+  let matched = bullet.match(/^(.+?)[\s　]+(\d+(?:\.\d+)?)[／/](\d+(?:\.\d+)?)[／/](\d+)/);
+  if (!matched) {
+    matched = bullet.match(/^(.+?)（今(\d+(?:\.\d+)?)／前(\d+(?:\.\d+)?)／クリック(\d+)）/);
+  }
+  if (!matched) return null;
+  return {
+    query: matched[1].trim(),
+    current: Number(matched[2]),
+    previous: Number(matched[3]),
+    clicks: Number(matched[4]),
+  };
+}
+
+/** Notion の「順位が落ちた検索語」テキストをパースする（改行・読点区切り両対応）。 */
 export function parseRankDropLines(text: string) {
   const rows: { query: string; current: number; previous: number; clicks: number }[] = [];
-  for (const line of text.split(/\n/)) {
-    const trimmed = line.replace(/^[・•\-\s]+/, "").trim();
-    if (!trimmed) continue;
-    const matched = trimmed.match(/^(.+?)[\s　]+(\d+(?:\.\d+)?)[／/](\d+(?:\.\d+)?)[／/](\d+)/);
-    if (!matched) continue;
-    rows.push({
-      query: matched[1].trim(),
-      current: Number(matched[2]),
-      previous: Number(matched[3]),
-      clicks: Number(matched[4]),
-    });
+  for (const segment of text.split(/[\n、,]+/)) {
+    const parsed = parseRankDropSegment(segment);
+    if (parsed) rows.push(parsed);
   }
   return rows;
 }
