@@ -5,6 +5,7 @@ import { TenantAccessBadge } from "@/components/TenantAccessBadge";
 
 const navigationItems = [
   { href: "/dashboard", label: "ダッシュボード" },
+  { href: "/os", label: "AI会社OS" },
   { href: "/projects", label: "プロジェクト" },
   { href: "/admin/tenant-access", label: "権限管理" },
 ];
