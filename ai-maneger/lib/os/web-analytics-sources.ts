@@ -5,6 +5,7 @@ import type { WebAnalyticsBundle, WebAnalyticsSnapshot } from "@/lib/os/web-anal
 
 /** Grok Bot が作成した「おおつき 検索・アクセスDB」（2026-09-28 時点） */
 const OOTSUKI_WEB_ANALYTICS_DB_ID = "561e7b8b967c438b84279b81116aeaa1";
+const OOTSUKI_WEB_ANALYTICS_DATA_SOURCE_ID = "cae28aa9-1cb2-4386-9ab5-b82c0cd6e682";
 
 function webAnalyticsDbId(tenant: TenantKey) {
   const env =
@@ -84,10 +85,19 @@ export async function loadWebAnalyticsBundle(tenant: TenantKey): Promise<WebAnal
   const config = await getTenantNotionConfig(tenant);
   if (!config.notionToken) return { gsc: null, ga4: null };
 
-  const pages = await queryDatabaseAllWithToken(config.notionToken, databaseId, {}).catch(() => null);
-  if (!pages) return { gsc: null, ga4: null };
+  let pages = await queryDatabaseAllWithToken(config.notionToken, databaseId, {}).catch(() => null);
+  if ((!pages || pages.length === 0) && tenant === "ootsuki") {
+    pages = await queryDatabaseAllWithToken(config.notionToken, OOTSUKI_WEB_ANALYTICS_DATA_SOURCE_ID, {}).catch(() => null);
+  }
+  if (!pages || pages.length === 0) {
+    console.warn("[os] 検索・アクセスDBから行を取得できませんでした。NotionでDBをインテグレーションに接続しているか確認してください:", databaseId);
+    return { gsc: null, ga4: null };
+  }
 
   const rows = pages.map(mapPage).filter((row): row is WebAnalyticsSnapshot => Boolean(row));
+  if (rows.length === 0) {
+    console.warn("[os] 検索・アクセスDBは読めましたが、行の形式が想定と違います（対象・週開始を確認）");
+  }
   return {
     gsc: pickLatest(rows, "gsc"),
     ga4: pickLatest(rows, "ga4"),

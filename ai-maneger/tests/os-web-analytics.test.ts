@@ -20,6 +20,14 @@ test("順位低下テキストをパースする", () => {
   assert.equal(rows[0]?.previous, 15);
 });
 
+test("Notionに保存された読点区切りの順位低下もパースする", () => {
+  const notionText =
+    "富士市 夕食（今74／前15／クリック0）、富士市 餃子（今69／前28／クリック0）、テイクアウト 近く（今57／前20／クリック0）";
+  const rows = parseRankDropLines(notionText);
+  assert.equal(rows.length, 3);
+  assert.equal(rows[2]?.query, "テイクアウト 近く");
+});
+
 test("Grok Bot が入れた GSC/GA4 の数字を SEO と GA4 パネルに載せる", () => {
   const bundle = {
     gsc: {
