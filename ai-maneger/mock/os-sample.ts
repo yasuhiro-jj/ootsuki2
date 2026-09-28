@@ -139,7 +139,7 @@ export const osSampleData: OsDashboardData = {
     {
       key: "sales_pos",
       status: "connected",
-      statusNote: "USEN CSV → Notion（毎晩 AI manager専用 bot）",
+      statusNote: "Grok Bot が USEN 管理画面から取得 → Notion 日次",
       updatedAt: "2026-09-28T02:10:00+09:00",
       metrics: [
         { key: "y", label: "昨日の売上", value: "¥103,837", sub: "9/27", origin: "actual" },
@@ -272,7 +272,7 @@ export const osSampleData: OsDashboardData = {
     { key: "inventory", label: "在庫", role: "過剰在庫・欠品", state: "planned", findingsCount: 0, phase: 6 },
   ],
   grokBots: [
-    { key: "ai_manager_bot", label: "AI manager専用", role: "売上データ供給（毎晩のUSEN取込・日報・強化ヒント）", feeds: "import_completed／強化ヒント", schedule: "毎晩", lastIngestAt: "2026-09-28T02:10:00+09:00", state: "ok", findingsCount: 1 },
+    { key: "ai_manager_bot", label: "AI manager専用", role: "USEN管理画面から売上を直接取得し、Notionの日次へ保存", feeds: "売上・客数・客単価", schedule: "毎晩", lastIngestAt: "2026-09-28T02:10:00+09:00", state: "ok", findingsCount: 1 },
     { key: "search_console_bot", label: "サーチコンソール専用", role: "SEO・アクセス分析（GSC＋GA4）", feeds: "順位・CTR・クリックの発見", schedule: "週3回", lastIngestAt: "2026-09-27T22:10:00+09:00", state: "ok", findingsCount: 3 },
     { key: "notion_bot", label: "Notion専門", role: "記録・ナレッジ（判断履歴ページ、データ品質）", feeds: "data_quality の発見", schedule: "毎週", lastIngestAt: "2026-09-26T21:00:00+09:00", state: "ok", findingsCount: 0 },
     { key: "mail_bot", label: "メール専用", role: "問い合わせ件数・分類（個人情報なし）", feeds: "問い合わせ増減の発見", schedule: "毎日", lastIngestAt: "2026-09-27T20:00:00+09:00", state: "ok", findingsCount: 1 },
@@ -301,7 +301,7 @@ export const osSampleData: OsDashboardData = {
     { agentKey: "customer", label: "顧客対応", approved: 1, modified: 1, held: 2, rejected: 1 },
   ],
   connectors: [
-    { key: "usen", label: "USENレジ CSV", category: "sales", status: "connected", via: "毎晩 AI manager専用 bot → Notion", lastSyncAt: "2026-09-28T02:10:00+09:00" },
+    { key: "usen", label: "USENレジ", category: "sales", status: "grok_bot", via: "Grok Bot が USEN 管理画面を直接確認し、日次を Notion に保存", lastSyncAt: "2026-09-28T02:10:00+09:00" },
     { key: "notion", label: "Notion（売上・KPI・メモ）", category: "knowledge", status: "connected", via: "AI Manager 直結", lastSyncAt: "2026-09-28T06:00:00+09:00" },
     { key: "gbp", label: "Google Business Profile", category: "marketing", status: "connected", via: "meo内部API", lastSyncAt: "2026-09-28T04:30:00+09:00" },
     { key: "instagram", label: "Instagram", category: "marketing", status: "partial", via: "Instagram内部API", note: "インサイト権限待ち" },

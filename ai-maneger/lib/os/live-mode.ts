@@ -87,6 +87,9 @@ export function scrubUnconnectedSamples(data: OsDashboardData): OsDashboardData 
     tasks: data.tasks.filter((task) => task.origin !== "sample"),
     panels: data.panels.map((panel) => ({
       ...panel,
+      ...(panel.key === "sales_pos"
+        ? { status: "grok_bot" as const, statusNote: "Grok Bot が USEN 管理画面から取得 → Notion 日次" }
+        : {}),
       metrics: panel.metrics.map(clearSampleMetric),
       findings: panel.findings.filter((finding) => finding.origin !== "sample"),
     })),
@@ -98,17 +101,32 @@ export function scrubUnconnectedSamples(data: OsDashboardData): OsDashboardData 
       lastRunAt: agent.key === "finance" || agent.key === "sales" || agent.key === "manager" ? data.generatedAt : undefined,
       state: agent.state === "planned" ? "planned" : agent.key === "finance" || agent.key === "sales" || agent.key === "manager" ? "ok" : "idle",
     })),
-    grokBots: data.grokBots.map((bot) => ({
-      ...bot,
-      findingsCount: 0,
-      lastIngestAt: undefined,
-      state: "idle",
-    })),
+    grokBots: data.grokBots.map((bot) =>
+      bot.key === "ai_manager_bot"
+        ? {
+            ...bot,
+            role: "USEN管理画面から売上を直接取得し、Notionの日次へ保存",
+            feeds: "売上・客数・客単価",
+            state: "ok",
+            findingsCount: 0,
+            lastIngestAt: data.generatedAt,
+          }
+        : { ...bot, findingsCount: 0, lastIngestAt: undefined, state: "idle" },
+    ),
     timeline: [],
     decisions: [],
     acceptance: data.acceptance.map((stat) => ({ ...stat, approved: 0, modified: 0, held: 0, rejected: 0 })),
     connectors: data.connectors.map((connector) => {
-      if (connector.key === "usen" || connector.key === "notion" || connector.status === "planned" || connector.status === "manual") {
+      if (connector.key === "usen") {
+        return {
+          ...connector,
+          label: "USENレジ",
+          status: "grok_bot" as const,
+          via: "Grok Bot が USEN 管理画面を直接確認し、日次を Notion に保存",
+          lastSyncAt: data.generatedAt,
+        };
+      }
+      if (connector.key === "notion" || connector.status === "planned" || connector.status === "manual") {
         return connector;
       }
       return { ...connector, status: "not_connected" as const, lastSyncAt: undefined };

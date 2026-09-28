@@ -61,6 +61,9 @@ test("日次があるときはサンプルの仕事とダミー数値を外す",
   assert.equal(scrubbed.kpis.find((metric) => metric.key === "drink_ratio")?.value, "未接続");
   assert.equal(scrubbed.kpis.find((metric) => metric.key === "sales_yesterday")?.origin, "actual");
   assert.equal(scrubbed.decisions.length, 0);
+  assert.equal(scrubbed.connectors.find((connector) => connector.key === "usen")?.status, "grok_bot");
+  assert.equal(scrubbed.panels.find((panel) => panel.key === "sales_pos")?.status, "grok_bot");
+  assert.equal(scrubbed.grokBots.find((bot) => bot.key === "ai_manager_bot")?.state, "ok");
 });
 
 test("週次の実行項目を仕事として足す", () => {

@@ -193,7 +193,7 @@ export function applyNotionSales(
       expectedEffect: remaining > 0 ? "着地が分岐を下回る見込み" : "着地が分岐を上回る見込み",
       origin: "derived",
       evidence: [
-        { metric: `${monthLabel}累計売上`, current: yen(month.sales), origin: "actual" as const, source: "Notion 日次売上DB" },
+        { metric: `${monthLabel}累計売上`, current: yen(month.sales), origin: "actual" as const, source: "USEN管理画面（Grok Bot）→ Notion日次" },
         { metric: "損益分岐売上（月）", current: yen(MONTHLY_BREAK_EVEN), origin: "actual" as const },
         { metric: "月末着地（日割り試算）", current: yen(forecast), origin: "derived" as const },
       ],
