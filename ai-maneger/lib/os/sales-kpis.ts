@@ -182,21 +182,131 @@ export function applyNotionSales(
     origin: "derived",
   });
 
+  const gapText = remaining > 0 ? `残り約${yen(remaining)}` : `約${yen(Math.abs(remaining))}超過`;
   next.tasks = next.tasks.map((task) => {
     if (task.id !== "t1") return task;
-    const gapText = remaining > 0 ? `残り約${yen(remaining)}` : `約${yen(Math.abs(remaining))}超過`;
     return {
       ...task,
-      title: `${monthLabel}は損益分岐まで${gapText}。集客を強化`,
+      title: `${monthLabel}は損益分岐まで${gapText}。集客の下書きを確認`,
       whyNow: `${monthLabel}累計は損益分岐（月約¥406万）の${achievement.toFixed(1)}%。日割りの試算では月末着地が${yen(forecast)}。`,
+      proposal: "週末の来店理由を、LINE配信文とGoogle投稿の下書きにする。送信と投稿は人が行う。",
+      expectedEffect: remaining > 0 ? "着地が分岐を下回る見込み" : "着地が分岐を上回る見込み",
       origin: "derived",
       evidence: [
-        { metric: `${monthLabel}累計売上`, current: yen(month.sales), origin: "actual", source: "Notion 日次売上DB" },
-        { metric: "損益分岐売上（月）", current: yen(MONTHLY_BREAK_EVEN), origin: "actual" },
-        { metric: "月末着地（日割り試算）", current: yen(forecast), origin: "derived" },
+        { metric: `${monthLabel}累計売上`, current: yen(month.sales), origin: "actual" as const, source: "Notion 日次売上DB" },
+        { metric: "損益分岐売上（月）", current: yen(MONTHLY_BREAK_EVEN), origin: "actual" as const },
+        { metric: "月末着地（日割り試算）", current: yen(forecast), origin: "derived" as const },
       ],
     };
   });
 
+  next.panels = next.panels.map((panel) => {
+    if (panel.key !== "finance") return panel;
+    return {
+      ...panel,
+      findings: panel.findings.map((finding) =>
+        finding.id === "f2"
+          ? {
+              ...finding,
+              title: remaining > 0 ? `${monthLabel}は損益分岐に届かない見込み` : `${monthLabel}は損益分岐を超える見込み`,
+              origin: "derived" as const,
+              evidence: [],
+            }
+          : finding,
+      ),
+    };
+  });
+
+  const margin = weightedMargin(daily.filter((entry) => entry.date && entry.date >= month.monthStart && entry.date <= (month.monthEnd || today.iso)));
+  const previousMargin = weightedMargin(
+    daily.filter((entry) => {
+      const previousEnd = addUtcDays(month.monthStart, -1);
+      const previousStart = `${previousEnd.slice(0, 7)}-01`;
+      return Boolean(entry.date && entry.date >= previousStart && entry.date <= previousEnd);
+    }),
+  );
+  if (margin !== null) {
+    replaceMetric(next, "cost_rate", {
+      label: "粗利率",
+      value: `${margin.toFixed(1)}%`,
+      delta: previousMargin !== null ? margin - previousMargin : undefined,
+      deltaLabel: previousMargin !== null ? "前月差pt" : undefined,
+      goodWhen: "up",
+      origin: "derived",
+      sub: "日次の粗利から算出",
+    });
+  }
+
+  const monthDays = daily.filter((entry) => entry.date && entry.date >= month.monthStart && entry.date <= (month.monthEnd || today.iso));
+  const lineRegistrations = monthDays.reduce((sum, entry) => sum + entry.lineRegistrations, 0);
+  const lineVisits = monthDays.reduce((sum, entry) => sum + entry.lineVisits, 0);
+  if (lineRegistrations > 0) {
+    replacePanelMetric(next, "line", "fr", {
+      label: "今月の登録",
+      value: `${num(lineRegistrations)}人`,
+      origin: "actual",
+      sub: "Notion日次",
+    });
+  }
+  if (lineVisits > 0) {
+    replacePanelMetric(next, "line", "lv", {
+      label: "LINE経由来店（今月）",
+      value: `${num(lineVisits)}人`,
+      origin: "actual",
+      sub: undefined,
+    });
+  }
+
+  const drop = sameWeekdayCustomerDrop(daily, shownDate);
+  if (drop) {
+    next.panels = next.panels.map((panel) => {
+      if (panel.key !== "sales_pos") return panel;
+      const finding = {
+        id: "sales-dow",
+        agentKey: "sales" as const,
+        detectorKey: "sales_drop_dow",
+        kind: "problem" as const,
+        title: `同じ曜日の客数が平均より ${drop.change.toFixed(0)}%`,
+        severity: 3 as const,
+        evidence: [],
+        detectedAt: now.toISOString(),
+        status: "open" as const,
+        origin: "derived" as const,
+      };
+      const rest = panel.findings.filter((item) => item.id !== "f1" && item.id !== "sales-dow");
+      return { ...panel, findings: [finding, ...rest] };
+    });
+  }
+
   return next;
+}
+
+function weightedMargin(entries: KpiSnapshotEntry[]) {
+  let sales = 0;
+  let profit = 0;
+  for (const entry of entries) {
+    if (entry.sales <= 0) continue;
+    const entryProfit = entry.grossProfit > 0 ? entry.grossProfit : entry.sales * (entry.grossMarginRate / 100);
+    if (entryProfit <= 0) continue;
+    sales += entry.sales;
+    profit += entryProfit;
+  }
+  if (sales <= 0 || profit <= 0) return null;
+  return (profit / sales) * 100;
+}
+
+function sameWeekdayCustomerDrop(entries: KpiSnapshotEntry[], shownDate: string) {
+  const current = entries.find((entry) => entry.date === shownDate);
+  if (!current || current.customers <= 0) return null;
+  const weekday = new Date(`${shownDate}T00:00:00.000Z`).getUTCDay();
+  const peers = entries.filter((entry) => {
+    if (!entry.date || entry.date >= shownDate) return false;
+    return new Date(`${entry.date}T00:00:00.000Z`).getUTCDay() === weekday;
+  });
+  if (peers.length < 2) return null;
+  const average = peers.reduce((sum, entry) => sum + entry.customers, 0) / peers.length;
+  if (average <= 0) return null;
+  const change = ((current.customers - average) / average) * 100;
+  if (change > -10) return null;
+  return { change, average, customers: current.customers };
 }

@@ -1,6 +1,8 @@
-import { getKpiEntries } from "@/lib/notion/ootsuki";
+import { resolveWeekRange } from "@/lib/ootsuki";
+import { getKpiEntries, getLatestDecisionMemoEntries, getWeeklyActionPlan } from "@/lib/notion/ootsuki";
 import { listOsDecisions } from "@/lib/os/decision-store";
 import { applyStoredDecisions } from "@/lib/os/decisions";
+import { applyOperations, scrubUnconnectedSamples } from "@/lib/os/live-mode";
 import { applyNotionSales } from "@/lib/os/sales-kpis";
 import type { OsDashboardData } from "@/types/os";
 import { osSampleData } from "@/mock/os-sample";
@@ -27,17 +29,53 @@ export async function getOsDashboardData(tenantKey: string): Promise<OsDashboard
     tenant: { ...osSampleData.tenant, key: tenantKey },
   };
   let data = sample;
+  let live = false;
   try {
     const entries = await getKpiEntries();
-    data = applyNotionSales(sample, entries);
+    const applied = applyNotionSales(data, entries);
+    live = applied !== data;
+    data = applied;
   } catch (error) {
     console.warn("[os] Notion の日次売上を読めなかったため、KPI はサンプルのまま表示します:", error);
+  }
+  if (live) {
+    data = await applyLiveOperations(data);
+    data = scrubUnconnectedSamples(data);
   }
   try {
     const decisions = await listOsDecisions(tenantKey);
     return applyStoredDecisions(data, decisions);
   } catch (error) {
     console.warn("[os] 保存済みの判断を読めなかったため、サンプルの判断のまま表示します:", error);
+    return data;
+  }
+}
+
+async function applyLiveOperations(data: OsDashboardData) {
+  try {
+    const week = resolveWeekRange(data.businessDate);
+    const [plan, memos] = await Promise.all([
+      getWeeklyActionPlan(week.weekStart, week.weekEnd),
+      getLatestDecisionMemoEntries(30),
+    ]);
+    const memoCount = memos.filter((memo) => {
+      const day = (memo.date || memo.updatedAt || "").slice(0, 10);
+      return day >= week.weekStart && day <= week.weekEnd;
+    }).length;
+    return applyOperations(
+      data,
+      plan
+        ? {
+            weekStart: plan.weekStart,
+            weekEnd: plan.weekEnd,
+            actions: plan.actions,
+            updatedAt: plan.updatedAt || new Date().toISOString(),
+          }
+        : null,
+      memoCount,
+    );
+  } catch (error) {
+    console.warn("[os] 週次の実行項目を読めなかったため、売上以外は未接続のままにします:", error);
     return data;
   }
 }

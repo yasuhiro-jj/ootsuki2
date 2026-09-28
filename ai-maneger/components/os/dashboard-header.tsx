@@ -39,19 +39,23 @@ export function DashboardHeader({ data }: { data: OsDashboardData }) {
           </div>
         </div>
         <div className="flex flex-col items-center">
-          <HealthRing score={data.health.score} />
+          {data.health.origin === "unavailable" ? (
+            <div className="flex h-[76px] w-[76px] items-center justify-center rounded-full border-8 border-stone-200 text-sm font-bold text-stone-400">—</div>
+          ) : (
+            <HealthRing score={data.health.score} />
+          )}
           <p className="mt-1 text-[11px] font-bold text-stone-700">健康スコア・{data.health.label}</p>
           <OriginTag origin={data.health.origin} />
         </div>
       </div>
-      <div className="mt-4 grid grid-cols-5 gap-1.5">
+      {data.health.breakdown.length > 0 ? <div className="mt-4 grid grid-cols-5 gap-1.5">
         {data.health.breakdown.map((b) => (
           <div key={b.label} className="rounded-xl bg-stone-50 px-1 py-2 text-center">
             <p className="text-[10px] text-stone-500">{b.label}</p>
             <p className={`text-sm font-bold ${b.score >= 80 ? "text-emerald-700" : b.score >= 60 ? "text-orange-600" : "text-rose-600"}`}>{b.score}</p>
           </div>
         ))}
-      </div>
+      </div> : null}
     </header>
   );
 }

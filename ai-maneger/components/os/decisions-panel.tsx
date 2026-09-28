@@ -11,11 +11,15 @@ const DEC: Record<Decision["decision"], { label: string; cls: string }> = {
 
 export function DecisionsPanel({ decisions, acceptance }: { decisions: Decision[]; acceptance: AcceptanceStat[] }) {
   return (
-    <OsCard id="learning" icon="🧠" title="判断履歴・学習" description="decisions を集計。承認率は次回の提案の優先度に反映（サンプル）。">
+    <OsCard id="learning" icon="🧠" title="判断履歴・学習" description="保存した承認・却下・保留だけを集計します。">
       <p className="text-[11px] font-bold text-stone-500">エージェント別 判断内訳</p>
       <div className="mt-2 space-y-2">
+        {acceptance.every((item) => item.approved + item.modified + item.held + item.rejected === 0) ? (
+          <p className="text-xs text-stone-500">保存された判断はまだありません。</p>
+        ) : null}
         {acceptance.map((a) => {
           const total = a.approved + a.modified + a.held + a.rejected;
+          if (total === 0) return null;
           const seg = (n: number) => `${(n / total) * 100}%`;
           const rate = Math.round(((a.approved + a.modified) / total) * 100);
           return (
@@ -47,6 +51,7 @@ export function DecisionsPanel({ decisions, acceptance }: { decisions: Decision[
 
       <p className="mt-4 text-[11px] font-bold text-stone-500">最近の判断</p>
       <ul className="mt-1 divide-y divide-stone-100">
+        {decisions.length === 0 ? <li className="py-2 text-xs text-stone-500">最近の判断はありません。</li> : null}
         {decisions.map((d) => (
           <li key={d.id} className="flex items-start gap-2 py-2 text-xs">
             <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${DEC[d.decision].cls}`}>{DEC[d.decision].label}</span>

@@ -25,7 +25,7 @@ function Bar({ rate }: { rate?: number }) {
 
 export function AgentsPanel({ agents, grokBots }: { agents: AgentStatus[]; grokBots: GrokBotStatus[] }) {
   return (
-    <OsCard id="agents" icon="🤖" title="AIエージェントの状態" description="アプリ内の専門AIと、既存の Grok Bot（外部エージェント）の稼働状況。数値はサンプル。">
+      <OsCard id="agents" icon="🤖" title="AIエージェントの状態" description="売上と財務は日次から算出します。未接続のエージェントは待機です。">
       <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
         {agents.map((a) => {
           const meta = AGENT_META[a.key];
