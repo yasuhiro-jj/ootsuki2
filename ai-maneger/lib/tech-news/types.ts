@@ -32,6 +32,7 @@ export interface TechNewsSnapshot extends TechNewsStore {
   mediaCount: number;
   xCount: number;
   counts: Record<TechCategory, number>;
+  notionUrl: string | null;
 }
 
 export interface IngestArticleInput {

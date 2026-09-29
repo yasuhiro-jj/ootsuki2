@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { CATEGORY_LABEL } from "@/lib/tech-news/categories";
-import { buildGrokBotInstruction } from "@/lib/tech-news/grok-instruction";
+import { TECH_NEWS_NOTION_URL } from "@/lib/tech-news/notion-ids";
 import { TECH_CATEGORIES, type TechArticle, type TechCategory, type TechNewsSnapshot, type TechSourceKind } from "@/lib/tech-news/types";
 
 type SourceFilter = "all" | TechSourceKind;
@@ -32,22 +32,15 @@ function xStatus(snapshot: TechNewsSnapshot) {
   return { label: "本日分を反映済み", tone: "bg-emerald-100 text-emerald-900" };
 }
 
-export function TechDashboard({
-  initial,
-  ingestUrl,
-}: {
-  initial: TechNewsSnapshot;
-  ingestUrl: string;
-}) {
+export function TechDashboard({ initial }: { initial: TechNewsSnapshot }) {
   const [snapshot, setSnapshot] = useState(initial);
   const [category, setCategory] = useState<CategoryFilter>("all");
   const [source, setSource] = useState<SourceFilter>("all");
   const [recentOnly, setRecentOnly] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const [copied, setCopied] = useState(false);
-  const instruction = useMemo(() => buildGrokBotInstruction(ingestUrl), [ingestUrl]);
   const status = xStatus(snapshot);
+  const notionUrl = snapshot.notionUrl || TECH_NEWS_NOTION_URL;
 
   const articles = useMemo(() => {
     const cutoff = Date.now() - 36 * 60 * 60 * 1000;
@@ -59,32 +52,22 @@ export function TechDashboard({
     });
   }, [snapshot.articles, category, source, recentOnly]);
 
-  async function refreshMedia() {
+  async function reloadFromNotion() {
     setBusy(true);
     setMessage("");
     try {
-      const response = await fetch("/api/tech/collect", { method: "POST" });
+      const response = await fetch("/api/tech/feed");
       const body = (await response.json()) as { ok?: boolean; message?: string; snapshot?: TechNewsSnapshot };
       if (!response.ok || !body.snapshot) {
-        setMessage(body.message || "メディアの更新に失敗しました。");
+        setMessage(body.message || "Notion の再読み込みに失敗しました。");
         return;
       }
       setSnapshot(body.snapshot);
-      setMessage("メディアと公式ブログを更新しました。");
+      setMessage("Notion のテックニュースを読み直しました。");
     } catch {
-      setMessage("メディアの更新に失敗しました。");
+      setMessage("Notion の再読み込みに失敗しました。");
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function copyInstruction() {
-    try {
-      await navigator.clipboard.writeText(instruction);
-      setCopied(true);
-    } catch {
-      setCopied(false);
-      setMessage("指示文のコピーに失敗しました。下の文面を選択してコピーしてください。");
     }
   }
 
@@ -108,12 +91,12 @@ export function TechDashboard({
         <p className="text-xs font-semibold uppercase tracking-[0.22em] text-orange-800">1日1回の技術キャッチアップ</p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight md:text-5xl">テックニュース</h1>
         <p className="mt-4 max-w-3xl text-sm leading-7 text-stone-700 md:text-base">
-          X のタイムラインは開きません。Grok Bot が X のテックトレンドを要約して送り、テックメディアと公式ブログの要点はこちらに並びます。全部は追わず、必要なものだけ元記事を開いてください。
+          X のタイムラインは開きません。Grok Bot が毎日 7:17（日本時間）に Notion の「テックニュース」へ保存し、この画面はそのデータベースを読みます。必要なものだけ元記事を開いてください。
         </p>
 
         <section className="mt-6 grid gap-3 sm:grid-cols-3">
-          <Stat label="メディア" value={`${snapshot.mediaCount}件`} note={snapshot.lastMediaSyncAt ? `更新 ${formatJst(snapshot.lastMediaSyncAt)}` : "未取得"} />
-          <Stat label="X（Grok Bot）" value={`${snapshot.xCount}件`} note={snapshot.lastXSyncAt ? `更新 ${formatJst(snapshot.lastXSyncAt)}` : "未取得"} />
+          <Stat label="RSS" value={`${snapshot.mediaCount}件`} note={snapshot.lastMediaSyncAt ? `追加 ${formatJst(snapshot.lastMediaSyncAt)}` : "未収集"} />
+          <Stat label="X（Grok Bot）" value={`${snapshot.xCount}件`} note={snapshot.lastXSyncAt ? `追加 ${formatJst(snapshot.lastXSyncAt)}` : "未取得"} />
           <div className="rounded-2xl border border-stone-900/10 bg-white px-4 py-3">
             <p className="text-xs text-stone-500">Grok Bot</p>
             <p className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${status.tone}`}>{status.label}</p>
@@ -136,7 +119,7 @@ export function TechDashboard({
             情報源すべて
           </FilterButton>
           <FilterButton active={source === "media"} onClick={() => setSource("media")}>
-            メディア / 公式
+            RSS
           </FilterButton>
           <FilterButton active={source === "x"} onClick={() => setSource("x")}>
             X
@@ -146,11 +129,11 @@ export function TechDashboard({
           </FilterButton>
           <button
             type="button"
-            onClick={refreshMedia}
+            onClick={reloadFromNotion}
             disabled={busy}
             className="rounded-full bg-stone-900 px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
           >
-            {busy ? "取得中…" : "メディアを更新"}
+            {busy ? "読み込み中…" : "Notionを再読み込み"}
           </button>
         </div>
         {message ? <p className="mt-3 text-sm text-stone-600">{message}</p> : null}
@@ -158,7 +141,12 @@ export function TechDashboard({
         <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
           <section className="space-y-3">
             {articles.length === 0 ? (
-              <EmptyArticles source={source} recentOnly={recentOnly} onShowAll={() => setRecentOnly(false)} />
+              <EmptyArticles
+                source={source}
+                recentOnly={recentOnly}
+                blocked={snapshot.mediaErrors.length > 0}
+                onShowAll={() => setRecentOnly(false)}
+              />
             ) : (
               articles.map((article) => <ArticleCard key={article.id} article={article} />)
             )}
@@ -166,28 +154,18 @@ export function TechDashboard({
 
           <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
             <section className="rounded-3xl border border-stone-900/10 bg-white p-5">
-              <h2 className="text-lg font-bold">Grok Bot の仕事</h2>
-              <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-stone-700">
-                <li>Cursor の Grok Bot に、下の指示を定例（1日1回）として渡す。</li>
-                <li>Bot は X を検索し、5カテゴリの要点だけを日本語でまとめる。</li>
-                <li>
-                  <code className="rounded bg-stone-100 px-1">POST {ingestUrl}</code> へ保存する。
-                </li>
-              </ol>
-              <p className="mt-3 text-xs leading-5 text-stone-500">
-                環境変数 <code>TECH_NEWS_INGEST_TOKEN</code> を設定し、同じ値を Bot の Authorization に使ってください。X の API キーは不要です。
+              <h2 className="text-lg font-bold">読み取り元</h2>
+              <p className="mt-3 text-sm leading-7 text-stone-700">
+                Grok Bot が X を読み取り専用で検索し、要約を Notion に保存します。この画面はそこを表示するだけです。
               </p>
-              <button
-                type="button"
-                onClick={copyInstruction}
-                className="mt-4 rounded-full border border-stone-900/15 px-4 py-2 text-xs font-semibold hover:bg-stone-50"
-              >
-                {copied ? "指示をコピーしました" : "Grok Bot への指示をコピー"}
-              </button>
+              <p className="mt-3 text-xs leading-5 text-stone-500">毎日 7:17（日本時間）。欄が X の行を表示します。RSS の列は用意済みで、収集はまだありません。</p>
+              <a href={notionUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex text-sm font-semibold text-orange-800 underline">
+                Notion のテックニュースを開く
+              </a>
             </section>
             {snapshot.mediaErrors.length > 0 ? (
               <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-950">
-                <h2 className="font-bold">取得できなかったメディア</h2>
+                <h2 className="font-bold">Notion を読めません</h2>
                 <ul className="mt-2 space-y-1">
                   {snapshot.mediaErrors.map((error) => (
                     <li key={error}>{error}</li>
@@ -195,10 +173,6 @@ export function TechDashboard({
                 </ul>
               </section>
             ) : null}
-            <details className="rounded-3xl border border-stone-900/10 bg-white p-5 text-sm">
-              <summary className="cursor-pointer font-bold">Grok Bot 指示の全文</summary>
-              <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap text-xs leading-5 text-stone-700">{instruction}</pre>
-            </details>
           </aside>
         </div>
       </main>
@@ -244,7 +218,7 @@ function ArticleCard({ article }: { article: TechArticle }) {
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <span className="rounded-full bg-stone-900 px-2 py-0.5 font-semibold text-orange-100">{CATEGORY_LABEL[article.category]}</span>
         <span className="rounded-full bg-stone-100 px-2 py-0.5 font-semibold text-stone-700">
-          {article.sourceKind === "x" ? "X" : "メディア"}
+          {article.sourceKind === "x" ? "X" : "RSS"}
         </span>
         <span className="text-stone-500">{article.sourceName}</span>
         <span className="text-stone-400">{formatJst(article.publishedAt)}</span>
@@ -262,18 +236,22 @@ function ArticleCard({ article }: { article: TechArticle }) {
 function EmptyArticles({
   source,
   recentOnly,
+  blocked,
   onShowAll,
 }: {
   source: SourceFilter;
   recentOnly: boolean;
+  blocked: boolean;
   onShowAll: () => void;
 }) {
-  const xEmpty = source === "x" || source === "all";
   return (
     <div className="rounded-3xl border border-dashed border-stone-400 bg-white/70 p-6 text-sm leading-7 text-stone-600">
-      <p>この条件の記事はまだありません。</p>
-      {xEmpty ? <p className="mt-2">X の欄は、Grok Bot が初回の要約を送ると埋まります。メディアは「メディアを更新」で取得できます。</p> : null}
-      {recentOnly ? (
+      <p>{blocked ? "Notion から記事を読み取れないため、一覧は空です。" : "この条件の記事はまだありません。"}</p>
+      {blocked ? null : source === "x" || source === "all" ? (
+        <p className="mt-2">X の欄は、Grok Bot が Notion に保存した行です。まだ無い日は「本日の該当なし」のまま空になります。</p>
+      ) : null}
+      {blocked ? null : source === "media" ? <p className="mt-2">RSS欄は Notion に列があります。収集はまだ始まっていません。</p> : null}
+      {!blocked && recentOnly ? (
         <button type="button" onClick={onShowAll} className="mt-3 font-semibold text-orange-800 underline">
           保存済みも表示する
         </button>

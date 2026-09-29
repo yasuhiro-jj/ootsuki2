@@ -3,12 +3,14 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { notionPageToArticle, snapshotFromNotionPages } from "../lib/tech-news/notion";
 import { classifyTechTopic } from "../lib/tech-news/categories";
 import { buildDigestCopy } from "../lib/tech-news/text";
 import { parseFeedXml } from "../lib/tech-news/rss";
 import { IngestError, ingestXArticles, normalizeIngestArticle } from "../lib/tech-news/ingest";
 import { mergeArticles, readTechNewsStore } from "../lib/tech-news/store";
 import type { TechArticle } from "../lib/tech-news/types";
+import type { NotionPage } from "../types/notion";
 
 const rss = `<?xml version="1.0"?>
 <rss><channel>
@@ -135,4 +137,85 @@ test("X 取り込みは不正 URL を拒否し、正しい記事は保存する"
     delete process.env.TECH_NEWS_STORE_PATH;
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+function notionPage(partial: {
+  id: string;
+  title: string;
+  url: string;
+  category: string;
+  lane: string;
+  publishedAt: string;
+  createdAt: string;
+}): NotionPage {
+  return {
+    id: partial.id,
+    created_time: partial.createdAt,
+    last_edited_time: partial.createdAt,
+    properties: {
+      見出し: { title: [{ plain_text: partial.title }] },
+      要約: { rich_text: [{ plain_text: "要約です。" }] },
+      概要だけでよい理由: { rich_text: [{ plain_text: "今は概要だけでよい。" }] },
+      カテゴリ: { select: { name: partial.category } },
+      欄: { select: { name: partial.lane } },
+      ソース: { rich_text: [{ plain_text: "Cloudflare" }] },
+      URL: { url: partial.url },
+      投稿日時: { date: { start: partial.publishedAt } },
+    },
+  };
+}
+
+test("Notion のテックニュース行を X と RSS に分ける", () => {
+  const snapshot = snapshotFromNotionPages([
+    notionPage({
+      id: "x1",
+      title: "CloudflareがCLIを公開",
+      url: "https://blog.cloudflare.com/cloudflare-cf-cli-launch/",
+      category: "backend",
+      lane: "X",
+      publishedAt: "2026-09-28T15:30:00.000Z",
+      createdAt: "2026-09-29T09:55:34.000Z",
+    }),
+    notionPage({
+      id: "rss1",
+      title: "公式ブログ",
+      url: "https://example.com/rss",
+      category: "ai",
+      lane: "RSS",
+      publishedAt: "2026-09-29 01:00:00Z",
+      createdAt: "2026-09-29T02:00:00.000Z",
+    }),
+    notionPage({
+      id: "bad",
+      title: "対象外",
+      url: "https://example.com/bad",
+      category: "other",
+      lane: "X",
+      publishedAt: "2026-09-29T00:00:00.000Z",
+      createdAt: "2026-09-29T00:00:00.000Z",
+    }),
+  ]);
+
+  assert.equal(snapshot.xCount, 1);
+  assert.equal(snapshot.mediaCount, 1);
+  assert.equal(snapshot.articles[0].category, "ai");
+  assert.equal(snapshot.articles[0].sourceKind, "media");
+  assert.equal(snapshot.articles[1].origin, "grok_bot");
+  assert.equal(snapshot.articles[1].publishedAt, "2026-09-28T15:30:00.000Z");
+  assert.equal(snapshot.lastXSyncAt, "2026-09-29T09:55:34.000Z");
+  assert.equal(snapshot.notionUrl, "https://app.notion.com/p/7c98ce4de1554c6388ec3118264933a9");
+  assert.equal(
+    notionPageToArticle(
+      notionPage({
+        id: "bad2",
+        title: "",
+        url: "https://example.com/empty",
+        category: "ai",
+        lane: "X",
+        publishedAt: "2026-09-29T00:00:00.000Z",
+        createdAt: "2026-09-29T00:00:00.000Z",
+      }),
+    ),
+    null,
+  );
 });

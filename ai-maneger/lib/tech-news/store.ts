@@ -76,5 +76,5 @@ export function toSnapshot(store: TechNewsStore): TechNewsSnapshot {
     if (article.sourceKind === "x") xCount += 1;
     else mediaCount += 1;
   }
-  return { ...store, counts, mediaCount, xCount };
+  return { ...store, counts, mediaCount, xCount, notionUrl: null };
 }

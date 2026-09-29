@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { loadTechNews } from "@/lib/tech-news/collect";
+import { loadTechNewsFromNotion } from "@/lib/tech-news/notion";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const snapshot = await loadTechNews();
+  const snapshot = await loadTechNewsFromNotion();
   return NextResponse.json({ ok: true, snapshot });
 }
