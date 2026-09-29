@@ -93,6 +93,10 @@ export function OsDashboard({ initialData, apiBase }: OsDashboardProps) {
             <Link href="/dashboard" className="font-semibold text-orange-700 hover:underline">
               既存ダッシュボードへ戻る
             </Link>
+            <span className="mx-2 text-stone-300">/</span>
+            <Link href="/tech" className="font-semibold text-orange-700 hover:underline">
+              テックニュース
+            </Link>
           </div>
         </footer>
       </div>

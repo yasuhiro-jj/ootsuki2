@@ -116,6 +116,11 @@ export function middleware(request: NextRequest) {
   const isPublicPage = pathname === "/login" || pathname === "/lp";
   const isAuthCookiePresent = Boolean(request.cookies.get(AUTH_SESSION_COOKIE)?.value);
 
+  const techBotPath = pathname === "/api/tech/ingest" || pathname === "/api/tech/collect";
+  if (techBotPath && (isAuthCookiePresent || request.headers.get("authorization")?.startsWith("Bearer "))) {
+    return nextWithTenant(request);
+  }
+
   if (!isAuthCookiePresent && !isPublicPage) {
     if (pathname.startsWith("/api/")) {
       return unauthorizedApi();
