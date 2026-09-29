@@ -20,6 +20,35 @@ function PanelCard({ def, panel }: { def: PanelDefinition; panel: DomainPanel })
           <MetricTile key={m.key} m={m} compact />
         ))}
       </div>
+      {panel.lineScenario ? (
+        <div className="mt-3 overflow-x-auto rounded-2xl border border-stone-900/5 bg-stone-50/50 p-2">
+          <p className="text-[11px] font-bold text-stone-600">
+            シナリオ分析 · {panel.lineScenario.scenarioName}
+          </p>
+          <table className="mt-1 w-full min-w-[280px] text-[10px] text-stone-700">
+            <thead>
+              <tr className="text-left text-stone-500">
+                <th className="py-1 pr-2">#</th>
+                <th className="py-1 pr-2">ステップ</th>
+                <th className="py-1 pr-2">送信済</th>
+                <th className="py-1 pr-2">クリック率</th>
+                <th className="py-1">ブロック</th>
+              </tr>
+            </thead>
+            <tbody>
+              {panel.lineScenario.steps.map((step) => (
+                <tr key={step.stepNumber} className="border-t border-stone-200/80">
+                  <td className="py-1 pr-2 font-mono">{step.stepNumber}</td>
+                  <td className="py-1 pr-2">{step.stepName}</td>
+                  <td className="py-1 pr-2">{step.sent !== null ? step.sent.toLocaleString("ja-JP") : "—"}</td>
+                  <td className="py-1 pr-2">{step.clickRate !== null ? `${step.clickRate.toFixed(1)}%` : "—"}</td>
+                  <td className="py-1">{step.blocks !== null ? step.blocks.toLocaleString("ja-JP") : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
       <div className="mt-3 flex-1">
         <p className="text-[11px] font-bold text-stone-500">最新の発見</p>
         {panel.findings.length ? (

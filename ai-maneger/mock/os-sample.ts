@@ -236,9 +236,10 @@ export const osSampleData: OsDashboardData = {
       statusNote: "登録数はNotion日次入力／API連携は Phase 4",
       metrics: [
         { key: "fr", label: "友だち数", value: "1,046人", origin: "sample" },
-        { key: "dm", label: "休眠顧客（90日+）", value: "128人", sub: "推定（API連携前）", origin: "sample" },
-        { key: "last", label: "最終配信", value: "9/20", sub: "開封率 62%", origin: "sample" },
-        { key: "lv", label: "LINE経由来店（週）", value: "14人", origin: "sample" },
+        { key: "last", label: "最終配信", value: "9/20", origin: "sample" },
+        { key: "open", label: "開封率", value: "62%", origin: "sample" },
+        { key: "lv", label: "LINE経由来店（7日）", value: "14人", origin: "sample" },
+        { key: "dm", label: "休眠顧客（90日+）", value: "128人", origin: "sample" },
       ],
       findings: [],
     },

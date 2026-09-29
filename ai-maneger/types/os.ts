@@ -142,11 +142,27 @@ export interface Metric {
   label: string;
   value: string; // 表示用に整形済み（例: "¥103,837"）
   sub?: string; // 補足（例: "9/27（土）"）
+  /** ホバー説明（例: プロライン由来の友だち数） */
+  hint?: string;
   delta?: number; // %
   deltaLabel?: string; // 例: "前年比"
   /** 増えると良い指標か（色分け用） */
   goodWhen?: "up" | "down";
   origin: DataOrigin;
+}
+
+export interface LineScenarioStepRow {
+  stepNumber: number;
+  stepName: string;
+  sent: number | null;
+  clickRate: number | null;
+  blocks: number | null;
+}
+
+export interface LineScenarioSection {
+  scenarioName: string;
+  fetchedAt: string;
+  steps: LineScenarioStepRow[];
 }
 
 export interface DomainPanel {
@@ -156,6 +172,7 @@ export interface DomainPanel {
   metrics: Metric[];
   findings: Finding[];
   updatedAt?: string;
+  lineScenario?: LineScenarioSection;
 }
 
 export interface AgentStatus {
