@@ -48,7 +48,7 @@ export const PANEL_REGISTRY: PanelDefinition[] = [
     group: "marketing",
     order: 30,
     enabled: true,
-    feeds: ["metrics_snapshots(source=gbp)", "GBP内部API /api/internal/marketing/metrics", "findings(agent=acquisition)"],
+    feeds: ["Notion おおつき MEO週次DB", "GBP内部API（将来）", "findings(agent=acquisition)"],
   },
   {
     key: "instagram",
@@ -58,7 +58,7 @@ export const PANEL_REGISTRY: PanelDefinition[] = [
     group: "marketing",
     order: 40,
     enabled: true,
-    feeds: ["metrics_snapshots(source=instagram)", "post_history / scheduled_posts", "findings(agent=sns)"],
+    feeds: ["Notion おおつき Instagram週次DB", "Instagram Graph API（将来）", "findings(agent=sns)"],
   },
   {
     key: "seo",

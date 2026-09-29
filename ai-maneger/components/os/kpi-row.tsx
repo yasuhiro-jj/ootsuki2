@@ -19,7 +19,7 @@ export function MetricTile({ m, compact = false }: { m: Metric; compact?: boolea
 
 export function KpiRow({ kpis }: { kpis: Metric[] }) {
   return (
-      <OsCard id="kpi" icon="📊" title="KPIサマリー" description="売上・客数・客単価は Grok Bot → Notion 日次。ドリンク比率・原価率・FLは別DB。SEOとアクセスは Notion「検索・アクセス」に週次が入っていれば表示します。口コミ・Instagram・問い合わせ・LINE は未接続のままです。">
+      <OsCard id="kpi" icon="📊" title="KPIサマリー" description="売上・客数・客単価は Grok Bot → Notion 日次。SEO/アクセス/Instagram/MEO は Notion の週次DB。API 接続後は Instagram・GBP を自動取得に差し替え可能です。">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">
         {kpis.map((m) => (
           <MetricTile key={m.key} m={m} />
