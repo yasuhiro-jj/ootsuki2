@@ -175,6 +175,9 @@ export const osSampleData: OsDashboardData = {
         { key: "low", label: "新着低評価", value: "1件", goodWhen: "down", origin: "sample" },
         { key: "nr", label: "未返信", value: "2件", goodWhen: "down", origin: "sample" },
         { key: "v", label: "表示 / 経路検索", value: "8,420 / 316", delta: -6.8, deltaLabel: "前週比", goodWhen: "up", origin: "sample" },
+        { key: "score", label: "MEOスコア", value: "—", origin: "sample" },
+        { key: "diag", label: "プロフィール診断", value: "—", origin: "sample" },
+        { key: "rank", label: "順位", value: "—", origin: "sample" },
       ],
       findings: [
         { id: "f3", agentKey: "acquisition", detectorKey: "gbp_low_review", kind: "problem", title: "★2の新着口コミ（未返信）", severity: 4, evidence: [], detectedAt: "2026-09-28T05:40:00+09:00", status: "promoted", origin: "sample" },
@@ -185,10 +188,16 @@ export const osSampleData: OsDashboardData = {
       status: "partial",
       statusNote: "投稿履歴は取得可／インサイトはMeta権限待ち",
       metrics: [
+        { key: "views30", label: "閲覧数（30日）", value: "未取得", origin: "unavailable" },
+        { key: "viewers", label: "閲覧者数", value: "未取得", origin: "unavailable" },
+        { key: "interactions", label: "インタラクション", value: "未取得", origin: "unavailable" },
+        { key: "accounts", label: "アクションを実行したアカウント", value: "未取得", origin: "unavailable" },
+        { key: "profile", label: "プロフィールアクセス", value: "未取得", origin: "unavailable" },
+        { key: "fo", label: "フォロワー", value: "1,180人", origin: "sample" },
+        { key: "contentMix", label: "コンテンツ別閲覧比率", value: "未取得", origin: "unavailable" },
         { key: "d", label: "最終投稿から", value: "6日", goodWhen: "down", origin: "sample" },
         { key: "f", label: "投稿頻度", value: "週1.5回", sub: "目標 週3回", origin: "sample" },
-        { key: "reach", label: "リーチ（30日）", value: "未取得", sub: "instagram_manage_insights 待ち", origin: "unavailable" },
-        { key: "fo", label: "フォロワー", value: "1,180人", origin: "sample" },
+        { key: "activeHours", label: "最もアクティブな時間帯", value: "未取得", origin: "unavailable" },
       ],
       findings: [
         { id: "f4", agentKey: "sns", detectorKey: "ig_no_post", kind: "problem", title: "5日以上投稿なし", severity: 3, evidence: [], detectedAt: "2026-09-28T06:00:00+09:00", status: "promoted", origin: "sample" },

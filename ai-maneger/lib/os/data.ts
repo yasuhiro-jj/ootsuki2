@@ -2,7 +2,11 @@ import { resolveWeekRange } from "@/lib/ootsuki";
 import { getKpiEntries, getLatestDecisionMemoEntries, getWeeklyActionPlan } from "@/lib/notion/ootsuki";
 import { listOsDecisions } from "@/lib/os/decision-store";
 import { applyStoredDecisions } from "@/lib/os/decisions";
+import { applyInstagramWeeklyOverlay } from "@/lib/os/instagram-weekly";
+import { loadInstagramWeeklyPair } from "@/lib/os/instagram-weekly-sources";
 import { applyOperations, scrubUnconnectedSamples } from "@/lib/os/live-mode";
+import { applyMeoWeeklyOverlay } from "@/lib/os/meo-weekly";
+import { loadMeoWeeklyPair } from "@/lib/os/meo-weekly-sources";
 import { applyNotionReportOverlays } from "@/lib/os/notion-report";
 import { loadNotionReportOverlay } from "@/lib/os/notion-report-sources";
 import { applyNotionSales } from "@/lib/os/sales-kpis";
@@ -48,8 +52,9 @@ export async function getOsDashboardData(tenantKey: string): Promise<OsDashboard
     data = await applyReportSources(data, tenantKey);
     data = scrubUnconnectedSamples(data);
   }
-  // 日次が取れなくても Notion の GSC/GA4 があれば SEO/アクセスだけ実績に差し替える（scrub の後）
+  // 日次が取れなくても Notion の GSC/GA4 / Instagram / MEO があれば該当パネルを実績に差し替える（scrub の後）
   data = await applyWebAnalytics(data, tenantKey);
+  data = await applyMarketingWeekly(data, tenantKey);
   try {
     const decisions = await listOsDecisions(tenantKey);
     return applyStoredDecisions(data, decisions);
@@ -62,6 +67,20 @@ export async function getOsDashboardData(tenantKey: string): Promise<OsDashboard
 function asTenantKey(tenantKey: string): TenantKey | null {
   if (tenantKey === "ootsuki" || tenantKey === "demo") return tenantKey;
   return null;
+}
+
+async function applyMarketingWeekly(data: OsDashboardData, tenantKey: string) {
+  const tenant = asTenantKey(tenantKey);
+  if (!tenant) return data;
+  try {
+    const [instagram, meo] = await Promise.all([loadInstagramWeeklyPair(tenant), loadMeoWeeklyPair(tenant)]);
+    let next = applyInstagramWeeklyOverlay(data, instagram);
+    next = applyMeoWeeklyOverlay(next, meo);
+    return next;
+  } catch (error) {
+    console.warn("[os] Notion の Instagram/MEO 週次を読めなかったため、該当パネルは未接続のままにします:", error);
+    return data;
+  }
 }
 
 async function applyWebAnalytics(data: OsDashboardData, tenantKey: string) {
