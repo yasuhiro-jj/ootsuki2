@@ -89,7 +89,7 @@ export const PANEL_REGISTRY: PanelDefinition[] = [
     order: 70,
     enabled: true,
     phase: 4,
-    feeds: ["Notion 日次売上DB（LINE登録数・LINE来店数）", "LINE Messaging API（Phase 4）"],
+    feeds: ["Notion おおつき LINE KPI DB / LINEシナリオDB", "LINE Messaging API（Phase 4）"],
   },
   {
     key: "inquiry",

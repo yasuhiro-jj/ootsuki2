@@ -3,7 +3,10 @@ import { DeltaText, OriginTag, OsCard } from "./ui";
 
 export function MetricTile({ m, compact = false }: { m: Metric; compact?: boolean }) {
   return (
-    <div className={`rounded-2xl border border-stone-900/5 bg-stone-50/80 ${compact ? "p-2.5" : "p-3"}`}>
+    <div
+      className={`rounded-2xl border border-stone-900/5 bg-stone-50/80 ${compact ? "p-2.5" : "p-3"}`}
+      title={m.hint}
+    >
       <div className="flex items-start justify-between gap-1">
         <p className="text-[11px] leading-4 text-stone-500">{m.label}</p>
         <OriginTag origin={m.origin} />

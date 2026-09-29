@@ -2,6 +2,10 @@ import { resolveWeekRange } from "@/lib/ootsuki";
 import { getKpiEntries, getLatestDecisionMemoEntries, getWeeklyActionPlan } from "@/lib/notion/ootsuki";
 import { listOsDecisions } from "@/lib/os/decision-store";
 import { applyStoredDecisions } from "@/lib/os/decisions";
+import { applyLineKpiOverlay } from "@/lib/os/line-kpi";
+import { loadLineKpiSnapshot } from "@/lib/os/line-kpi-sources";
+import { applyLineScenarioOverlay } from "@/lib/os/line-scenario";
+import { loadLineScenarioSection } from "@/lib/os/line-scenario-sources";
 import { applyInstagramWeeklyOverlay } from "@/lib/os/instagram-weekly";
 import { loadInstagramWeeklyPair } from "@/lib/os/instagram-weekly-sources";
 import { applyOperations, scrubUnconnectedSamples } from "@/lib/os/live-mode";
@@ -55,6 +59,7 @@ export async function getOsDashboardData(tenantKey: string): Promise<OsDashboard
   // 日次が取れなくても Notion の GSC/GA4 / Instagram / MEO があれば該当パネルを実績に差し替える（scrub の後）
   data = await applyWebAnalytics(data, tenantKey);
   data = await applyMarketingWeekly(data, tenantKey);
+  data = await applyLineNotion(data, tenantKey);
   try {
     const decisions = await listOsDecisions(tenantKey);
     return applyStoredDecisions(data, decisions);
@@ -67,6 +72,21 @@ export async function getOsDashboardData(tenantKey: string): Promise<OsDashboard
 function asTenantKey(tenantKey: string): TenantKey | null {
   if (tenantKey === "ootsuki" || tenantKey === "demo") return tenantKey;
   return null;
+}
+
+async function applyLineNotion(data: OsDashboardData, tenantKey: string) {
+  const tenant = asTenantKey(tenantKey);
+  if (!tenant) return data;
+  try {
+    const [kpi, scenario] = await Promise.all([loadLineKpiSnapshot(tenant), loadLineScenarioSection(tenant)]);
+    let next = applyLineKpiOverlay(data, kpi);
+    const detectedAt = kpi?.updatedAt || kpi?.fetchedAt || scenario?.fetchedAt || data.generatedAt;
+    next = applyLineScenarioOverlay(next, scenario, detectedAt);
+    return next;
+  } catch (error) {
+    console.warn("[os] Notion の LINE KPI / シナリオを読めなかったため、LINE は未取得のままにします:", error);
+    return data;
+  }
 }
 
 async function applyMarketingWeekly(data: OsDashboardData, tenantKey: string) {
