@@ -65,7 +65,7 @@ export function ChatWindow() {
           {
             id: 'welcome',
             content:
-              'いらっしゃいませ！おおつきチャットボットでございます。\n伝統の味と心で、皆様のお越しをお待ちしております。\nメニューや店舗情報について、何でもお気軽にお聞かせください。',
+              'いらっしゃいませ！おおつきチャットボットでございます。\n伝統の味と心で、皆様のお越しをお待ちしております。\nメニューや店舗についてお気軽にお尋ねください。',
             isUser: false,
             suggestions: [
               '日替わりランチ（月曜～金曜）',
@@ -83,8 +83,6 @@ export function ChatWindow() {
           },
         ]);
 
-        // セッション初期化が終わってから、保存済みの電話番号ログインを確認する
-        // （先にやると、上のsetMessagesで追記済みの「お帰りなさい」メッセージが上書きされてしまうため）
         const stored = getStoredCustomerLogin();
         if (!stored) {
           setShowLoginBanner(true);
@@ -147,7 +145,7 @@ export function ChatWindow() {
 
   const handleSend = useCallback(
     async (text: string) => {
-      if (!text.trim() || loading) return;
+      if (!text.trim() || loading || !sessionId) return;
 
       const userMsg: Message = {
         id: `user-${Date.now()}`,
@@ -204,10 +202,10 @@ export function ChatWindow() {
   );
 
   if (initError) {
-    const isDevelopment = typeof window !== 'undefined' && 
+    const isDevelopment = typeof window !== 'undefined' &&
       (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
     const backendUrl = isDevelopment ? 'http://localhost:8011' : 'バックエンドサーバー';
-    
+
     return (
       <div className="flex min-h-[400px] flex-col items-center justify-center p-8 text-center">
         <p className="mb-3 rounded-full border border-red-300 bg-red-500/10 px-4 py-1 text-sm text-red-200">
@@ -215,7 +213,7 @@ export function ChatWindow() {
         </p>
         <p className="mb-2 text-base font-medium text-white">{initError}</p>
         <p className="text-sm text-slate-300">
-          {isDevelopment 
+          {isDevelopment
             ? `バックエンド（${backendUrl}）が起動しているか確認してください。`
             : 'バックエンドサーバーへの接続に失敗しました。しばらく待ってから再度お試しください。'}
         </p>
@@ -254,7 +252,8 @@ export function ChatWindow() {
           </div>
         </div>
       )}
-      <div className="chat-scrollbar flex-1 overflow-y-auto px-2.5 pb-24 pt-2 md:px-6 md:pb-28 md:pt-5"
+      <div
+        className="chat-scrollbar flex-1 overflow-y-auto px-2.5 pb-24 pt-2 md:px-6 md:pb-28 md:pt-5"
         style={{ paddingBottom: 'calc(6rem + env(safe-area-inset-bottom))' }}
       >
         {messages.map((m) => (
@@ -286,11 +285,12 @@ export function ChatWindow() {
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="shrink-0 border-t border-white/15 bg-slate-950/35 px-1.5 pb-1 pt-0.5 backdrop-blur-xl md:px-3 md:pb-2 md:pt-1"
+      <div
+        className="shrink-0 border-t border-white/15 bg-slate-950/35 px-1.5 pb-1 pt-0.5 backdrop-blur-xl md:px-3 md:pb-2 md:pt-1"
         style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))' }}
       >
-        <QuickReplyButtons onSelect={handleSend} />
-        <ChatInput onSend={handleSend} disabled={loading} />
+        <QuickReplyButtons onSelect={handleSend} disabled={!sessionId || loading} />
+        <ChatInput onSend={handleSend} disabled={loading || !sessionId} />
       </div>
     </div>
   );
