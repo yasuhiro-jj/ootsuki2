@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional
 from uuid import uuid4
 
 from .repository import SalesStrategyRepository
-from .schemas import PriorityProduct, SalesStrategy
+from .schemas import PriorityProduct, SalesStrategy, product_from_payload
 
 
 class SalesStrategyValidationError(ValueError):
@@ -124,23 +124,7 @@ class SalesStrategyManagementService:
 
 
 def _products_from_payload(products: Iterable[Dict[str, Any]]) -> List[PriorityProduct]:
-    parsed = []
-    for product in products or []:
-        parsed.append(
-            PriorityProduct(
-                product_id=str(product.get("product_id", "")),
-                name=str(product.get("name") or product.get("product_name") or ""),
-                priority_score=int(product.get("priority_score", product.get("priority", 0)) or 0),
-                reason=str(product.get("reason", "")),
-                suggest_when=tuple(product.get("suggest_when", ()) or ()),
-                trigger_item_ids=tuple(product.get("trigger_item_ids", ()) or ()),
-                excluded_intents=tuple(product.get("excluded_intents", ()) or ()),
-                max_suggestions=int(product.get("max_suggestions", 1) or 1),
-                inventory_priority=product.get("inventory_priority"),
-                gross_margin_rank=product.get("gross_margin_rank"),
-            )
-        )
-    return parsed
+    return [product_from_payload(product) for product in products or []]
 
 
 def _strategy_to_payload(strategy: SalesStrategy) -> Dict[str, Any]:
@@ -159,6 +143,10 @@ def _strategy_to_payload(strategy: SalesStrategy) -> Dict[str, Any]:
                 "max_suggestions": product.max_suggestions,
                 "inventory_priority": product.inventory_priority,
                 "gross_margin_rank": product.gross_margin_rank,
+                "sales_qty_rank": product.sales_qty_rank,
+                "candidate_count": product.candidate_count,
+                "segment": product.segment,
+                "customer_reason": product.customer_reason,
             }
             for product in strategy.priority_products
         ],

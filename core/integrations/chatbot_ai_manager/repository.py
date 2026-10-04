@@ -7,7 +7,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .schemas import PriorityProduct, SalesStrategy
+from .schemas import SalesStrategy, product_from_payload
 
 
 class SalesStrategyRepository:
@@ -66,24 +66,11 @@ class SalesStrategyRepository:
         return asdict(strategy)
 
     def _strategy_from_dict(self, data: Dict[str, Any]) -> SalesStrategy:
-        products = []
-        for product in data.get("priority_products", []) or []:
-            if not isinstance(product, dict):
-                continue
-            products.append(
-                PriorityProduct(
-                    product_id=str(product.get("product_id", "")),
-                    name=str(product.get("name") or product.get("product_name") or ""),
-                    priority_score=int(product.get("priority_score", product.get("priority", 0)) or 0),
-                    reason=str(product.get("reason", "")),
-                    suggest_when=tuple(product.get("suggest_when", ()) or ()),
-                    trigger_item_ids=tuple(product.get("trigger_item_ids", ()) or ()),
-                    excluded_intents=tuple(product.get("excluded_intents", ()) or ()),
-                    max_suggestions=int(product.get("max_suggestions", 1) or 1),
-                    inventory_priority=product.get("inventory_priority"),
-                    gross_margin_rank=product.get("gross_margin_rank"),
-                )
-            )
+        products = [
+            product_from_payload(product)
+            for product in data.get("priority_products", []) or []
+            if isinstance(product, dict)
+        ]
 
         return SalesStrategy(
             strategy_id=str(data.get("strategy_id", "")),

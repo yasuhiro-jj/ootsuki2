@@ -20,7 +20,7 @@ const NON_FOOD_KEYWORDS = [
   "LINE", "軽減税率", "税", "その他", "food",
 ];
 
-function isLikelyFood(rawName: string): boolean {
+export function isLikelyFood(rawName: string): boolean {
   const name = rawName.normalize("NFKC");
   if (/\d+度/.test(name)) return false; // 「二十五度」等の酒の度数表記
   return !NON_FOOD_KEYWORDS.some((keyword) => name.includes(keyword.normalize("NFKC")));

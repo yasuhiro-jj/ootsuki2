@@ -124,6 +124,8 @@ class MenuService:
         self.menu_db_id = menu_db_id or os.getenv("NOTION_DS_MENU")
         self._all_items_cache: List["MenuItemView"] = []
         self._all_items_cache_expiry: Optional[datetime] = None
+        self._recommendable_cache: Optional[Dict[str, Any]] = None
+        self._recommendable_cache_expiry: Optional[datetime] = None
 
         if not self.menu_db_id:
             logger.warning("メニューDBのIDが設定されていません")
@@ -596,6 +598,79 @@ class MenuService:
                     core = core[: -len(suffix)].rstrip("？?！!。.、, ")
                     changed = True
         return core.strip()
+
+    def get_recommendable_menu_index(self, ttl_seconds: int = 300) -> Optional[Dict[str, Any]]:
+        """AI Manager の自動おすすめに出してよい商品の索引を返す。
+
+        「在庫あり」「提供可能」「表示ON/OFF」のいずれかが明示的に False の商品は除外する。
+        Notion を読めなかった場合は None を返す。呼び出し側は「推薦しない」方向に倒すこと。
+
+        Returns:
+            {"page_ids": set[str], "names": set[str]} または None
+        """
+        now = datetime.now()
+        if (
+            self._recommendable_cache is not None
+            and self._recommendable_cache_expiry
+            and now < self._recommendable_cache_expiry
+        ):
+            return self._recommendable_cache
+
+        if not self.menu_db_id or not self.notion_client:
+            return None
+
+        try:
+            all_pages: List[Dict[str, Any]] = []
+            cursor = None
+            while True:
+                kwargs: Dict[str, Any] = {"database_id": self.menu_db_id, "page_size": 100}
+                if cursor:
+                    kwargs["start_cursor"] = cursor
+                response = self.notion_client._query_database_compat(**kwargs)
+                results = (response or {}).get("results", [])
+                all_pages.extend(results)
+                if (response or {}).get("has_more"):
+                    cursor = response.get("next_cursor")
+                else:
+                    break
+        except Exception as e:
+            logger.warning(f"[MenuService] 推薦可否インデックス取得エラー: {e}")
+            return self._recommendable_cache
+
+        page_ids: set = set()
+        names: set = set()
+        for page in all_pages:
+            properties = page.get("properties", {})
+            if not self._get_checkbox(properties, "在庫あり", default=True):
+                continue
+            if not self._get_checkbox(properties, "提供可能", default=True):
+                continue
+            if not self._get_checkbox(properties, "表示ON/OFF", default=True):
+                continue
+            page_id = str(page.get("id") or "").replace("-", "")
+            if page_id:
+                page_ids.add(page_id)
+            name = self._get_title(properties, "Name") or self._get_title(properties, "名前")
+            if name:
+                names.add(normalize_menu_match_text(name))
+
+        index = {"page_ids": page_ids, "names": names}
+        self._recommendable_cache = index
+        self._recommendable_cache_expiry = now + timedelta(seconds=ttl_seconds)
+        logger.info(f"[MenuService] 推薦可否インデックス更新: {len(page_ids)}件")
+        return index
+
+    def is_recommendable(self, page_id: str = "", name: str = "") -> bool:
+        """指定商品を自動おすすめに出してよいか。読めない場合は False（安全側）。"""
+        index = self.get_recommendable_menu_index()
+        if index is None:
+            return False
+        normalized_page_id = str(page_id or "").replace("-", "")
+        if normalized_page_id:
+            return normalized_page_id in index["page_ids"]
+        if name:
+            return normalize_menu_match_text(name) in index["names"]
+        return False
 
     def find_menu_items_mentioned_in_text(
         self, text: str, max_items: int = 3

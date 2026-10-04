@@ -6,7 +6,13 @@ from dataclasses import dataclass
 from typing import Iterable, Optional
 
 from .recommendation_settings import RecommendationSettings
-from .schemas import ConversationSalesContext, PriorityProduct, SalesStrategy
+from .schemas import (
+    SEGMENT_GROWTH,
+    SEGMENT_SIGNATURE,
+    ConversationSalesContext,
+    PriorityProduct,
+    SalesStrategy,
+)
 
 
 BLOCKED_PENDING_FLOWS = frozenset({"reservation", "banquet", "allergy", "order_confirm"})
@@ -131,6 +137,28 @@ def score_candidate(
         adjustments.append(
             f"different_from_previous_bonus:+{active_settings.weights.different_from_previous}"
         )
+
+    # AI Manager の自動戦略が付与した順位・区分による加点。
+    # 順位情報が無い戦略（手動戦略を含む）では加点しないため、既存の点数は変わらない。
+    weights = active_settings.weights
+    rank_span = (product.candidate_count or 0) - 1
+    if rank_span >= 1:
+        if product.gross_margin_rank:
+            margin_pct = 1 - (product.gross_margin_rank - 1) / rank_span
+            bonus = round(weights.gross_margin_weight * margin_pct)
+            score += bonus
+            adjustments.append(f"gross_margin:{bonus:+d}")
+        if product.sales_qty_rank:
+            qty_pct = 1 - (product.sales_qty_rank - 1) / rank_span
+            bonus = round(weights.best_seller_weight * qty_pct)
+            score += bonus
+            adjustments.append(f"best_seller:{bonus:+d}")
+    if product.segment == SEGMENT_SIGNATURE:
+        score += weights.signature_item_bonus
+        adjustments.append(f"signature_item:{weights.signature_item_bonus:+d}")
+    elif product.segment == SEGMENT_GROWTH:
+        score += weights.growth_item_bonus
+        adjustments.append(f"growth_item:{weights.growth_item_bonus:+d}")
 
     return CandidateScore(
         product=product,

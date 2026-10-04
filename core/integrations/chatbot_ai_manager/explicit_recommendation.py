@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from .events import suggestion_event
 from .schemas import ConversationSalesContext, PriorityProduct, SuggestionEvent
@@ -23,6 +23,10 @@ SKIP_PRODUCT_AVOIDED = "product_avoided"
 SKIP_NOT_RELEVANT = "not_relevant"
 SKIP_ORDER_CONFIRMATION = "order_confirmation"
 SKIP_INTEGRATION_ERROR = "integration_error"
+SKIP_PRODUCT_UNAVAILABLE = "product_unavailable"
+
+# 在庫・除外チェックで弾かれたときに次の候補を探す上限。
+MAX_AVAILABILITY_ATTEMPTS = 10
 
 BLOCKED_ROUTES = frozenset({"natural", "latest", "empty"})
 BLOCKED_PENDING_FLOWS = frozenset({"reservation", "banquet", "order", "takeout"})
@@ -57,9 +61,27 @@ class ExplicitSalesRecommendationConnector:
         self,
         strategy_service: SalesStrategyManagementService,
         bridge: ChatbotAIManagerBridge,
+        is_recommendable: Optional[Callable[[str, str], bool]] = None,
     ) -> None:
         self.strategy_service = strategy_service
         self.bridge = bridge
+        # (product_id, product_name) -> 推薦してよいか。メニューDBの在庫フラグと
+        # 除外リストの再確認に使う。未指定なら従来どおり全て推薦可とみなす。
+        self.is_recommendable = is_recommendable
+
+    def _can_recommend(self, product_id: str, product_name: str) -> bool:
+        if self.is_recommendable is None:
+            return True
+        try:
+            return bool(self.is_recommendable(product_id, product_name))
+        except Exception as exc:
+            # 在庫を確認できないときは推薦しない（安全側に倒す）。
+            logger.warning(
+                "[SalesStrategy] availability check failed product=%s error=%s",
+                product_name,
+                exc.__class__.__name__,
+            )
+            return False
 
     def try_recommend(
         self,
@@ -102,8 +124,37 @@ class ExplicitSalesRecommendationConnector:
                 session_memory=session_memory,
                 customer_memory_context=customer_memory_context,
             )
-            decision = self.bridge.decide_suggestion(context, strategy)
+            # 在庫切れ・除外商品に当たった場合は、その商品を候補から外して次を探す。
+            attempt_context = context
+            blocked_product_ids: list[str] = []
+            for _ in range(MAX_AVAILABILITY_ATTEMPTS):
+                decision = self.bridge.decide_suggestion(attempt_context, strategy)
+                if not decision.allowed or not decision.product:
+                    break
+                if self._can_recommend(decision.product.product_id, decision.product.name):
+                    break
+                blocked_product_ids.append(decision.product.product_id)
+                attempt_context = replace(
+                    attempt_context,
+                    proposed_items=(
+                        *attempt_context.proposed_items,
+                        decision.product.product_id,
+                    ),
+                )
+
             if not decision.allowed or not decision.product:
+                if blocked_product_ids:
+                    # 候補が在庫切れ・除外で尽きたので、既存のフォールバックへ送る。
+                    logger.info(
+                        "[SalesStrategy] all candidates unavailable session=%s blocked=%d",
+                        session_id[:8],
+                        len(blocked_product_ids),
+                    )
+                    return self._short_fallback(
+                        session_id,
+                        SKIP_PRODUCT_UNAVAILABLE,
+                        session_memory=session_memory,
+                    )
                 skip_reason = self._skip_reason_from_decision(
                     decision.reason, strategy, context
                 )
@@ -272,8 +323,14 @@ class ExplicitSalesRecommendationConnector:
         self, product: PriorityProduct, context: ConversationSalesContext
     ) -> str:
         if context.current_entity:
-            return f"{context.current_entity}でしたら、{product.name}がよく合います。"
-        return f"{product.name}がおすすめです。"
+            base = f"{context.current_entity}でしたら、{product.name}がよく合います。"
+        else:
+            base = f"{product.name}がおすすめです。"
+        # customer_reason は AI Manager 側で「粗利・原価・数値を含めない」よう生成・検証している。
+        reason = str(product.customer_reason or "").strip()
+        if reason:
+            return f"{base}{reason}"
+        return base
 
     def _skip_reason_from_decision(
         self, reason: str, strategy, context: ConversationSalesContext
@@ -307,6 +364,12 @@ class ExplicitSalesRecommendationConnector:
         session_memory: Dict[str, Any],
     ) -> ExplicitRecommendationResult:
         skipped = self._skipped(session_id, skip_reason)
+        if not self._can_recommend(SHORT_FALLBACK_PRODUCT_ID, SHORT_FALLBACK_PRODUCT_NAME):
+            # 刺身定食も在庫切れ・除外のときは何も出さず、通常応答に任せる。
+            logger.info(
+                "[SalesStrategy] fallback product unavailable session=%s", session_id[:8]
+            )
+            return skipped
         repeated = session_memory.get("last_assistant_action") in {
             "short_recommendation_fallback",
             "repeated_short_recommendation_fallback",
