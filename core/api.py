@@ -91,6 +91,7 @@ from .customer_memory_followups import build_customer_memory_followup_reply
 from .security.admin_auth import require_admin_api_key
 from .integrations.chatbot_ai_manager import (
     ChatbotAIManagerBridge,
+    CompositeSalesStrategyRepository,
     RecommendationSettingsRepository,
     RecommendationSettingsService,
     RecommendationSettingsValidationError,
@@ -98,10 +99,12 @@ from .integrations.chatbot_ai_manager import (
     SalesStrategyManagementService,
     SalesStrategyRepository,
     SalesStrategyValidationError,
+    SupabaseSalesStrategyRepository,
 )
 from .integrations.chatbot_ai_manager.explicit_recommendation import (
     SKIP_SESSION_LIMIT_REACHED,
 )
+from .integrations.chatbot_ai_manager.supabase_repository import SupabaseExclusionList
 
 logger = logging.getLogger(__name__)
 
@@ -274,6 +277,10 @@ class PriorityProductPayload(BaseModel):
     max_suggestions: int = 1
     inventory_priority: Optional[str] = None
     gross_margin_rank: Optional[int] = None
+    sales_qty_rank: Optional[int] = None
+    candidate_count: Optional[int] = None
+    segment: Optional[str] = None
+    customer_reason: str = ""
 
 
 class SalesStrategyPayload(BaseModel):
@@ -505,6 +512,18 @@ def _is_reservation_flow_active(
         ):
             return True
     return _looks_like_reservation_details(user_message)
+
+
+def _auto_strategy_is_active(strategy_service) -> bool:
+    """AI Manager が生成した有効な自動戦略が今あるか。
+
+    手動戦略しか無い場合は False。会話ノードより推薦を優先してよいかの判定に使う。
+    """
+    try:
+        strategy = strategy_service.get_current()
+    except Exception:
+        return False
+    return bool(strategy and strategy.generated_by != "manual")
 
 
 def resolve_conversation_node_shortcut(
@@ -789,9 +808,58 @@ def create_app(config: ConfigLoader) -> FastAPI:
         strategy_repository=sales_strategy_repository,
     )
     sales_strategy_bridge = ChatbotAIManagerBridge(recommendation_settings_service)
+
+    # AI Manager が自動生成した戦略を使うかどうか。既定は off（従来どおり手動戦略のみ）。
+    #   off     : 何も変えない
+    #   shadow  : AI Manager 側で生成・保存するだけ。チャットボットの応答は変えない
+    #   publish : published の自動戦略をチャットボットが使う（CEO 承認後）
+    chatbot_auto_strategy_mode = (
+        os.getenv("CHATBOT_AUTO_STRATEGY_MODE") or "off"
+    ).strip().lower()
+    if chatbot_auto_strategy_mode not in {"off", "shadow", "publish"}:
+        logger.warning(
+            "[SalesStrategy] 未知の CHATBOT_AUTO_STRATEGY_MODE=%s のため off として扱います",
+            chatbot_auto_strategy_mode,
+        )
+        chatbot_auto_strategy_mode = "off"
+
+    recommendation_strategy_service = sales_strategy_service
+    strategy_exclusions = None
+    if chatbot_auto_strategy_mode == "publish":
+        auto_strategy_repository = SupabaseSalesStrategyRepository()
+        if auto_strategy_repository.enabled:
+            recommendation_strategy_service = SalesStrategyManagementService(
+                CompositeSalesStrategyRepository(
+                    sales_strategy_repository, auto_strategy_repository
+                )
+            )
+            strategy_exclusions = SupabaseExclusionList()
+            logger.info("[SalesStrategy] 自動戦略を有効化しました（publish）")
+        else:
+            logger.warning(
+                "[SalesStrategy] CHATBOT_STRATEGY_DB_URL 未設定のため自動戦略を無効にします"
+            )
+            chatbot_auto_strategy_mode = "off"
+
+    def _is_recommendable_product(product_id: str, product_name: str) -> bool:
+        """在庫・提供・表示フラグと除外リストを推薦直前に再確認する。"""
+        if not shared_menu_service.is_recommendable(product_id, product_name):
+            return False
+        if strategy_exclusions is not None and strategy_exclusions.is_excluded(
+            product_id, product_name
+        ):
+            return False
+        return True
+
     explicit_sales_recommendation = ExplicitSalesRecommendationConnector(
-        sales_strategy_service,
+        recommendation_strategy_service,
         sales_strategy_bridge,
+        # publish のときだけ在庫・除外の再確認を入れる（off/shadow は従来の挙動のまま）。
+        is_recommendable=(
+            _is_recommendable_product
+            if chatbot_auto_strategy_mode == "publish"
+            else None
+        ),
     )
     customer_memory_repository = CustomerMemoryRepository(
         os.getenv("CUSTOMER_MEMORY_PROFILE_PATH")
@@ -1784,8 +1852,36 @@ def create_app(config: ConfigLoader) -> FastAPI:
                     line_reply_messages=None,
                 )
 
-            conversation_node_hit = resolve_conversation_node_shortcut(
-                conversation_system, user_message, session_memory
+            # 自動戦略が publish かつ「おすすめは？」の問いかけのときだけ、
+            # 会話ノードのショートカットより先に推薦を評価する。
+            # それ以外（既定の off / 手動戦略のみ）では、この分岐は何もしない。
+            pre_sales_recommendation = None
+            if (
+                chatbot_auto_strategy_mode == "publish"
+                and intent_result.intent.value == "proposal"
+                and _auto_strategy_is_active(recommendation_strategy_service)
+            ):
+                pre_sales_recommendation = explicit_sales_recommendation.try_recommend(
+                    session_id=session_id,
+                    user_message=user_message,
+                    intent_value=intent_result.intent.value,
+                    route_kind=conversation_route.kind,
+                    session_memory=session_memory,
+                    customer_memory_context=customer_memory_context,
+                )
+
+            conversation_node_hit = (
+                None
+                # 自動戦略が実際に商品を選べたときだけ会話ノードを飛ばす。
+                # フォールバック（刺身定食）は strategy_id が空なので対象外。
+                if (
+                    pre_sales_recommendation is not None
+                    and pre_sales_recommendation.has_message
+                    and pre_sales_recommendation.strategy_id
+                )
+                else resolve_conversation_node_shortcut(
+                    conversation_system, user_message, session_memory
+                )
             )
             if conversation_node_hit:
                 node_response_message = conversation_node_hit["message"]
@@ -2782,13 +2878,18 @@ def create_app(config: ConfigLoader) -> FastAPI:
                 )
             
             # 【優先】不明キーワードDB検索を最初に実行（RAG結果に関係なく）
-            sales_recommendation = explicit_sales_recommendation.try_recommend(
-                session_id=session_id,
-                user_message=user_message,
-                intent_value=intent_result.intent.value,
-                route_kind=conversation_route.kind,
-                session_memory=session_memory,
-                customer_memory_context=customer_memory_context,
+            # 会話ノードより先に評価済みなら、その結果をそのまま使う（二重実行しない）。
+            sales_recommendation = (
+                pre_sales_recommendation
+                if pre_sales_recommendation is not None
+                else explicit_sales_recommendation.try_recommend(
+                    session_id=session_id,
+                    user_message=user_message,
+                    intent_value=intent_result.intent.value,
+                    route_kind=conversation_route.kind,
+                    session_memory=session_memory,
+                    customer_memory_context=customer_memory_context,
+                )
             )
             if sales_recommendation.has_message:
                 response_message = sales_recommendation.message

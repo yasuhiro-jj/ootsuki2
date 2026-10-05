@@ -30,6 +30,11 @@ class RecommendationWeights:
     different_from_previous: int = 5
     recently_recommended_penalty: int = 6
     recommendation_history_penalty: int = 4
+    # AI Manager の自動戦略向け。初期値は暫定で、管理APIから調整する想定。
+    gross_margin_weight: int = 10
+    best_seller_weight: int = 6
+    signature_item_bonus: int = 4
+    growth_item_bonus: int = 3
 
 
 @dataclass(frozen=True)
@@ -260,6 +265,22 @@ def settings_from_payload(
             recommendation_history_penalty=_int_value(
                 weights_data.get("recommendation_history_penalty", 4),
                 "recommendation_history_penalty",
+            ),
+            gross_margin_weight=_int_value(
+                weights_data.get("gross_margin_weight", 10),
+                "gross_margin_weight",
+            ),
+            best_seller_weight=_int_value(
+                weights_data.get("best_seller_weight", 6),
+                "best_seller_weight",
+            ),
+            signature_item_bonus=_int_value(
+                weights_data.get("signature_item_bonus", 4),
+                "signature_item_bonus",
+            ),
+            growth_item_bonus=_int_value(
+                weights_data.get("growth_item_bonus", 3),
+                "growth_item_bonus",
             ),
         ),
         rules=RecommendationRules(

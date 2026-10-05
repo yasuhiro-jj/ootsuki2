@@ -32,3 +32,11 @@ CHROMA_PERSIST_DIR=data/chroma
 
 # RAG厳格モード（オプション）
 REQUIRE_CHROMA=false
+
+# --- AI Manager 自動おすすめ戦略の読み取り（チャットボット側） ---
+# off（既定）/ shadow / publish。publish のときだけ応答に反映される。
+CHATBOT_AUTO_STRATEGY_MODE=off
+# Supabase の読み取り専用ロールの接続文字列（chatbot_strategy_reader）
+CHATBOT_STRATEGY_DB_URL=
+# 参照するテナント（既定 ootsuki）
+CHATBOT_STRATEGY_TENANT_KEY=ootsuki

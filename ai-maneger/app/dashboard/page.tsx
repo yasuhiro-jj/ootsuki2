@@ -17,6 +17,7 @@ import { UsenTimeZoneSalesPanel } from "@/components/ootsuki/usen-time-zone-sale
 import { PosTimeZoneSalesPanel } from "@/components/ootsuki/pos-time-zone-sales-panel";
 import { TimeZoneSalesHistoryPanel } from "@/components/ootsuki/time-zone-sales-history-panel";
 import { ProductInsightsHistoryPanel } from "@/components/ootsuki/product-insights-history-panel";
+import { ChatbotAutoStrategyPanel } from "@/components/ootsuki/chatbot-auto-strategy-panel";
 import { MarketingCommandCenter } from "@/components/ootsuki/marketing-command-center";
 import { recommendedAgents } from "@/lib/agents";
 import { getCurrentTenantAccessResult } from "@/lib/api/tenant-access";
@@ -390,6 +391,10 @@ export default async function DashboardPage({
             storeReady={marketingStoreReady}
           />
         </SectionCard>
+      </section>
+
+      <section id="chatbot-auto-strategy" className="mt-6 scroll-mt-6">
+        <ChatbotAutoStrategyPanel />
       </section>
 
       <section className="mt-6 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">

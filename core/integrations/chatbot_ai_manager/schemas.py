@@ -8,6 +8,13 @@ from typing import Any, Dict, Iterable, Optional, Tuple
 from uuid import uuid4
 
 
+# AI Manager の自動戦略が付ける商品区分。文字列は AI Manager 側の生成ロジックと一致させる。
+SEGMENT_SIGNATURE = "看板"
+SEGMENT_GROWTH = "育成"
+SEGMENT_BEST_SELLER = "売れ筋"
+SEGMENT_HIGH_MARGIN = "高粗利"
+
+
 def _as_tuple(values: Optional[Iterable[str]]) -> Tuple[str, ...]:
     if not values:
         return ()
@@ -26,11 +33,51 @@ class PriorityProduct:
     max_suggestions: int = 1
     inventory_priority: Optional[str] = None
     gross_margin_rank: Optional[int] = None
+    # AI Manager の自動戦略が付与する順位情報。手動戦略では None のままになる。
+    sales_qty_rank: Optional[int] = None
+    candidate_count: Optional[int] = None
+    segment: Optional[str] = None
+    # お客様向けに表示してよい一文。粗利・原価・数値を含めない（AI Manager 側で検証する）。
+    customer_reason: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "suggest_when", _as_tuple(self.suggest_when))
         object.__setattr__(self, "trigger_item_ids", _as_tuple(self.trigger_item_ids))
         object.__setattr__(self, "excluded_intents", _as_tuple(self.excluded_intents))
+
+
+def _optional_int(value: Any) -> Optional[int]:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def product_from_payload(data: Dict[str, Any]) -> PriorityProduct:
+    """Build a PriorityProduct from stored JSON / API payload.
+
+    repository.py と strategy_service.py の双方から使う。片方だけ新しい項目に
+    対応して食い違うのを防ぐため、変換はここに集約する。
+    """
+
+    return PriorityProduct(
+        product_id=str(data.get("product_id", "")),
+        name=str(data.get("name") or data.get("product_name") or ""),
+        priority_score=int(data.get("priority_score", data.get("priority", 0)) or 0),
+        reason=str(data.get("reason", "")),
+        suggest_when=tuple(data.get("suggest_when", ()) or ()),
+        trigger_item_ids=tuple(data.get("trigger_item_ids", ()) or ()),
+        excluded_intents=tuple(data.get("excluded_intents", ()) or ()),
+        max_suggestions=int(data.get("max_suggestions", 1) or 1),
+        inventory_priority=data.get("inventory_priority"),
+        gross_margin_rank=_optional_int(data.get("gross_margin_rank")),
+        sales_qty_rank=_optional_int(data.get("sales_qty_rank")),
+        candidate_count=_optional_int(data.get("candidate_count")),
+        segment=(str(data["segment"]) if data.get("segment") else None),
+        customer_reason=str(data.get("customer_reason", "")),
+    )
 
 
 @dataclass(frozen=True)

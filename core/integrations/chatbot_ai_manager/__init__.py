@@ -8,8 +8,10 @@ from .schemas import (
     SuggestionDecision,
     SuggestionEvent,
 )
+from .composite_repository import CompositeSalesStrategyRepository
 from .explicit_recommendation import ExplicitSalesRecommendationConnector
 from .repository import SalesStrategyRepository
+from .supabase_repository import SupabaseSalesStrategyRepository
 from .recommendation_settings import (
     RecommendationSettings,
     RecommendationSettingsRepository,
@@ -24,6 +26,7 @@ from .strategy_service import (
 
 __all__ = [
     "ChatbotAIManagerBridge",
+    "CompositeSalesStrategyRepository",
     "ConversationSalesContext",
     "CustomerMemoryProfile",
     "ExplicitSalesRecommendationConnector",
@@ -38,4 +41,5 @@ __all__ = [
     "SalesStrategyValidationError",
     "SuggestionDecision",
     "SuggestionEvent",
+    "SupabaseSalesStrategyRepository",
 ]
