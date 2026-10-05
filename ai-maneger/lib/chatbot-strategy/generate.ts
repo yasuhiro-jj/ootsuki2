@@ -266,7 +266,7 @@ export async function generateChatbotStrategy(
   const qtyRanks = new Map(byQty.map((entry, index) => [entry.item.name, index + 1]));
   const span = Math.max(candidateCount - 1, 1);
 
-  const scored = matched
+  const ranked = matched
     .map(({ item, entry }) => {
       const marginRank = marginRanks.get(item.name) ?? candidateCount;
       const qtyRank = qtyRanks.get(item.name) ?? candidateCount;
@@ -276,8 +276,22 @@ export async function generateChatbotStrategy(
       return { item, entry, marginRank, qtyRank, marginPct, qtyPct, segment };
     })
     .filter((candidate) => candidate.segment !== null)
-    .sort((a, b) => b.marginPct + b.qtyPct - (a.marginPct + a.qtyPct))
-    .slice(0, maxProducts);
+    .sort((a, b) => b.marginPct + b.qtyPct - (a.marginPct + a.qtyPct));
+
+  const scored = ranked.slice(0, maxProducts);
+
+  // 粗利・売れ行きの合計で並べると看板商品が上位を独占し、「粗利は高いがまだ
+  // 売れていない」育成商品が常に外れてしまう。最後の1枠は育成商品に充てる。
+  if (
+    maxProducts >= 2 &&
+    scored.length === maxProducts &&
+    !scored.some((candidate) => candidate.segment === SEGMENT_GROWTH)
+  ) {
+    const bestGrowth = ranked.find((candidate) => candidate.segment === SEGMENT_GROWTH);
+    if (bestGrowth) {
+      scored[scored.length - 1] = bestGrowth;
+    }
+  }
 
   if (scored.length === 0) {
     return { ok: false, reason: "no_segment_matched", sourceSummary };

@@ -100,6 +100,55 @@ test("high margin but low volume product becomes a growth item", async () => {
   assert.equal(growth?.segment, SEGMENT_GROWTH);
 });
 
+/**
+ * 看板商品だけで枠が埋まる状況を作る。
+ * 粗利順位: 商品01..11 の順。数量順位: 商品04 だけ最下位。
+ *   → 商品01〜03 が看板、商品04 が育成（高粗利だが売れていない）。
+ */
+function makeSignatureHeavyOptions(maxProducts: number) {
+  const margins = [90, 85, 80, 75, 70, 65, 60, 55, 50, 45, 40];
+  const quantities = [100, 95, 90, 1, 85, 80, 75, 70, 65, 60, 55];
+  const products = margins.map((margin, index) =>
+    product(`商品${String(index + 1).padStart(2, "0")}`, margin, quantities[index]),
+  );
+  return makeOptions({
+    maxProducts,
+    loadProducts: async () => products,
+    loadMenuEntries: async () => products.map((item) => menuEntry({ name: item.name })),
+  });
+}
+
+test("reserves the last slot for a growth item when signature items fill the list", async () => {
+  const result = await generateChatbotStrategy(makeSignatureHeavyOptions(3));
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  const products = result.payload.priority_products;
+  assert.equal(products.length, 3);
+  assert.equal(products[0].segment, SEGMENT_SIGNATURE);
+  // 最後の1枠が育成商品に置き換わっている
+  assert.equal(products[2].segment, SEGMENT_GROWTH);
+  assert.equal(products[2].product_name, "商品04");
+});
+
+test("does not sacrifice the only slot when maxProducts is 1", async () => {
+  const result = await generateChatbotStrategy(makeSignatureHeavyOptions(1));
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  assert.equal(result.payload.priority_products.length, 1);
+  assert.equal(result.payload.priority_products[0].segment, SEGMENT_SIGNATURE);
+});
+
+test("keeps an existing growth item without replacing anything", async () => {
+  const result = await generateChatbotStrategy(makeOptions());
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  const segments = result.payload.priority_products.map((item) => item.segment);
+  assert.equal(segments.filter((segment) => segment === SEGMENT_GROWTH).length, 1);
+});
+
 test("respects the maximum product count", async () => {
   const result = await generateChatbotStrategy(makeOptions({ maxProducts: 2 }));
   assert.equal(result.ok, true);
