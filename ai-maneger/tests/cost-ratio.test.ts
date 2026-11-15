@@ -35,7 +35,12 @@ function makeSalesEntry(date: string, sales: number): KpiSnapshotEntry {
   };
 }
 
-function makePurchaseEntry(date: string, amountInclTax: number, accountCategory: string): PurchaseEntry {
+function makePurchaseEntry(
+  date: string,
+  amountInclTax: number,
+  accountCategory: string,
+  status?: string,
+): PurchaseEntry {
   return {
     id: date,
     date,
@@ -44,6 +49,7 @@ function makePurchaseEntry(date: string, amountInclTax: number, accountCategory:
     taxCategory: "10%",
     accountCategory,
     itemName: "テスト品目",
+    status,
   };
 }
 
@@ -53,8 +59,10 @@ test("convertToTaxIncluded converts tax-excluded sales to tax-included", () => {
   assert.equal(Math.round(convertToTaxIncluded(123456)), 135802);
 });
 
-test("isCostPurchase returns true for 仕入高 category", () => {
+test("isCostPurchase returns true for cost categories (仕入高, 食材費, 飲料費)", () => {
   assert.equal(isCostPurchase(makePurchaseEntry("2026-11-01", 10000, "仕入高")), true);
+  assert.equal(isCostPurchase(makePurchaseEntry("2026-11-01", 10000, "食材費")), true);
+  assert.equal(isCostPurchase(makePurchaseEntry("2026-11-01", 10000, "飲料費")), true);
   assert.equal(isCostPurchase(makePurchaseEntry("2026-11-01", 10000, "消耗品費")), false);
   assert.equal(isCostPurchase(makePurchaseEntry("2026-11-01", 10000, "水道光熱費")), false);
 });
@@ -85,17 +93,18 @@ test("aggregateMonthlySales sums sales by month", () => {
   assert.equal(result.get("2026-12"), 80000);
 });
 
-test("aggregateMonthlyPurchases sums only 仕入高 category purchases by month", () => {
+test("aggregateMonthlyPurchases sums only cost categories (仕入高, 食材費, 飲料費) by month", () => {
   const entries = [
     makePurchaseEntry("2026-11-01", 10000, "仕入高"),
-    makePurchaseEntry("2026-11-05", 15000, "仕入高"),
+    makePurchaseEntry("2026-11-05", 15000, "食材費"),
+    makePurchaseEntry("2026-11-08", 8000, "飲料費"),
     makePurchaseEntry("2026-11-10", 5000, "消耗品費"),
     makePurchaseEntry("2026-12-01", 20000, "仕入高"),
   ];
 
   const result = aggregateMonthlyPurchases(entries);
 
-  assert.equal(result.get("2026-11"), 25000);
+  assert.equal(result.get("2026-11"), 33000);
   assert.equal(result.get("2026-12"), 20000);
 });
 
@@ -168,4 +177,37 @@ test("formatCostRatioStatus returns correct status based on target comparison", 
   assert.equal(formatCostRatioStatus(watch), "watch");
   assert.equal(formatCostRatioStatus(urgent), "urgent");
   assert.equal(formatCostRatioStatus(unavailable), "unavailable");
+});
+
+test("aggregateMonthlyPurchases excludes non-cost categories", () => {
+  const entries = [
+    makePurchaseEntry("2026-11-01", 10000, "仕入高", "確認済み"),
+    makePurchaseEntry("2026-11-05", 15000, "食材費", "確認済み"),
+    makePurchaseEntry("2026-11-08", 8000, "飲料費", "確認済み"),
+    makePurchaseEntry("2026-11-10", 5000, "消耗品費", "確認済み"),
+    makePurchaseEntry("2026-11-15", 3000, "その他", "確認済み"),
+  ];
+
+  const result = aggregateMonthlyPurchases(entries);
+
+  assert.equal(result.get("2026-11"), 33000);
+});
+
+test("buildMonthlyCostRatios handles mixed cost categories", () => {
+  const salesEntries = [makeSalesEntry("2026-11-01", 100000), makeSalesEntry("2026-11-02", 100000)];
+
+  const purchaseEntries = [
+    makePurchaseEntry("2026-11-01", 10000, "仕入高", "確認済み"),
+    makePurchaseEntry("2026-11-05", 15000, "食材費", "確認済み"),
+    makePurchaseEntry("2026-11-08", 8000, "飲料費", "確認済み"),
+    makePurchaseEntry("2026-11-10", 5000, "消耗品費", "確認済み"),
+  ];
+
+  const result = buildMonthlyCostRatios(salesEntries, purchaseEntries);
+
+  assert.equal(result.length, 1);
+  const ratio = result[0];
+  assert.equal(ratio.purchaseAmountInclTax, 33000);
+  assert.equal(ratio.costRatio.toFixed(2), "15.00");
+  assert.equal(ratio.grossMarginRatio.toFixed(2), "85.00");
 });

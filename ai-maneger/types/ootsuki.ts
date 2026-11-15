@@ -189,6 +189,7 @@ export interface PurchaseEntry {
   imageUrl?: string;
   receiptId?: string;
   organizationId?: string;
+  status?: string;
 }
 
 export interface MonthlyCostRatio {

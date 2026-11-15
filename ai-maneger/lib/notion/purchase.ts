@@ -7,6 +7,7 @@ import {
   queryDatabaseAll,
 } from "@/lib/notion/client";
 import { getActiveTenantNotionConfig } from "@/lib/notion/tenant";
+import type { NotionProperty } from "@/types/notion";
 import type { PurchaseEntry } from "@/types/ootsuki";
 
 const DATE_KEYS = ["日付", "Date", "発行日"];
@@ -18,6 +19,26 @@ const ITEM_NAME_KEYS = ["品目", "Item", "品名"];
 const IMAGE_URL_KEYS = ["画像URL", "Image URL"];
 const RECEIPT_ID_KEYS = ["receipt_id", "Receipt ID"];
 const ORGANIZATION_ID_KEYS = ["organization_id", "Organization ID"];
+const STATUS_KEYS = ["ステータス", "Status"];
+
+function getPropertyValue(
+  properties: Record<string, NotionProperty>,
+  schema: Record<string, NotionProperty>,
+  aliases: string[],
+): string {
+  const key = getPropertyNameByAliases(schema, aliases);
+  if (!key) return "";
+
+  const prop = properties[key];
+  if (!prop) return "";
+
+  if (prop.select?.name) return prop.select.name;
+  if (prop.rich_text?.length) {
+    return prop.rich_text.map((t) => t.plain_text || "").join("");
+  }
+
+  return getPropertyText(properties, aliases);
+}
 
 export async function getPurchaseEntries(): Promise<PurchaseEntry[]> {
   const cfg = await getActiveTenantNotionConfig();
@@ -33,27 +54,26 @@ export async function getPurchaseEntries(): Promise<PurchaseEntry[]> {
   const entries: PurchaseEntry[] = [];
 
   for (const page of pages) {
-    const dateKey = getPropertyNameByAliases(schema, DATE_KEYS);
-    const supplierKey = getPropertyNameByAliases(schema, SUPPLIER_KEYS);
-    const amountKey = getPropertyNameByAliases(schema, AMOUNT_KEYS);
-    const taxCategoryKey = getPropertyNameByAliases(schema, TAX_CATEGORY_KEYS);
-    const accountCategoryKey = getPropertyNameByAliases(schema, ACCOUNT_CATEGORY_KEYS);
-    const itemNameKey = getPropertyNameByAliases(schema, ITEM_NAME_KEYS);
-    const imageUrlKey = getPropertyNameByAliases(schema, IMAGE_URL_KEYS);
-    const receiptIdKey = getPropertyNameByAliases(schema, RECEIPT_ID_KEYS);
-    const organizationIdKey = getPropertyNameByAliases(schema, ORGANIZATION_ID_KEYS);
-
-    const date = dateKey ? getPropertyDate(page.properties, DATE_KEYS) : "";
-    const supplier = supplierKey ? getPropertyText(page.properties, SUPPLIER_KEYS) : "";
-    const amountInclTax = amountKey ? getPropertyNumber(page.properties, AMOUNT_KEYS) : 0;
-    const taxCategory = taxCategoryKey ? getPropertyText(page.properties, TAX_CATEGORY_KEYS) : "";
-    const accountCategory = accountCategoryKey ? getPropertyText(page.properties, ACCOUNT_CATEGORY_KEYS) : "";
-    const itemName = itemNameKey ? getPropertyText(page.properties, ITEM_NAME_KEYS) : "";
-    const imageUrl = imageUrlKey ? getPropertyText(page.properties, IMAGE_URL_KEYS) : "";
-    const receiptId = receiptIdKey ? getPropertyText(page.properties, RECEIPT_ID_KEYS) : "";
-    const organizationId = organizationIdKey ? getPropertyText(page.properties, ORGANIZATION_ID_KEYS) : "";
+    const date = getPropertyDate(page.properties, DATE_KEYS);
+    const supplier = getPropertyValue(page.properties, schema, SUPPLIER_KEYS);
+    const amountInclTax = getPropertyNumber(page.properties, AMOUNT_KEYS);
+    const taxCategory = getPropertyValue(page.properties, schema, TAX_CATEGORY_KEYS);
+    const accountCategory = getPropertyValue(page.properties, schema, ACCOUNT_CATEGORY_KEYS);
+    const itemName = getPropertyValue(page.properties, schema, ITEM_NAME_KEYS);
+    const imageUrl = getPropertyText(page.properties, IMAGE_URL_KEYS);
+    const receiptId = getPropertyValue(page.properties, schema, RECEIPT_ID_KEYS);
+    const organizationId = getPropertyValue(page.properties, schema, ORGANIZATION_ID_KEYS);
+    const status = getPropertyValue(page.properties, schema, STATUS_KEYS);
 
     if (!date || typeof amountInclTax !== "number") {
+      continue;
+    }
+
+    if (status && status !== "確認済み") {
+      continue;
+    }
+
+    if (organizationId && organizationId !== "ootsuki") {
       continue;
     }
 
@@ -68,6 +88,7 @@ export async function getPurchaseEntries(): Promise<PurchaseEntry[]> {
       imageUrl: imageUrl || undefined,
       receiptId: receiptId || undefined,
       organizationId: organizationId || undefined,
+      status: status || undefined,
     });
   }
 

@@ -1,10 +1,12 @@
 import type { KpiSnapshotEntry, MonthlyCostRatio, PurchaseEntry } from "@/types/ootsuki";
 
-const COST_ACCOUNT_CATEGORIES = ["仕入高"];
+const COST_ACCOUNT_CATEGORIES = ["仕入高", "食材費", "飲料費"];
 
 const TAX_RATE = 1.10;
 
 const TARGET_GROSS_MARGIN_RATIO = 62.0;
+
+export { COST_ACCOUNT_CATEGORIES };
 
 export function isCostPurchase(entry: PurchaseEntry): boolean {
   return COST_ACCOUNT_CATEGORIES.includes(entry.accountCategory);
