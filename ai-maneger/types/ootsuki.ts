@@ -177,3 +177,35 @@ export interface NotionInstructionsDocument {
   body: string;
   pageId: string;
 }
+
+export interface PurchaseEntry {
+  id: string;
+  date: string;
+  supplier: string;
+  amountInclTax: number;
+  taxCategory: string;
+  accountCategory: string;
+  itemName: string;
+  imageUrl?: string;
+  receiptId?: string;
+  organizationId?: string;
+}
+
+export interface MonthlyCostRatio {
+  monthKey: string;
+  salesExclTax: number;
+  salesInclTax: number;
+  purchaseAmountInclTax: number;
+  costRatio: number;
+  grossMarginRatio: number;
+  salesInclTaxYoY?: number;
+  purchaseAmountYoY?: number;
+  costRatioYoY?: number;
+  grossMarginRatioYoY?: number;
+  targetGrossMarginRatio: number;
+  vsTarget: number;
+  dataStatus: {
+    salesAvailable: boolean;
+    purchaseAvailable: boolean;
+  };
+}

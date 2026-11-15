@@ -18,7 +18,10 @@ import { PosTimeZoneSalesPanel } from "@/components/ootsuki/pos-time-zone-sales-
 import { TimeZoneSalesHistoryPanel } from "@/components/ootsuki/time-zone-sales-history-panel";
 import { ProductInsightsHistoryPanel } from "@/components/ootsuki/product-insights-history-panel";
 import { ChatbotAutoStrategyPanel } from "@/components/ootsuki/chatbot-auto-strategy-panel";
+import { CostRatioPanel } from "@/components/ootsuki/cost-ratio-panel";
 import { MarketingCommandCenter } from "@/components/ootsuki/marketing-command-center";
+import { buildMonthlyCostRatios } from "@/lib/cost-ratio";
+import { getPurchaseEntries } from "@/lib/notion/purchase";
 import { recommendedAgents } from "@/lib/agents";
 import { getCurrentTenantAccessResult } from "@/lib/api/tenant-access";
 import { formatDateTime } from "@/lib/format";
@@ -72,6 +75,7 @@ const BUILD_TIMESTAMP = "v2-20260412-2";
 const dashboardAnchorItems = [
   { href: "#instructions", label: "運用指示書" },
   { href: "#monthly-kpis", label: "今月の数字" },
+  { href: "#cost-ratio", label: "原価率・粗利率" },
   { href: "#marketing-command", label: "マーケ施策司令塔" },
   { href: "#daily-input", label: "今日の日次入力" },
   { href: "#weekly-actions", label: "今週の実行項目" },
@@ -316,6 +320,13 @@ export default async function DashboardPage({
   const activeTenantConfigResult = await Promise.allSettled([getActiveTenantNotionConfig()]);
   const activeTenantConfig =
     activeTenantConfigResult[0].status === "fulfilled" ? activeTenantConfigResult[0].value : null;
+
+  const purchaseEntriesResult = await Promise.allSettled([getPurchaseEntries()]);
+  const purchaseEntries = purchaseEntriesResult[0].status === "fulfilled" ? purchaseEntriesResult[0].value : [];
+  const costRatios = buildMonthlyCostRatios(entries, purchaseEntries);
+  const costRatioConfigReady = Boolean(
+    activeTenantConfig?.purchaseDbId || process.env.NOTION_PURCHASE_DB_ID,
+  );
   const weeklyActionsConfigReady = Boolean(activeTenantConfig?.weeklyActionsDbId);
   const salesOverviewConfigReady = Boolean(activeTenantConfig?.dailySalesDbId && activeTenantConfig?.kpiDbId);
   const monthDisplayLabel = isCurrentMonthSelected
@@ -373,6 +384,15 @@ export default async function DashboardPage({
           <p className="mt-2 text-sm text-stone-500">
             {monthSummary.monthStart} 〜 {monthSummary.monthEnd}
           </p>
+        </SectionCard>
+      </section>
+
+      <section id="cost-ratio" className="mt-6 scroll-mt-6">
+        <SectionCard
+          title="原価率・粗利率（月次）"
+          description="日次売上DBと仕入DBから月次の原価率・粗利率を表示します。税込ベースで比較し、目標粗利率（62%）との差を確認できます。"
+        >
+          <CostRatioPanel ratios={costRatios} configReady={costRatioConfigReady} tenant={access.tenant} />
         </SectionCard>
       </section>
 
