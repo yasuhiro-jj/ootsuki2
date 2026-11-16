@@ -1,3 +1,4 @@
+import { isInstagramGrokBotSource } from "@/lib/os/instagram-grok";
 import { num } from "@/lib/os/format";
 import { clonePanelsForOverlay, pctChange, replacePanelMetric } from "@/lib/os/panel-overlay";
 import type { Finding, OsDashboardData } from "@/types/os";
@@ -265,14 +266,30 @@ export function applyInstagramWeeklyOverlay(data: OsDashboardData, pair: Instagr
   }
 
   const findings = buildInstagramFindings(latest, syncAt);
+  const grokIngested = isInstagramGrokBotSource(latest.source);
+  const grokFindings = findings.map((finding) =>
+    grokIngested
+      ? {
+          ...finding,
+          source: "grok_bot:instagram-weekly",
+          evidence: finding.evidence.map((item) => ({
+            ...item,
+            source: item.source?.includes("Grok") ? item.source : `grok_bot:${item.source || "instagram-weekly"}`,
+          })),
+        }
+      : finding,
+  );
+
   next.panels = next.panels.map((panel) =>
     panel.key === "instagram"
       ? {
           ...panel,
-          status: "manual",
-          statusNote: "Notion 週次入力（将来: Instagram Graph API に差し替え）",
+          status: grokIngested ? "grok_bot" : "manual",
+          statusNote: grokIngested
+            ? "Grok Bot → Notion おおつき Instagram週次DB（Meta インサイト）"
+            : "Notion 週次入力（将来: Instagram Graph API に差し替え）",
           updatedAt: syncAt,
-          findings: [...findings, ...panel.findings.filter((f) => !f.id.startsWith("ig-"))],
+          findings: [...grokFindings, ...panel.findings.filter((f) => !f.id.startsWith("ig-"))],
         }
       : panel,
   );
@@ -281,13 +298,28 @@ export function applyInstagramWeeklyOverlay(data: OsDashboardData, pair: Instagr
     connector.key === "instagram"
       ? {
           ...connector,
-          status: "manual",
-          via: "Notion おおつき Instagram週次DB",
+          status: grokIngested ? "grok_bot" : "manual",
+          via: grokIngested
+            ? "Grok Bot → Meta インサイト → Notion"
+            : "Notion おおつき Instagram週次DB",
           lastSyncAt: syncAt,
-          note: "Meta インサイト API 接続後に自動取得へ切替可能",
+          note: grokIngested ? undefined : "Meta インサイト API 接続後に自動取得へ切替可能",
         }
       : connector,
   );
+
+  if (grokIngested) {
+    next.grokBots = next.grokBots.map((bot) =>
+      bot.key === "ai_manager_bot"
+        ? {
+            ...bot,
+            state: "ok",
+            lastIngestAt: syncAt,
+            findingsCount: Math.max(bot.findingsCount, grokFindings.length),
+          }
+        : bot,
+    );
+  }
 
   next.agents = next.agents.map((agent) =>
     agent.key === "sns" ? { ...agent, state: "ok", lastRunAt: syncAt, findingsCount: Math.max(findings.length, 1) } : agent,

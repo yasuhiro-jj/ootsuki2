@@ -9,6 +9,7 @@ import {
   postingFrequencyPerWeek,
 } from "../lib/os/instagram-weekly";
 import { applyMeoWeeklyOverlay, buildMeoFindings } from "../lib/os/meo-weekly";
+import { pickInstagramWeeklyPairRows } from "../lib/os/instagram-weekly-sources";
 import { scrubUnconnectedSamples } from "../lib/os/live-mode";
 
 const instagramSnapshot = {
@@ -56,11 +57,34 @@ const meoSnapshot = {
   source: "テスト",
 };
 
+test("Grok Bot 行があれば手入力より優先して読む", () => {
+  const manual = { ...instagramSnapshot, fetchedAt: "2026-11-16T12:00:00.000Z", source: "手入力" };
+  const grok = {
+    ...instagramSnapshot,
+    fetchedAt: "2026-09-29T12:00:00.000Z",
+    source: "Grok Bot | period=2026-08-02..2026-09-01",
+    views30: 15000,
+  };
+  const pair = pickInstagramWeeklyPairRows([manual, grok]);
+  assert.equal(pair?.latest.source.includes("Grok Bot"), true);
+  assert.equal(pair?.latest.views30, 15000);
+});
+
 test("投稿日から最終投稿・頻度を計算する", () => {
   const dates = parseInstagramPostDates("2026-09-23, 2026-09-16");
   assert.equal(daysSinceLastPost(dates, "2026-09-29"), 6);
   const freq = postingFrequencyPerWeek(dates, "2026-09-29");
   assert.ok(freq !== null && freq > 0);
+});
+
+test("Instagram 週次 Grok Bot 行はパネルを grok_bot 表示にする", () => {
+  const grokSnapshot = { ...instagramSnapshot, source: "Grok Bot | period=2026-08-02..2026-09-01" };
+  const applied = applyInstagramWeeklyOverlay(osSampleData, { latest: grokSnapshot, previous: null });
+  const panel = applied.panels.find((p) => p.key === "instagram");
+  assert.equal(panel?.status, "grok_bot");
+  assert.match(panel?.statusNote || "", /Grok Bot/);
+  const connector = applied.connectors.find((c) => c.key === "instagram");
+  assert.equal(connector?.status, "grok_bot");
 });
 
 test("Instagram 週次をパネルに載せ、発見ルールを満たす", () => {
