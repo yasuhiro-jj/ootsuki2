@@ -7,13 +7,12 @@ import {
 } from "@/lib/notion/client";
 import { marketingMetricsFromGrokPayload, type InstagramGrokPersistedRow } from "@/lib/marketing/instagram-grok-map";
 import type { InstagramGrokIngestBody } from "@/lib/marketing/instagram-grok-types";
+import { INSTAGRAM_GROK_SOURCE_LABEL, isInstagramGrokBotSource } from "@/lib/os/instagram-grok";
 import type { MarketingChannelMetrics } from "@/types/marketing";
 import { getTenantNotionConfig } from "@/lib/tenant-config/service";
 import type { TenantKey } from "@/lib/tenant-config/types";
 
 const OOTSUKI_INSTAGRAM_WEEKLY_DB_ID = "95dec78deaa84f15a0def2701754530a";
-const GROK_SOURCE_LABEL = "Grok Bot";
-
 function instagramDbId(tenant: TenantKey) {
   const env =
     tenant === "demo"
@@ -36,7 +35,7 @@ function parsePersistedRow(page: {
   if (!capturedAt) return null;
 
   const source = getPropertyText(properties, ["ソース"]) || "";
-  if (!source.includes(GROK_SOURCE_LABEL)) return null;
+  if (!isInstagramGrokBotSource(source)) return null;
 
   const periodMatch = source.match(/period=([0-9]{4}-[0-9]{2}-[0-9]{2})..([0-9]{4}-[0-9]{2}-[0-9]{2})/);
 
@@ -107,7 +106,7 @@ export async function saveInstagramGrokMetricsToNotion(
     period.start && period.end ? ` (${period.start.slice(0, 10)}〜${period.end.slice(0, 10)})` : "";
   const title = `${capturedAt} Grok Bot Instagram${periodLabel}`.slice(0, 2000);
   const sourceNote = [
-  GROK_SOURCE_LABEL,
+    INSTAGRAM_GROK_SOURCE_LABEL,
     period.start && period.end ? `period=${period.start.slice(0, 10)}..${period.end.slice(0, 10)}` : "",
     body.note?.trim() || "",
   ]
@@ -137,6 +136,27 @@ export async function saveInstagramGrokMetricsToNotion(
     if (typeof value !== "number" || !Number.isFinite(value)) continue;
     if (notionKey === "エンゲージメント率") continue;
     properties[notionKey] = { number: value };
+  }
+
+  if (typeof metrics.interactions === "number" && Number.isFinite(metrics.interactions)) {
+    properties["インタラクション"] = { number: metrics.interactions };
+  }
+
+  const followerPct =
+    typeof metrics.views_follower_pct === "number" && Number.isFinite(metrics.views_follower_pct)
+      ? metrics.views_follower_pct
+      : typeof metrics.non_follower_reach_rate === "number" && Number.isFinite(metrics.non_follower_reach_rate)
+        ? Math.max(0, Math.min(100, 100 - metrics.non_follower_reach_rate))
+        : undefined;
+  if (followerPct !== undefined) {
+    properties["閲覧_フォロワー率"] = { number: followerPct };
+  }
+
+  if (typeof metrics.post_view_pct === "number" && Number.isFinite(metrics.post_view_pct)) {
+    properties["投稿閲覧率"] = { number: metrics.post_view_pct };
+  }
+  if (typeof metrics.story_view_pct === "number" && Number.isFinite(metrics.story_view_pct)) {
+    properties["ストーリーズ閲覧率"] = { number: metrics.story_view_pct };
   }
 
   if (body.post_dates?.length) {

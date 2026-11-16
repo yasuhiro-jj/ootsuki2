@@ -63,6 +63,16 @@ test("投稿日から最終投稿・頻度を計算する", () => {
   assert.ok(freq !== null && freq > 0);
 });
 
+test("Instagram 週次 Grok Bot 行はパネルを grok_bot 表示にする", () => {
+  const grokSnapshot = { ...instagramSnapshot, source: "Grok Bot | period=2026-08-02..2026-09-01" };
+  const applied = applyInstagramWeeklyOverlay(osSampleData, { latest: grokSnapshot, previous: null });
+  const panel = applied.panels.find((p) => p.key === "instagram");
+  assert.equal(panel?.status, "grok_bot");
+  assert.match(panel?.statusNote || "", /Grok Bot/);
+  const connector = applied.connectors.find((c) => c.key === "instagram");
+  assert.equal(connector?.status, "grok_bot");
+});
+
 test("Instagram 週次をパネルに載せ、発見ルールを満たす", () => {
   const findings = buildInstagramFindings(instagramSnapshot, instagramSnapshot.updatedAt);
   assert.ok(findings.some((f) => f.title === "新規リーチが弱い"));

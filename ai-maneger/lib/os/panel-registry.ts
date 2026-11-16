@@ -58,7 +58,12 @@ export const PANEL_REGISTRY: PanelDefinition[] = [
     group: "marketing",
     order: 40,
     enabled: true,
-    feeds: ["Notion おおつき Instagram週次DB", "Instagram Graph API（将来）", "findings(agent=sns)"],
+    feeds: [
+      "POST /api/marketing/ingest/instagram ← Grok Bot",
+      "Notion おおつき Instagram週次DB",
+      "Instagram Graph API（将来）",
+      "findings(agent=sns)",
+    ],
   },
   {
     key: "seo",

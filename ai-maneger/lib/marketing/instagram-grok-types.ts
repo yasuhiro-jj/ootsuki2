@@ -4,11 +4,15 @@ export type InstagramGrokIngestMetrics = {
   reach?: number;
   views?: number;
   accounts_engaged?: number;
+  interactions?: number;
   profile_views?: number;
   follower_count?: number;
   non_follower_reach_rate?: number;
+  views_follower_pct?: number;
   engagement_rate?: number;
   reels_ratio?: number;
+  post_view_pct?: number;
+  story_view_pct?: number;
 };
 
 export type InstagramGrokIngestBody = {
