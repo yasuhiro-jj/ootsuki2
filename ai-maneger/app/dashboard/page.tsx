@@ -325,7 +325,9 @@ export default async function DashboardPage({
   const purchaseEntries = purchaseEntriesResult[0].status === "fulfilled" ? purchaseEntriesResult[0].value : [];
   const costRatios = buildMonthlyCostRatios(entries, purchaseEntries);
   const costRatioConfigReady = Boolean(
-    activeTenantConfig?.purchaseDbId || process.env.NOTION_PURCHASE_DB_ID,
+    activeTenantConfig?.purchaseDbId ||
+      process.env.NOTION_OOTSUKI_PURCHASE_DB_ID ||
+      process.env.NOTION_PURCHASE_DB_ID,
   );
   const weeklyActionsConfigReady = Boolean(activeTenantConfig?.weeklyActionsDbId);
   const salesOverviewConfigReady = Boolean(activeTenantConfig?.dailySalesDbId && activeTenantConfig?.kpiDbId);

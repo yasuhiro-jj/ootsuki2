@@ -6,6 +6,7 @@ import {
   getPropertyText,
   queryDatabaseAll,
 } from "@/lib/notion/client";
+import { isIncludedPurchaseOrganization } from "@/lib/notion/purchase-org";
 import { getActiveTenantNotionConfig } from "@/lib/notion/tenant";
 import type { NotionProperty } from "@/types/notion";
 import type { PurchaseEntry } from "@/types/ootsuki";
@@ -40,9 +41,18 @@ function getPropertyValue(
   return getPropertyText(properties, aliases);
 }
 
+function resolvePurchaseDbId(cfg: { purchaseDbId?: string } | null | undefined): string {
+  return (
+    cfg?.purchaseDbId ||
+    process.env.NOTION_OOTSUKI_PURCHASE_DB_ID ||
+    process.env.NOTION_PURCHASE_DB_ID ||
+    ""
+  ).trim();
+}
+
 export async function getPurchaseEntries(): Promise<PurchaseEntry[]> {
   const cfg = await getActiveTenantNotionConfig();
-  const purchaseDbId = cfg?.purchaseDbId || process.env.NOTION_PURCHASE_DB_ID;
+  const purchaseDbId = resolvePurchaseDbId(cfg);
 
   if (!purchaseDbId) {
     return [];
@@ -73,7 +83,7 @@ export async function getPurchaseEntries(): Promise<PurchaseEntry[]> {
       continue;
     }
 
-    if (organizationId && organizationId !== "ootsuki") {
+    if (!isIncludedPurchaseOrganization(organizationId)) {
       continue;
     }
 
