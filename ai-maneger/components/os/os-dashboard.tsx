@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useState } from "react";
+import { ReceiptDeskLink } from "@/components/common/receipt-desk-link";
 import type { DecisionType, OsDashboardData, TaskEvent } from "@/types/os";
 import { DECISION_TO_STATE } from "@/types/os";
 import { DashboardHeader, SampleBanner, SectionNav } from "./dashboard-header";
@@ -93,6 +94,8 @@ export function OsDashboard({ initialData, apiBase }: OsDashboardProps) {
             <Link href="/dashboard" className="font-semibold text-orange-700 hover:underline">
               既存ダッシュボードへ戻る
             </Link>
+            <span className="mx-2 text-stone-300">/</span>
+            <ReceiptDeskLink variant="footer" />
             <span className="mx-2 text-stone-300">/</span>
             <Link href="/tech" className="font-semibold text-orange-700 hover:underline">
               テックニュース

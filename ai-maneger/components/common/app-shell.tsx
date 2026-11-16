@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { LogoutButton } from "@/components/auth/LogoutButton";
+import { ReceiptDeskLink } from "@/components/common/receipt-desk-link";
 import { TenantAccessBadge } from "@/components/TenantAccessBadge";
 
 const navigationItems = [
@@ -49,6 +50,9 @@ export function AppShell({ title, description, actions, sectionNavItems, childre
               </Link>
             ))}
           </nav>
+          <div className="mt-6">
+            <ReceiptDeskLink variant="sidebar" />
+          </div>
           {sectionNavItems?.length ? (
             <nav className="mt-8 border-t border-white/10 pt-6">
               <p className="px-4 text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">
@@ -91,6 +95,7 @@ export function AppShell({ title, description, actions, sectionNavItems, childre
               {actions ? <div className="shrink-0">{actions}</div> : null}
             </div>
             <div className="mt-4 flex flex-wrap items-center justify-end gap-3">
+              <ReceiptDeskLink variant="header" />
               <TenantAccessBadge />
               <LogoutButton />
             </div>
