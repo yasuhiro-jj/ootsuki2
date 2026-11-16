@@ -104,6 +104,9 @@ function buildOotsukiEnvConfig(): TenantNotionConfig {
     productCostDbId: read(process.env.NOTION_OOTSUKI_PRODUCT_COST_DB_ID),
     weeklyActionsDbId: read(process.env.NOTION_OOTSUKI_WEEKLY_ACTIONS_DB_ID),
     instructionsPageId: read(process.env.NOTION_OOTSUKI_INSTRUCTIONS_PAGE_ID),
+    purchaseDbId:
+      read(process.env.NOTION_OOTSUKI_PURCHASE_DB_ID) ||
+      read(process.env.NOTION_PURCHASE_DB_ID),
   };
 }
 
@@ -141,6 +144,7 @@ function mergeWithFallback(recordConfig: TenantNotionConfig, fallback: TenantNot
     productCostDbId: recordConfig.productCostDbId || fallback.productCostDbId,
     weeklyActionsDbId: recordConfig.weeklyActionsDbId || fallback.weeklyActionsDbId,
     instructionsPageId: recordConfig.instructionsPageId || fallback.instructionsPageId,
+    purchaseDbId: recordConfig.purchaseDbId || fallback.purchaseDbId,
   };
 }
 
@@ -171,6 +175,7 @@ export async function getTenantNotionConfig(tenant: TenantKey): Promise<TenantNo
       productCostDbId: record.productCostDbId,
       weeklyActionsDbId: record.weeklyActionsDbId,
       instructionsPageId: record.instructionsPageId,
+      purchaseDbId: record.purchaseDbId,
     },
     fallback,
   );
