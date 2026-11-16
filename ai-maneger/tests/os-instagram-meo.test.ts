@@ -9,6 +9,7 @@ import {
   postingFrequencyPerWeek,
 } from "../lib/os/instagram-weekly";
 import { applyMeoWeeklyOverlay, buildMeoFindings } from "../lib/os/meo-weekly";
+import { pickInstagramWeeklyPairRows } from "../lib/os/instagram-weekly-sources";
 import { scrubUnconnectedSamples } from "../lib/os/live-mode";
 
 const instagramSnapshot = {
@@ -55,6 +56,19 @@ const meoSnapshot = {
   rankLeader: "ごはんや よつは",
   source: "テスト",
 };
+
+test("Grok Bot 行があれば手入力より優先して読む", () => {
+  const manual = { ...instagramSnapshot, fetchedAt: "2026-11-16T12:00:00.000Z", source: "手入力" };
+  const grok = {
+    ...instagramSnapshot,
+    fetchedAt: "2026-09-29T12:00:00.000Z",
+    source: "Grok Bot | period=2026-08-02..2026-09-01",
+    views30: 15000,
+  };
+  const pair = pickInstagramWeeklyPairRows([manual, grok]);
+  assert.equal(pair?.latest.source.includes("Grok Bot"), true);
+  assert.equal(pair?.latest.views30, 15000);
+});
 
 test("投稿日から最終投稿・頻度を計算する", () => {
   const dates = parseInstagramPostDates("2026-09-23, 2026-09-16");

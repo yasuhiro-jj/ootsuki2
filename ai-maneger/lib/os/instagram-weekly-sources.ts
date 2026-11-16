@@ -1,5 +1,6 @@
 import { getPropertyDate, getPropertyNumber, getPropertyText, queryDatabaseAllWithToken } from "@/lib/notion/client";
 import { loadInstagramWeeklyFromApi } from "@/lib/os/instagram-api";
+import { isInstagramGrokBotSource } from "@/lib/os/instagram-grok";
 import type { InstagramWeeklyPair, InstagramWeeklySnapshot } from "@/lib/os/instagram-weekly";
 import { getTenantNotionConfig } from "@/lib/tenant-config/service";
 import type { TenantKey } from "@/lib/tenant-config/types";
@@ -65,13 +66,17 @@ async function loadFromNotion(tenant: TenantKey): Promise<InstagramWeeklyPair | 
     return null;
   }
 
-  const rows = pages
-    .map(mapPage)
-    .filter((row): row is InstagramWeeklySnapshot => Boolean(row))
-    .sort((left, right) => right.fetchedAt.localeCompare(left.fetchedAt));
+  const rows = pages.map(mapPage).filter((row): row is InstagramWeeklySnapshot => Boolean(row));
+  return pickInstagramWeeklyPairRows(rows);
+}
 
+/** Grok Bot 行があれば手入力行より優先（データ接続・パネル表示を Grok 経由に揃える）。 */
+export function pickInstagramWeeklyPairRows(rows: InstagramWeeklySnapshot[]): InstagramWeeklyPair | null {
   if (rows.length === 0) return null;
-  return { latest: rows[0], previous: rows[1] ?? null };
+  const sorted = [...rows].sort((left, right) => right.fetchedAt.localeCompare(left.fetchedAt));
+  const grokRows = sorted.filter((row) => isInstagramGrokBotSource(row.source));
+  const chain = grokRows.length > 0 ? grokRows : sorted;
+  return { latest: chain[0], previous: chain[1] ?? null };
 }
 
 /** API が未接続の間は Notion の最新2行を読む。 */
