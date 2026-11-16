@@ -1,4 +1,6 @@
+import { loadLatestInstagramGrokMetrics } from "@/lib/marketing/instagram-notion-snapshot";
 import type { MarketingChannelMetrics, MarketingMetric, MarketingStore } from "@/types/marketing";
+import type { TenantKey } from "@/lib/tenant-config/types";
 
 const CACHE_TTL_MS = Number(process.env.MARKETING_METRICS_CACHE_TTL_MS || 30 * 60 * 1000);
 
@@ -17,6 +19,10 @@ type InternalMetricsResponse = {
 };
 
 const cache = new Map<string, { expiresAt: number; snapshot: MarketingChannelMetrics[] }>();
+
+export function clearMarketingMetricsCache() {
+  cache.clear();
+}
 
 function nowIso() {
   return new Date().toISOString();
@@ -215,7 +221,21 @@ function cacheKey(store?: MarketingStore) {
   return `marketing-metrics:${store?.tenantKey || "unknown"}:${store?.id || "default"}`;
 }
 
+function isGrokNotionInstagramPreferred() {
+  return (process.env.MARKETING_INSTAGRAM_SOURCE || "").trim().toLowerCase() === "grok_notion";
+}
+
+async function loadInstagramGrokFallback(store: MarketingStore) {
+  const tenant = (store.tenantKey === "demo" ? "demo" : "ootsuki") as TenantKey;
+  return loadLatestInstagramGrokMetrics(tenant);
+}
+
 export async function getInstagramMetrics(store: MarketingStore): Promise<MarketingChannelMetrics> {
+  if (isGrokNotionInstagramPreferred()) {
+    const fromNotion = await loadInstagramGrokFallback(store);
+    if (fromNotion) return fromNotion;
+  }
+
   try {
     const response = await fetchInternalMetrics({
       baseUrl: process.env.INSTAGRAM_INTERNAL_API_URL,
@@ -224,8 +244,15 @@ export async function getInstagramMetrics(store: MarketingStore): Promise<Market
       store,
       service: "instagram",
     });
-    return normalizeInstagramMetrics(response);
+    if (response) {
+      return normalizeInstagramMetrics(response);
+    }
+    const fromNotion = await loadInstagramGrokFallback(store);
+    if (fromNotion) return fromNotion;
+    return normalizeInstagramMetrics(null);
   } catch (error) {
+    const fromNotion = await loadInstagramGrokFallback(store);
+    if (fromNotion) return fromNotion;
     const fallback = fallbackMetricSnapshot(store)[0];
     return {
       ...fallback,
