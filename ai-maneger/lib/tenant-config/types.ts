@@ -13,6 +13,7 @@ export type TenantNotionConfig = {
   productCostDbId: string;
   weeklyActionsDbId: string;
   instructionsPageId: string;
+  purchaseDbId?: string;
 };
 
 export type TenantConfigRecord = {
@@ -27,6 +28,7 @@ export type TenantConfigRecord = {
   productCostDbId: string;
   weeklyActionsDbId: string;
   instructionsPageId: string;
+  purchaseDbId?: string;
   isActive: boolean;
   updatedAt: string;
 };
