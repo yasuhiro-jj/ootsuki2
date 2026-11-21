@@ -55,6 +55,8 @@ node_modules/
 !frontend/lib/api.ts
 !ai-maneger/lib/
 !ai-maneger/lib/**
+!apps/gps-sales/src/lib/
+!apps/gps-sales/src/lib/**
 frontend/node_modules/
 frontend/.next/
 frontend/.env.local
@@ -83,6 +85,10 @@ backup_*.py
 !README.md
 !RAILWAY_DEPLOY.md
 !GIT_PUSH_GUIDE.md
+!apps/gps-sales/README.md
+!apps/gps-sales/AGENTS.md
+!apps/gps-sales/docs/
+!apps/gps-sales/docs/**
 ootsuki2_backup_*/
 おおつきチャットボット/
 data/
