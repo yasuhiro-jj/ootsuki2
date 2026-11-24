@@ -1,4 +1,5 @@
 import { generateReply } from "@/lib/agent-chat";
+import { extractChatbotNodeName } from "@/lib/marketing/chatbot-action-hints";
 import { findChatbotNodesByName } from "@/lib/marketing/chatbot-integration";
 import { formatMetricsForPrompt } from "@/lib/marketing/metrics";
 import type {
@@ -192,8 +193,7 @@ export function parseGeneratedMarketingActions(reply: string): { diagnosis: stri
  * 実在する会話ノードかを検証する。抽出できない・実在しない場合は false（=不採用）。
  */
 async function isVerifiableChatbotAction(tenantKey: string, recommendedAction: string): Promise<boolean> {
-  const match = recommendedAction.match(/[『「]([^』」]+)[』」]/);
-  const nodeName = match?.[1]?.trim();
+  const nodeName = extractChatbotNodeName(recommendedAction);
   if (!nodeName) return false;
   try {
     const found = await findChatbotNodesByName(tenantKey, nodeName);
