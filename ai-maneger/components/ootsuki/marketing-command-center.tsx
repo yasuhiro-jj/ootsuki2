@@ -295,6 +295,7 @@ export function MarketingCommandCenter({
   // 却下済み・完了済みの施策は既定では隠す。一覧が古い提案で埋まって
   // 「同じようなものがまだある」ように見えるのを防ぐため。
   const [showResolvedActions, setShowResolvedActions] = useState(false);
+  const [actionSearch, setActionSearch] = useState("");
 
   async function generateActions() {
     if (!enabled || !storeReady || loading) return;
@@ -467,9 +468,28 @@ export function MarketingCommandCenter({
   const resolvedActionsCount = actions.filter(
     (action) => action.approvalStatus === "rejected" || action.status === "completed",
   ).length;
-  const visibleActions = showResolvedActions
+  const statusFilteredActions = showResolvedActions
     ? actions
     : actions.filter((action) => action.approvalStatus !== "rejected" && action.status !== "completed");
+
+  // タイトル・理由・推奨施策・根拠を対象に、入力文字で絞り込む。
+  const searchTerm = actionSearch.trim().toLowerCase();
+  const visibleActions = searchTerm
+    ? statusFilteredActions.filter((action) => {
+        const haystack = [
+          action.title,
+          action.reason,
+          action.recommendedAction,
+          action.contentTheme,
+          action.targetKpi,
+          ...action.evidence.flatMap((item) => [item.metric, item.explanation]),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(searchTerm);
+      })
+    : statusFilteredActions;
 
   return (
     <div className="grid gap-5">
@@ -612,11 +632,33 @@ export function MarketingCommandCenter({
         </div>
       ) : null}
 
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          value={actionSearch}
+          onChange={(event) => setActionSearch(event.target.value)}
+          placeholder="施策を検索（タイトル・理由・推奨施策・根拠）"
+          className="min-w-[16rem] flex-1 rounded-lg border border-stone-900/15 bg-white px-3 py-1.5 text-sm text-stone-700"
+        />
+        {searchTerm ? (
+          <button
+            type="button"
+            onClick={() => setActionSearch("")}
+            className="rounded-lg border border-stone-900/15 px-3 py-1.5 text-sm text-stone-600"
+          >
+            クリア
+          </button>
+        ) : null}
+      </div>
+
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-stone-600">
+          {`${visibleActions.length}件を表示中`}
+          {searchTerm ? `（「${actionSearch.trim()}」で絞り込み中）` : ""}
           {showResolvedActions
-            ? `${actions.length}件を表示中（却下・完了済みを含む）`
-            : `${visibleActions.length}件を表示中（却下・完了済み ${resolvedActionsCount}件は非表示）`}
+            ? "（却下・完了済みを含む）"
+            : resolvedActionsCount > 0
+              ? `（却下・完了済み ${resolvedActionsCount}件は非表示）`
+              : ""}
         </p>
         {resolvedActionsCount > 0 ? (
           <label className="flex cursor-pointer items-center gap-2 text-sm text-stone-600">
@@ -636,7 +678,9 @@ export function MarketingCommandCenter({
           <div className="rounded-2xl border border-stone-900/10 bg-white px-4 py-4 text-sm text-stone-600 md:col-span-2">
             {actions.length === 0
               ? "まだAI施策は保存されていません。店舗目標とInstagram/GBP指標をもとに生成できます。"
-              : "表示できる施策がありません（却下・完了済みのみです）。上のチェックを入れると表示されます。"}
+              : searchTerm
+                ? `「${actionSearch.trim()}」に一致する施策がありません。検索欄を空にすると全件表示に戻ります。`
+                : "表示できる施策がありません（却下・完了済みのみです）。上のチェックを入れると表示されます。"}
           </div>
         ) : (
           visibleActions.map((action) => (
