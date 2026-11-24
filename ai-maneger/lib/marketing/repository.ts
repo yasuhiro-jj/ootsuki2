@@ -332,8 +332,11 @@ export async function saveMarketingActions(params: {
     const saved: MarketingAction[] = [];
     for (const action of params.actions) {
       const targetStoreId = action.storeId || defaultStoreId;
-      // 同じチャネルの古い未承認提案が残っていると重複表示になるため、
+      // 同じチャネルの古い提案が残っていると重複表示になるため、
       // 新規提案を保存する前に却下扱いにしておく。
+      // 承認済みでもまだ実行していない提案は、より新しい数値で作り直した
+      // 今回の提案に置き換わるので同じく片付ける（status='approved'）。
+      // 実行済み・完了済み（executed / completed）は実績なので残す。
       // store_id で厳密一致させると、get-or-create の競合等でtenantに
       // 複数のmarketing_storesレコードが存在した場合に一致せず、古い
       // pending提案が却下されずに残ってしまう（重複提案の主因）。
@@ -343,7 +346,7 @@ export async function saveMarketingActions(params: {
         `UPDATE marketing_actions
             SET status = 'rejected', approval_status = 'rejected', updated_at = NOW()
           WHERE tenant_key = $1 AND target_channel = $2
-            AND status = 'proposed' AND approval_status = 'pending'`,
+            AND status IN ('proposed', 'approved')`,
         [params.tenantKey, action.targetChannel],
       );
       const result = await client.query(

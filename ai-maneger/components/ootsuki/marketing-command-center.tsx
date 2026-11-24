@@ -1,7 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getMarketingActionDestinations } from "@/lib/marketing/action-service";
+import {
+  extractChatbotActionHints,
+  suggestedNodePriority,
+} from "@/lib/marketing/chatbot-action-hints";
 import type {
   IntegrationStatus,
   MarketingAction,
@@ -63,21 +67,34 @@ function ChatbotChannelPanel({
   disabled: boolean;
   onApplied: (updatedAction: MarketingAction) => void;
 }) {
-  const [query, setQuery] = useState("");
+  // 施策文（recommended_action）は「『ノード名』ノードの優先度を…。追加キーワード: …」
+  // という決まった形で生成される。そこからノード名とキーワードを取り出して
+  // 初期値にし、利用者が検索語を推測しなくても反映できるようにする。
+  const hints = useMemo(
+    () => extractChatbotActionHints(action.recommendedAction),
+    [action.recommendedAction],
+  );
+
+  const [query, setQuery] = useState(hints.nodeName);
   const [searching, setSearching] = useState(false);
   const [candidates, setCandidates] = useState<ChatbotNodeCandidate[]>([]);
   const [selected, setSelected] = useState<ChatbotNodeCandidate | null>(null);
-  const [addKeywords, setAddKeywords] = useState("おすすめ,人気");
-  const [newPriority, setNewPriority] = useState("10");
+  const [addKeywords, setAddKeywords] = useState(
+    hints.keywords.length > 0 ? hints.keywords.join(",") : "おすすめ,人気",
+  );
+  const [newPriority, setNewPriority] = useState(
+    String(suggestedNodePriority(hints.priorityIntent)),
+  );
   const [applying, setApplying] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  async function searchNodes() {
-    if (!query.trim() || searching) return;
+  const searchNodes = useCallback(async function searchNodes(term?: string) {
+    const searchTerm = (term ?? query).trim();
+    if (!searchTerm || searching) return;
     setSearching(true);
     setMessage(null);
     try {
-      const response = await fetch(`/api/marketing/chatbot-nodes/search?q=${encodeURIComponent(query.trim())}`);
+      const response = await fetch(`/api/marketing/chatbot-nodes/search?q=${encodeURIComponent(searchTerm)}`);
       const data = (await response.json()) as { ok?: boolean; message?: string; nodes?: ChatbotNodeCandidate[] };
       if (!response.ok || !data.ok) {
         setMessage(data.message || "検索に失敗しました。");
@@ -93,7 +110,29 @@ function ChatbotChannelPanel({
     } finally {
       setSearching(false);
     }
-  }
+  }, [query, searching]);
+
+  // 施策文からノード名を取り出せた場合は、パネルを開いた時点で検索しておく。
+  const autoSearchedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!hints.nodeName || autoSearchedFor.current === hints.nodeName) return;
+    autoSearchedFor.current = hints.nodeName;
+    void searchNodes(hints.nodeName);
+  }, [hints.nodeName, searchNodes]);
+
+  // 候補が1件だけなら選択状態にしておく（施策文のノード名は実在確認済み）。
+  useEffect(() => {
+    if (candidates.length === 1 && !selected) {
+      setSelected(candidates[0]);
+    }
+  }, [candidates, selected]);
+
+  // 「優先度を維持する」施策では、選んだノードの現在値を初期値にして
+  // 操作しないかぎり優先度が変わらないようにする。
+  useEffect(() => {
+    if (!selected || hints.priorityIntent === "raise") return;
+    setNewPriority(String(suggestedNodePriority(hints.priorityIntent, selected.priority)));
+  }, [selected, hints.priorityIntent]);
 
   async function applyToChatbot() {
     if (!selected || applying) return;
