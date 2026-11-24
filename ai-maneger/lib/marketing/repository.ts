@@ -161,15 +161,20 @@ function rowToExecution(row: Record<string, unknown>): MarketingActionExecution 
   };
 }
 
+function absoluteEnvUrl(name: string) {
+  const value = process.env[name]?.trim();
+  return value && /^https?:\/\//i.test(value) ? value : undefined;
+}
+
 export function buildFallbackMarketingStore(tenantKey: TenantKey): MarketingStore {
   const now = new Date().toISOString();
   return {
     id: `${tenantKey}-default-store`,
     tenantKey,
     name: tenantKey === "demo" ? "デモ店舗" : "食事処おおつき",
-    instagramAppUrl: process.env.NEXT_PUBLIC_INSTAGRAM_APP_URL || "/instagram",
-    gbpAppUrl: process.env.NEXT_PUBLIC_GBP_APP_URL || "/google-business-profile",
-    canvaAppUrl: process.env.NEXT_PUBLIC_CANVA_APP_URL || "/canva",
+    instagramAppUrl: absoluteEnvUrl("NEXT_PUBLIC_INSTAGRAM_APP_URL"),
+    gbpAppUrl: absoluteEnvUrl("NEXT_PUBLIC_GBP_APP_URL"),
+    canvaAppUrl: absoluteEnvUrl("NEXT_PUBLIC_CANVA_APP_URL"),
     createdAt: now,
     updatedAt: now,
   };
@@ -200,7 +205,7 @@ export async function getOrCreateDefaultMarketingStore(tenantKey: TenantKey): Pr
         RETURNING id, tenant_key, name, agency_id, instagram_account_id, gbp_location_id,
                   canva_brand_id, instagram_app_url, gbp_app_url, canva_app_url,
                   created_at, updated_at`,
-        [tenantKey, fallback.name, fallback.instagramAppUrl, fallback.gbpAppUrl, fallback.canvaAppUrl],
+        [tenantKey, fallback.name, fallback.instagramAppUrl ?? null, fallback.gbpAppUrl ?? null, fallback.canvaAppUrl ?? null],
       );
       return rowToStore(inserted.rows[0]);
     });

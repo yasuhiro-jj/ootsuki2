@@ -11,7 +11,18 @@ function readPublicEnv(name: string, fallback: string) {
     NEXT_PUBLIC_INSTAGRAM_APP_URL: process.env.NEXT_PUBLIC_INSTAGRAM_APP_URL,
     NEXT_PUBLIC_GBP_APP_URL: process.env.NEXT_PUBLIC_GBP_APP_URL,
   };
-  return values[name]?.trim() || fallback;
+  return absoluteUrl(values[name]) || fallback;
+}
+
+function absoluteUrl(value?: string | null) {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : undefined;
+}
+
+// 店舗レコードや環境変数に相対パス（/canva など）が入っている場合は未設定として扱い、本番URLへフォールバックする。
+function resolveAppUrl(storeUrl: string | undefined, envName: string, productionUrl: string) {
+  return absoluteUrl(storeUrl) || readPublicEnv(envName, productionUrl);
 }
 
 function withQuery(url: string, params: Record<string, string>) {
@@ -41,7 +52,7 @@ export function createCanvaDesign(action: MarketingAction, store: MarketingStore
   return {
     key: "canva",
     label: "Canvaで制作",
-    href: withQuery(store.canvaAppUrl || readPublicEnv("NEXT_PUBLIC_CANVA_APP_URL", "/canva"), actionParams(action, store)),
+    href: withQuery(resolveAppUrl(store.canvaAppUrl, "NEXT_PUBLIC_CANVA_APP_URL", "https://www.canva.com/"), actionParams(action, store)),
     mode: "external_app_redirect",
   };
 }
@@ -51,7 +62,7 @@ export function createInstagramPost(action: MarketingAction, store: MarketingSto
     key: "instagram",
     label: "Instagram投稿",
     href: withQuery(
-      store.instagramAppUrl || readPublicEnv("NEXT_PUBLIC_INSTAGRAM_APP_URL", "/instagram"),
+      resolveAppUrl(store.instagramAppUrl, "NEXT_PUBLIC_INSTAGRAM_APP_URL", "https://frontend-six-phi-29.vercel.app/"),
       actionParams(action, store),
     ),
     mode: "external_app_redirect",
@@ -63,7 +74,7 @@ export function createGBPPost(action: MarketingAction, store: MarketingStore): M
     key: "gbp",
     label: "Google投稿",
     href: withQuery(
-      store.gbpAppUrl || readPublicEnv("NEXT_PUBLIC_GBP_APP_URL", "/google-business-profile"),
+      resolveAppUrl(store.gbpAppUrl, "NEXT_PUBLIC_GBP_APP_URL", "https://meo-auto-assistant.com"),
       actionParams(action, store),
     ),
     mode: "external_app_redirect",
