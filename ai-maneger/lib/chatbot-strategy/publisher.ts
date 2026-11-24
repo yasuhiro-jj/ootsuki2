@@ -240,3 +240,65 @@ export async function removeExclusion(tenant: TenantKey, id: string): Promise<vo
     );
   });
 }
+
+export type PinRow = {
+  id: string;
+  menuPageId: string | null;
+  productName: string;
+  note: string;
+  createdBy: string;
+  createdAt: string;
+};
+
+/** オーナーが「おすすめに出したい」と指定した商品。 */
+export async function listPins(tenant: TenantKey): Promise<PinRow[]> {
+  return withTenant(tenant, async (client) => {
+    const result = await client.query(
+      `SELECT id, menu_page_id, product_name, note, created_by, created_at
+         FROM chatbot_recommendation_pins
+        WHERE tenant_key = $1
+        ORDER BY created_at ASC`,
+      [tenant],
+    );
+    return result.rows.map((row) => ({
+      id: String(row.id),
+      menuPageId: row.menu_page_id ? String(row.menu_page_id) : null,
+      productName: String(row.product_name ?? ""),
+      note: String(row.note ?? ""),
+      createdBy: String(row.created_by ?? ""),
+      createdAt: row.created_at ? new Date(row.created_at).toISOString() : "",
+    }));
+  });
+}
+
+export async function addPin(input: {
+  tenant: TenantKey;
+  productName: string;
+  menuPageId?: string | null;
+  note?: string;
+  createdBy: string;
+}): Promise<void> {
+  await withTenant(input.tenant, async (client) => {
+    await client.query(
+      `INSERT INTO chatbot_recommendation_pins
+         (tenant_key, menu_page_id, product_name, note, created_by)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [
+        input.tenant,
+        input.menuPageId || null,
+        input.productName,
+        input.note || "",
+        input.createdBy,
+      ],
+    );
+  });
+}
+
+export async function removePin(tenant: TenantKey, id: string): Promise<void> {
+  await withTenant(tenant, async (client) => {
+    await client.query(
+      `DELETE FROM chatbot_recommendation_pins WHERE tenant_key = $1 AND id = $2`,
+      [tenant, id],
+    );
+  });
+}

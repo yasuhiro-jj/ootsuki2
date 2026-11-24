@@ -6,6 +6,7 @@ import { DEFAULT_MAX_PRODUCTS, generateChatbotStrategy } from "./generate";
 import {
   getStrategyPublisher,
   listExclusions,
+  listPins,
   recordGenerationFailure,
   type PublishMode,
 } from "./publisher";
@@ -77,6 +78,12 @@ export async function runChatbotStrategyGeneration(input: {
     };
   }
 
+  // 指定リストは読めなくても生成は続ける（自動選定だけで成立するため）。
+  const pins = await listPins(input.tenant).catch((error) => {
+    console.error("[chatbot-strategy] failed to load pins", error);
+    return [];
+  });
+
   const result = await generateChatbotStrategy({
     tenant: input.tenant,
     now: input.now,
@@ -84,6 +91,11 @@ export async function runChatbotStrategyGeneration(input: {
     exclusions: exclusions.map((row) => ({
       menuPageId: row.menuPageId,
       productName: row.productName,
+    })),
+    pins: pins.map((row) => ({
+      productName: row.productName,
+      menuPageId: row.menuPageId,
+      note: row.note,
     })),
     loadDailySalesStatus,
   });

@@ -291,3 +291,98 @@ test("strategy validity window is 36 hours", async () => {
   const span = new Date(result.validUntil).getTime() - new Date(result.validFrom).getTime();
   assert.equal(span, 36 * 60 * 60 * 1000);
 });
+
+test("pinned products take the top slots", async () => {
+  const result = await generateChatbotStrategy(
+    makeOptions({ pins: [{ productName: "漬物盛り" }] }),
+  );
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  const products = result.payload.priority_products;
+  assert.equal(products[0].product_name, "漬物盛り");
+  assert.equal(products[0].segment, "指定");
+  assert.equal(products[0].priority, 90);
+  assert.equal(result.sourceSummary.pinned_count, 1);
+});
+
+test("a pinned product is not listed twice", async () => {
+  const result = await generateChatbotStrategy(
+    makeOptions({ pins: [{ productName: "馬刺し赤身" }] }),
+  );
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  const names = result.payload.priority_products.map((item) => item.product_name);
+  assert.equal(names.filter((name) => name === "馬刺し赤身").length, 1);
+  assert.equal(result.payload.priority_products[0].product_name, "馬刺し赤身");
+});
+
+test("pins never exceed the maximum product count", async () => {
+  const result = await generateChatbotStrategy(
+    makeOptions({
+      maxProducts: 2,
+      pins: [{ productName: "漬物盛り" }, { productName: "冷奴" }],
+    }),
+  );
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.payload.priority_products.length, 2);
+  assert.deepEqual(
+    result.payload.priority_products.map((item) => item.segment),
+    ["指定", "指定"],
+  );
+});
+
+test("an out-of-stock pinned product is skipped and reported", async () => {
+  const menu = [
+    menuEntry({ name: "馬刺し赤身" }),
+    menuEntry({ name: "出汁巻き玉子" }),
+    menuEntry({ name: "刺身盛り合わせ" }),
+    menuEntry({ name: "冷奴" }),
+    menuEntry({ name: "漬物盛り", recommendable: false }),
+  ];
+  const result = await generateChatbotStrategy(
+    makeOptions({ loadMenuEntries: async () => menu, pins: [{ productName: "漬物盛り" }] }),
+  );
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  const names = result.payload.priority_products.map((item) => item.product_name);
+  assert.ok(!names.includes("漬物盛り"));
+  assert.deepEqual(result.sourceSummary.pinned_skipped, ["漬物盛り"]);
+  assert.equal(result.sourceSummary.pinned_count, 0);
+});
+
+test("an excluded product cannot be pinned back in", async () => {
+  const result = await generateChatbotStrategy(
+    makeOptions({
+      exclusions: [{ productName: "漬物盛り" }],
+      pins: [{ productName: "漬物盛り" }],
+    }),
+  );
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  const names = result.payload.priority_products.map((item) => item.product_name);
+  assert.ok(!names.includes("漬物盛り"));
+  assert.deepEqual(result.sourceSummary.pinned_skipped, ["漬物盛り"]);
+});
+
+test("a pinned product that is unknown to the menu database is reported", async () => {
+  const result = await generateChatbotStrategy(
+    makeOptions({ pins: [{ productName: "存在しない商品" }] }),
+  );
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.deepEqual(result.sourceSummary.pinned_skipped, ["存在しない商品"]);
+});
+
+test("pinned customer reason avoids margin wording", async () => {
+  const result = await generateChatbotStrategy(
+    makeOptions({ pins: [{ productName: "漬物盛り" }] }),
+  );
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.ok(!containsForbiddenExpression(result.payload.priority_products[0].customer_reason));
+});

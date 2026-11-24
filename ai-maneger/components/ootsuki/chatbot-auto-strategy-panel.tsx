@@ -32,6 +32,14 @@ type ExclusionRow = {
   createdAt: string;
 };
 
+type PinRow = {
+  id: string;
+  menuPageId: string | null;
+  productName: string;
+  note: string;
+  createdAt: string;
+};
+
 const MODE_LABELS: Record<string, string> = {
   off: "停止中（チャットボットの応答は変わりません）",
   shadow: "検証中（生成のみ。応答は変わりません）",
@@ -47,18 +55,22 @@ export function ChatbotAutoStrategyPanel() {
   const [mode, setMode] = useState<string>("off");
   const [strategies, setStrategies] = useState<StrategyRow[]>([]);
   const [exclusions, setExclusions] = useState<ExclusionRow[]>([]);
+  const [pins, setPins] = useState<PinRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [newExclusionName, setNewExclusionName] = useState("");
   const [newExclusionReason, setNewExclusionReason] = useState("");
+  const [newPinName, setNewPinName] = useState("");
+  const [newPinNote, setNewPinNote] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [strategyResponse, exclusionResponse] = await Promise.all([
+      const [strategyResponse, exclusionResponse, pinResponse] = await Promise.all([
         fetch("/api/chatbot-strategy/run"),
         fetch("/api/chatbot-strategy/exclusions"),
+        fetch("/api/chatbot-strategy/pins"),
       ]);
       const strategyData = (await strategyResponse.json()) as {
         ok?: boolean;
@@ -70,6 +82,7 @@ export function ChatbotAutoStrategyPanel() {
         ok?: boolean;
         exclusions?: ExclusionRow[];
       };
+      const pinData = (await pinResponse.json()) as { ok?: boolean; pins?: PinRow[] };
       if (strategyData.ok) {
         setMode(strategyData.mode || "off");
         setStrategies(strategyData.strategies || []);
@@ -77,6 +90,7 @@ export function ChatbotAutoStrategyPanel() {
         setMessage(strategyData.message || "戦略の取得に失敗しました。");
       }
       if (exclusionData.ok) setExclusions(exclusionData.exclusions || []);
+      if (pinData.ok) setPins(pinData.pins || []);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "読み込みに失敗しました。");
     } finally {
@@ -113,6 +127,44 @@ export function ChatbotAutoStrategyPanel() {
       setMessage(err instanceof Error ? err.message : "再計算に失敗しました。");
     } finally {
       setRunning(false);
+    }
+  }
+
+  async function addPin() {
+    const name = newPinName.trim();
+    if (!name) return;
+    try {
+      const response = await fetch("/api/chatbot-strategy/pins", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productName: name, note: newPinNote.trim() }),
+      });
+      const data = (await response.json()) as { ok?: boolean; message?: string };
+      if (!data.ok) {
+        setMessage(data.message || "指定の追加に失敗しました。");
+        return;
+      }
+      setNewPinName("");
+      setNewPinNote("");
+      await load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "指定の追加に失敗しました。");
+    }
+  }
+
+  async function removePin(id: string) {
+    try {
+      const response = await fetch(`/api/chatbot-strategy/pins?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      const data = (await response.json()) as { ok?: boolean; message?: string };
+      if (!data.ok) {
+        setMessage(data.message || "指定の削除に失敗しました。");
+        return;
+      }
+      await load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "指定の削除に失敗しました。");
     }
   }
 
@@ -221,6 +273,53 @@ export function ChatbotAutoStrategyPanel() {
       )}
 
       <div className="border-t border-slate-200 pt-3">
+        <h4 className="mb-1 text-sm font-medium text-slate-800">おすすめに出したい商品</h4>
+        <p className="mb-2 text-xs text-slate-500">
+          ここに入れた商品は、粗利や売れ行きの順位に関係なく優先しておすすめします。
+          品切れ（在庫・提供・表示がOFF）の商品は、指定していても出しません。
+        </p>
+        {pins.length === 0 && (
+          <p className="mb-2 text-xs text-slate-500">登録されていません。</p>
+        )}
+        <ul className="mb-2 space-y-1">
+          {pins.map((item) => (
+            <li key={item.id} className="flex items-center justify-between gap-2 text-sm">
+              <span className="text-slate-700">
+                {item.productName}
+                {item.note && <span className="ml-2 text-xs text-slate-400">{item.note}</span>}
+              </span>
+              <button
+                type="button"
+                onClick={() => removePin(item.id)}
+                className="text-xs text-slate-500 underline"
+              >
+                削除
+              </button>
+            </li>
+          ))}
+        </ul>
+        <div className="mb-4 flex flex-wrap gap-2">
+          <input
+            value={newPinName}
+            onChange={(event) => setNewPinName(event.target.value)}
+            placeholder="商品名（メニューDBの表記に合わせる）"
+            className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
+          />
+          <input
+            value={newPinNote}
+            onChange={(event) => setNewPinNote(event.target.value)}
+            placeholder="メモ（任意）"
+            className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
+          />
+          <button
+            type="button"
+            onClick={addPin}
+            className="rounded border border-slate-300 px-3 py-1 text-sm text-slate-700"
+          >
+            追加
+          </button>
+        </div>
+
         <h4 className="mb-2 text-sm font-medium text-slate-800">おすすめに出さない商品</h4>
         {exclusions.length === 0 && (
           <p className="mb-2 text-xs text-slate-500">登録されていません。</p>

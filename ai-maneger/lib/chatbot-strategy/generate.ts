@@ -24,6 +24,8 @@ export const SEGMENT_SIGNATURE = "看板";
 export const SEGMENT_GROWTH = "育成";
 export const SEGMENT_BEST_SELLER = "売れ筋";
 export const SEGMENT_HIGH_MARGIN = "高粗利";
+/** オーナーが手動で指定した商品 */
+export const SEGMENT_PINNED = "指定";
 
 /** 既定値。CHATBOT_STRATEGY_MAX_PRODUCTS で変更できる。 */
 export const DEFAULT_MAX_PRODUCTS = 5;
@@ -62,6 +64,10 @@ export type StrategySourceSummary = {
   daily_sales_ok: boolean;
   daily_sales_checked_date: string;
   generated_at: string;
+  /** オーナー指定でおすすめに載せた商品数 */
+  pinned_count: number;
+  /** 指定されたがメニューDBに無い・在庫切れ等で載せられなかった商品名 */
+  pinned_skipped: string[];
 };
 
 export type GenerateSuccess = {
@@ -93,11 +99,15 @@ export type GenerateResult = GenerateSuccess | GenerateFailure;
 
 export type ExclusionEntry = { menuPageId?: string | null; productName?: string | null };
 
+/** オーナーが「おすすめに出したい」と指定した商品。 */
+export type PinEntry = { productName: string; menuPageId?: string | null; note?: string | null };
+
 export type GenerateOptions = {
   tenant: TenantKey;
   now?: Date;
   maxProducts?: number;
   exclusions?: ExclusionEntry[];
+  pins?: PinEntry[];
   /** テスト用の差し替え口。未指定なら実データを読む。 */
   loadProducts?: (tenant: TenantKey, month: string) => Promise<ProductProfitabilityItem[]>;
   loadMonths?: (tenant: TenantKey) => Promise<string[]>;
@@ -233,6 +243,30 @@ export async function generateChatbotStrategy(
     matched.push({ item, entry });
   }
 
+  // オーナーが指定した「出したい商品」を解決する。
+  // ABC分析に無い商品（新メニュー等）も指定できるよう、メニューDBから直接引く。
+  // ただし在庫・提供・表示フラグと除外リストは指定よりも優先する（品切れは出さない）。
+  const pinnedSkipped: string[] = [];
+  const pinned: MenuEntry[] = [];
+  const seenPinPageIds = new Set<string>();
+  for (const pin of options.pins ?? []) {
+    const entry = matchMenuEntry(menuIndex, pin.productName);
+    if (!entry || !entry.recommendable) {
+      pinnedSkipped.push(pin.productName);
+      continue;
+    }
+    if (
+      excludedPageIds.has(entry.pageId) ||
+      excludedNames.has(normalizeProductName(entry.name))
+    ) {
+      pinnedSkipped.push(pin.productName);
+      continue;
+    }
+    if (seenPinPageIds.has(entry.pageId)) continue;
+    seenPinPageIds.add(entry.pageId);
+    pinned.push(entry);
+  }
+
   const sourceSummary: StrategySourceSummary = {
     target_month: targetMonth,
     abc_row_count: rows.length,
@@ -243,6 +277,8 @@ export async function generateChatbotStrategy(
     daily_sales_ok: false,
     daily_sales_checked_date: "",
     generated_at: now.toISOString(),
+    pinned_count: pinned.length,
+    pinned_skipped: pinnedSkipped,
   };
 
   if (options.loadDailySalesStatus) {
@@ -278,32 +314,61 @@ export async function generateChatbotStrategy(
     .filter((candidate) => candidate.segment !== null)
     .sort((a, b) => b.marginPct + b.qtyPct - (a.marginPct + a.qtyPct));
 
-  const scored = ranked.slice(0, maxProducts);
+  // 指定された商品が先に枠を取り、残りを自動選定で埋める。
+  const autoSlots = Math.max(maxProducts - pinned.length, 0);
+  const scored = ranked
+    .filter((candidate) => !seenPinPageIds.has(candidate.entry.pageId))
+    .slice(0, autoSlots);
 
   // 粗利・売れ行きの合計で並べると看板商品が上位を独占し、「粗利は高いがまだ
   // 売れていない」育成商品が常に外れてしまう。最後の1枠は育成商品に充てる。
   if (
-    maxProducts >= 2 &&
-    scored.length === maxProducts &&
+    autoSlots >= 2 &&
+    scored.length === autoSlots &&
     !scored.some((candidate) => candidate.segment === SEGMENT_GROWTH)
   ) {
-    const bestGrowth = ranked.find((candidate) => candidate.segment === SEGMENT_GROWTH);
+    const bestGrowth = ranked.find(
+      (candidate) =>
+        candidate.segment === SEGMENT_GROWTH && !seenPinPageIds.has(candidate.entry.pageId),
+    );
     if (bestGrowth) {
       scored[scored.length - 1] = bestGrowth;
     }
   }
 
-  if (scored.length === 0) {
+  if (scored.length === 0 && pinned.length === 0) {
     return { ok: false, reason: "no_segment_matched", sourceSummary };
   }
 
-  const priorityStep = scored.length > 1 ? 40 / (scored.length - 1) : 0;
-  const priorityProducts: StrategyProduct[] = scored.map((candidate, index) => {
+  // 指定商品の社内向け根拠。ABC分析に数字があれば添える。
+  const abcByPageId = new Map(matched.map(({ item, entry }) => [entry.pageId, item]));
+
+  const pinnedProducts: StrategyProduct[] = pinned.map((entry) => {
+    const item = abcByPageId.get(entry.pageId);
+    const marginRank = item ? (marginRanks.get(item.name) ?? 0) : 0;
+    const qtyRank = item ? (qtyRanks.get(item.name) ?? 0) : 0;
+    return {
+      product_id: entry.pageId,
+      product_name: entry.name,
+      priority: 0, // 下でまとめて採番する
+      reason: item
+        ? `オーナー指定。${buildInternalReason(item, marginRank, qtyRank, candidateCount, SEGMENT_PINNED, targetMonth)}`
+        : `オーナー指定（${targetMonth} のABC分析に売上データなし）`,
+      customer_reason: buildCustomerReason(entry, SEGMENT_PINNED),
+      gross_margin_rank: marginRank,
+      sales_qty_rank: qtyRank,
+      candidate_count: candidateCount,
+      segment: SEGMENT_PINNED,
+      max_suggestions: 1,
+    };
+  });
+
+  const autoProducts: StrategyProduct[] = scored.map((candidate) => {
     const segment = candidate.segment as string;
     return {
       product_id: candidate.entry.pageId,
       product_name: candidate.entry.name,
-      priority: Math.round(90 - priorityStep * index),
+      priority: 0, // 下でまとめて採番する
       reason: buildInternalReason(
         candidate.item,
         candidate.marginRank,
@@ -320,6 +385,13 @@ export async function generateChatbotStrategy(
       max_suggestions: 1,
     };
   });
+
+  const combined = [...pinnedProducts, ...autoProducts];
+  const priorityStep = combined.length > 1 ? 40 / (combined.length - 1) : 0;
+  const priorityProducts: StrategyProduct[] = combined.map((product, index) => ({
+    ...product,
+    priority: Math.round(90 - priorityStep * index),
+  }));
 
   const validFrom = now.toISOString();
   const validUntil = new Date(now.getTime() + VALID_HOURS * 60 * 60 * 1000).toISOString();
