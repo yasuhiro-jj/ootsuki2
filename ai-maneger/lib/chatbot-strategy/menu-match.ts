@@ -104,3 +104,49 @@ export function matchMenuEntry(index: MenuIndex, productName: string): MenuEntry
   if (!key) return null;
   return index.get(key) ?? null;
 }
+
+/** メニューDBのページIDで引くための索引。 */
+export function buildMenuPageIdIndex(entries: MenuEntry[]): Map<string, MenuEntry> {
+  const index = new Map<string, MenuEntry>();
+  for (const entry of entries) {
+    if (entry.pageId) index.set(entry.pageId, entry);
+  }
+  return index;
+}
+
+/** 入力に対応するメニュー項目を、ページIDがあればそれで、無ければ名前で引く。 */
+export function resolveMenuEntry(
+  nameIndex: MenuIndex,
+  pageIdIndex: Map<string, MenuEntry>,
+  input: { productName: string; menuPageId?: string | null },
+): MenuEntry | null {
+  const pageId = String(input.menuPageId || "").replace(/-/g, "");
+  if (pageId) {
+    const byPageId = pageIdIndex.get(pageId);
+    if (byPageId) return byPageId;
+  }
+  return matchMenuEntry(nameIndex, input.productName);
+}
+
+/**
+ * 入力中の文字で候補を絞り込む（部分一致）。
+ * 正規化してから比較するので、全角/半角・空白・記号の違いは無視される。
+ */
+export function searchMenuEntries(
+  entries: MenuEntry[],
+  query: string,
+  limit = 20,
+): MenuEntry[] {
+  const key = normalizeProductName(query);
+  if (!key) return [];
+  const matches = entries.filter((entry) => normalizeProductName(entry.name).includes(key));
+  // 前方一致を優先し、次に在庫のあるもの、最後に名前順。
+  matches.sort((a, b) => {
+    const aStarts = normalizeProductName(a.name).startsWith(key) ? 0 : 1;
+    const bStarts = normalizeProductName(b.name).startsWith(key) ? 0 : 1;
+    if (aStarts !== bStarts) return aStarts - bStarts;
+    if (a.recommendable !== b.recommendable) return a.recommendable ? -1 : 1;
+    return a.name.localeCompare(b.name, "ja");
+  });
+  return matches.slice(0, limit);
+}

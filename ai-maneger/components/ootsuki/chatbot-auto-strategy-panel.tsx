@@ -1,6 +1,161 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+type MenuCandidate = {
+  pageId: string;
+  name: string;
+  recommendable: boolean;
+};
+
+/**
+ * メニューDBから候補を検索して選ばせる入力欄。
+ * 手入力のままでは商品名の表記がメニューDBとずれ、チャットボット側で
+ * 商品を特定できないことがあるため、候補から選んだときだけ追加できる。
+ */
+function MenuProductPicker({
+  label,
+  notePlaceholder,
+  onAdd,
+}: {
+  label: string;
+  notePlaceholder: string;
+  onAdd: (selected: MenuCandidate, note: string) => Promise<void>;
+}) {
+  const [query, setQuery] = useState("");
+  const [note, setNote] = useState("");
+  const [candidates, setCandidates] = useState<MenuCandidate[]>([]);
+  const [selected, setSelected] = useState<MenuCandidate | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searched, setSearched] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const requestId = useRef(0);
+
+  useEffect(() => {
+    const term = query.trim();
+    if (!term || (selected && selected.name === term)) {
+      setCandidates([]);
+      setSearched(false);
+      return;
+    }
+
+    const currentRequest = ++requestId.current;
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      setError(null);
+      try {
+        const response = await fetch(
+          `/api/chatbot-strategy/menu-search?q=${encodeURIComponent(term)}`,
+        );
+        const data = (await response.json()) as {
+          ok?: boolean;
+          candidates?: MenuCandidate[];
+          message?: string;
+        };
+        if (currentRequest !== requestId.current) return;
+        if (!data.ok) {
+          setError(data.message || "商品の検索に失敗しました。");
+          setCandidates([]);
+        } else {
+          setCandidates(data.candidates || []);
+        }
+        setSearched(true);
+      } catch (err) {
+        if (currentRequest !== requestId.current) return;
+        setError(err instanceof Error ? err.message : "商品の検索に失敗しました。");
+        setCandidates([]);
+        setSearched(true);
+      } finally {
+        if (currentRequest === requestId.current) setSearching(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [query, selected]);
+
+  async function add() {
+    if (!selected || adding) return;
+    setAdding(true);
+    try {
+      await onAdd(selected, note.trim());
+      setQuery("");
+      setNote("");
+      setSelected(null);
+      setCandidates([]);
+      setSearched(false);
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  return (
+    <div className="mb-4">
+      <div className="flex flex-wrap gap-2">
+        <input
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setSelected(null);
+          }}
+          placeholder={label}
+          className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
+        />
+        <input
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          placeholder={notePlaceholder}
+          className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
+        />
+        <button
+          type="button"
+          onClick={add}
+          disabled={!selected || adding}
+          className="rounded border border-slate-300 px-3 py-1 text-sm text-slate-700 disabled:opacity-50"
+        >
+          {adding ? "追加中…" : "追加"}
+        </button>
+      </div>
+
+      {searching && <p className="mt-1 text-xs text-slate-500">検索中…</p>}
+      {error && <p className="mt-1 text-xs text-amber-700">{error}</p>}
+
+      {selected && (
+        <p className="mt-1 text-xs text-emerald-700">
+          選択中: {selected.name}
+          {!selected.recommendable && "（現在は品切れ扱いのため、おすすめには出ません）"}
+        </p>
+      )}
+
+      {!selected && searched && !searching && candidates.length === 0 && !error && (
+        <p className="mt-1 text-xs text-slate-500">候補がありません。</p>
+      )}
+
+      {!selected && candidates.length > 0 && (
+        <ul className="mt-1 max-h-44 overflow-y-auto rounded border border-slate-200">
+          {candidates.map((candidate) => (
+            <li key={candidate.pageId}>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelected(candidate);
+                  setQuery(candidate.name);
+                  setCandidates([]);
+                }}
+                className="flex w-full items-center justify-between gap-2 px-2 py-1 text-left text-sm hover:bg-slate-50"
+              >
+                <span className="text-slate-700">{candidate.name}</span>
+                {!candidate.recommendable && (
+                  <span className="text-xs text-slate-400">品切れ</span>
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 type StrategyProduct = {
   product_id: string;
@@ -59,10 +214,6 @@ export function ChatbotAutoStrategyPanel() {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [newExclusionName, setNewExclusionName] = useState("");
-  const [newExclusionReason, setNewExclusionReason] = useState("");
-  const [newPinName, setNewPinName] = useState("");
-  const [newPinNote, setNewPinNote] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -130,22 +281,22 @@ export function ChatbotAutoStrategyPanel() {
     }
   }
 
-  async function addPin() {
-    const name = newPinName.trim();
-    if (!name) return;
+  async function addPin(selected: MenuCandidate, note: string) {
     try {
       const response = await fetch("/api/chatbot-strategy/pins", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productName: name, note: newPinNote.trim() }),
+        body: JSON.stringify({
+          productName: selected.name,
+          menuPageId: selected.pageId,
+          note,
+        }),
       });
       const data = (await response.json()) as { ok?: boolean; message?: string };
       if (!data.ok) {
         setMessage(data.message || "指定の追加に失敗しました。");
         return;
       }
-      setNewPinName("");
-      setNewPinNote("");
       await load();
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "指定の追加に失敗しました。");
@@ -168,22 +319,22 @@ export function ChatbotAutoStrategyPanel() {
     }
   }
 
-  async function addExclusion() {
-    const name = newExclusionName.trim();
-    if (!name) return;
+  async function addExclusion(selected: MenuCandidate, reason: string) {
     try {
       const response = await fetch("/api/chatbot-strategy/exclusions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productName: name, reason: newExclusionReason.trim() }),
+        body: JSON.stringify({
+          productName: selected.name,
+          menuPageId: selected.pageId,
+          reason,
+        }),
       });
       const data = (await response.json()) as { ok?: boolean; message?: string };
       if (!data.ok) {
         setMessage(data.message || "除外の追加に失敗しました。");
         return;
       }
-      setNewExclusionName("");
-      setNewExclusionReason("");
       await load();
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "除外の追加に失敗しました。");
@@ -298,27 +449,11 @@ export function ChatbotAutoStrategyPanel() {
             </li>
           ))}
         </ul>
-        <div className="mb-4 flex flex-wrap gap-2">
-          <input
-            value={newPinName}
-            onChange={(event) => setNewPinName(event.target.value)}
-            placeholder="商品名（メニューDBの表記に合わせる）"
-            className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
-          />
-          <input
-            value={newPinNote}
-            onChange={(event) => setNewPinNote(event.target.value)}
-            placeholder="メモ（任意）"
-            className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
-          />
-          <button
-            type="button"
-            onClick={addPin}
-            className="rounded border border-slate-300 px-3 py-1 text-sm text-slate-700"
-          >
-            追加
-          </button>
-        </div>
+        <MenuProductPicker
+          label="商品名を入力して候補から選ぶ"
+          notePlaceholder="メモ（任意）"
+          onAdd={addPin}
+        />
 
         <h4 className="mb-2 text-sm font-medium text-slate-800">おすすめに出さない商品</h4>
         {exclusions.length === 0 && (
@@ -341,27 +476,11 @@ export function ChatbotAutoStrategyPanel() {
             </li>
           ))}
         </ul>
-        <div className="flex flex-wrap gap-2">
-          <input
-            value={newExclusionName}
-            onChange={(event) => setNewExclusionName(event.target.value)}
-            placeholder="商品名"
-            className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
-          />
-          <input
-            value={newExclusionReason}
-            onChange={(event) => setNewExclusionReason(event.target.value)}
-            placeholder="理由（任意）"
-            className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
-          />
-          <button
-            type="button"
-            onClick={addExclusion}
-            className="rounded border border-slate-300 px-3 py-1 text-sm text-slate-700"
-          >
-            追加
-          </button>
-        </div>
+        <MenuProductPicker
+          label="商品名を入力して候補から選ぶ"
+          notePlaceholder="理由（任意）"
+          onAdd={addExclusion}
+        />
       </div>
     </section>
   );

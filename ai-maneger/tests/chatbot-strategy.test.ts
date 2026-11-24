@@ -12,6 +12,7 @@ import {
   buildMenuIndex,
   matchMenuEntry,
   normalizeProductName,
+  searchMenuEntries,
   type MenuEntry,
 } from "../lib/chatbot-strategy/menu-match";
 
@@ -385,4 +386,57 @@ test("pinned customer reason avoids margin wording", async () => {
   assert.equal(result.ok, true);
   if (!result.ok) return;
   assert.ok(!containsForbiddenExpression(result.payload.priority_products[0].customer_reason));
+});
+
+test("searchMenuEntries finds partial matches and prefers prefixes", () => {
+  const entries = [
+    menuEntry({ name: "特製刺身盛り" }),
+    menuEntry({ name: "刺身盛り合わせ" }),
+    menuEntry({ name: "冷奴" }),
+  ];
+  const found = searchMenuEntries(entries, "刺身").map((entry) => entry.name);
+  assert.deepEqual(found, ["刺身盛り合わせ", "特製刺身盛り"]);
+});
+
+test("searchMenuEntries ignores spacing and width differences", () => {
+  const entries = [menuEntry({ name: "馬刺し 赤身" })];
+  assert.equal(searchMenuEntries(entries, "馬刺し赤身").length, 1);
+  assert.equal(searchMenuEntries(entries, "ばさし").length, 0);
+});
+
+test("searchMenuEntries puts out-of-stock items last", () => {
+  const entries = [
+    menuEntry({ name: "刺身A", recommendable: false }),
+    menuEntry({ name: "刺身B", recommendable: true }),
+  ];
+  assert.deepEqual(
+    searchMenuEntries(entries, "刺身").map((entry) => entry.name),
+    ["刺身B", "刺身A"],
+  );
+});
+
+test("searchMenuEntries returns nothing for an empty query", () => {
+  assert.deepEqual(searchMenuEntries([menuEntry({ name: "冷奴" })], "  "), []);
+});
+
+test("a pin selected from the candidate list is resolved by page id", async () => {
+  // 保存された商品名が後からメニューDB側で変わっても、ページIDで特定できる。
+  const result = await generateChatbotStrategy(
+    makeOptions({
+      pins: [{ productName: "古い表記の名前", menuPageId: "page_漬物盛り" }],
+    }),
+  );
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.payload.priority_products[0].product_name, "漬物盛り");
+  assert.equal(result.sourceSummary.pinned_count, 1);
+});
+
+test("a pin falls back to the product name when no page id is stored", async () => {
+  const result = await generateChatbotStrategy(
+    makeOptions({ pins: [{ productName: "漬物盛り", menuPageId: null }] }),
+  );
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.payload.priority_products[0].product_name, "漬物盛り");
 });
