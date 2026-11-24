@@ -14,9 +14,11 @@ import {
 import type { TenantKey } from "@/lib/tenant-config/types";
 import {
   buildMenuIndex,
+  buildMenuPageIdIndex,
   getMenuEntries,
   matchMenuEntry,
   normalizeProductName,
+  resolveMenuEntry,
   type MenuEntry,
 } from "./menu-match";
 
@@ -213,7 +215,8 @@ export async function generateChatbotStrategy(
     };
   }
 
-  const menuIndex = buildMenuIndex(await loadMenuEntries());
+  const menuEntries = await loadMenuEntries();
+  const menuIndex = buildMenuIndex(menuEntries);
   const { pageIds: excludedPageIds, names: excludedNames } = buildExclusionMatchers(
     options.exclusions ?? [],
   );
@@ -249,8 +252,11 @@ export async function generateChatbotStrategy(
   const pinnedSkipped: string[] = [];
   const pinned: MenuEntry[] = [];
   const seenPinPageIds = new Set<string>();
+  const menuPageIdIndex = buildMenuPageIdIndex(menuEntries);
   for (const pin of options.pins ?? []) {
-    const entry = matchMenuEntry(menuIndex, pin.productName);
+    // 画面の候補から選んだ場合は menuPageId が入っているので、
+    // 商品名の表記ゆれに左右されずページIDで特定する。
+    const entry = resolveMenuEntry(menuIndex, menuPageIdIndex, pin);
     if (!entry || !entry.recommendable) {
       pinnedSkipped.push(pin.productName);
       continue;
